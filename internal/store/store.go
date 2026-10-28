@@ -15,6 +15,9 @@ import (
 // ErrNotFound is returned when a row does not exist.
 var ErrNotFound = errors.New("store: not found")
 
+// ErrQueueEmpty is returned by ClaimNextJob when no queued job exists.
+var ErrQueueEmpty = errors.New("store: queue empty")
+
 // File statuses (ARCHITECTURE.md; do not add values without updating it).
 const (
 	FileStatusNew        = "new"
