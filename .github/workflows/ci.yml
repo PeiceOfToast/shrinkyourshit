@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Create web UI placeholder for go:embed
+        run: make placeholder
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.15.0
+      - name: SPDX headers
+        run: ./scripts/check-spdx.sh
+      - name: go test (unit)
+        run: go test ./...
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: go test (integration)
+        run: go test -tags=integration ./...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-fund --no-audit
+      - name: eslint
+        run: npm run lint
+      - name: prettier
+        run: npm run format:check
+      - name: vitest
+        run: npm run test
+      - name: build
+        run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t shrinkyourshit:ci .
+      - name: ffmpeg has the v1 encoder stack (NVENC + QSV/VAAPI)
+        run: |
+          docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -version \
+            | grep -E -- '--enable-nvenc'
+          docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -version \
+            | grep -E -- '--enable-(libmfx|vpl|qsv)'
+      - name: Image serves the UI and the health endpoint
+        run: |
+          container=$(docker run -d -p 8765:8765 shrinkyourshit:ci)
+          sleep 2
+          curl -fsS http://localhost:8765/api/v1/health | grep -o '"status":"ok"'
+          curl -fsS http://localhost:8765/ | grep -o '<title>ShrinkYourShit</title>'
+          docker rm -f "$container" > /dev/null
+
+  # Posts the job results as a PR comment so agents and owners can read CI
+  # state without the Actions/Checks API scope. The comment is best-effort;
+  # the run summary is the reliable copy.
+  report:
+    needs: [go, web, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Summarize
+        run: |
+          {
+            echo "## CI report"
+            echo "- go: ${{ needs.go.result }}"
+            echo "- web: ${{ needs.web.result }}"
+            echo "- docker: ${{ needs.docker.result }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment on the PR
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!context.issue.number) return
+            const body = [
+              'CI report:',
+              `- go: **${{ needs.go.result }}**`,
+              `- web: **${{ needs.web.result }}**`,
+              `- docker: **${{ needs.docker.result }}**`,
+            ].join('\n')
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            })

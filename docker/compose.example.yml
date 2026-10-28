@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Example compose file for ShrinkYourShit. Copy to docker-compose.yml and
+# adjust the volume paths, then `docker compose up -d`.
+
+services:
+  shrinkyourshit:
+    image: ghcr.io/peiceoftoast/shrinkyourshit:latest
+    container_name: shrinkyourshit
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      # Optional: the image defaults are already set.
+      # - SHRINK_LOG_LEVEL=debug
+      # - SHRINK_FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg
+    volumes:
+      - ./config:/config
+      - /path/to/your/media:/media
+      - ./scratch:/scratch
+
+    # --- NVIDIA GPU (NVENC): uncomment this block ---
+    # environment:
+    #   - PUID=1000
+    #   - PGID=1000
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    # Or, on engines that support it:  runtime: nvidia
+
+    # --- Intel GPU (QSV/VAAPI): uncomment this block ---
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "109"  # render group id on the host (check with: getent group render)

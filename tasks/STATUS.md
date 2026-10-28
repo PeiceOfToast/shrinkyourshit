@@ -4,7 +4,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 01 | 01-skeleton.md | todo | |
+| 01 | 01-skeleton.md | done | PR #1 https://github.com/PeiceOfToast/shrinkyourshit/pull/1 |
 | 02 | 02-probe-and-state.md | todo | |
 | 03 | 03-library-scanner-queue.md | todo | |
 | 04 | 04-encoders.md | todo | |
