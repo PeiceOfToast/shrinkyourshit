@@ -66,10 +66,12 @@ func New(cfg Config) *Server {
 		FFprobePath:      cfg.FFprobePath,
 		Prober:           cfg.Prober,
 		ProbeConcurrency: cfg.ProbeConcurrency,
+		StableWindow:     cfg.StableWindow,
 	}, cfg.Log)
-	watcher := NewWatcher(scanner, cfg.Log, cfg.Debounce, cfg.StableWindow, cfg.WatchPollInterval)
+	watcher := NewWatcher(scanner, cfg.Log, cfg.Debounce, cfg.WatchPollInterval)
 	scheduler := NewScheduler(cfg.Store, scanner, cfg.Log, 0)
 	libs := NewLibraryManager(cfg.Store, queue, events, watcher, cfg.Log)
+	libs.setScanHook(scanner.ScanAsync)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs}
 }

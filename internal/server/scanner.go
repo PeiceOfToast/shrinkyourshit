@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
@@ -36,6 +38,15 @@ func defaultProber(ctx context.Context, ffprobePath, path string) (probe.MediaIn
 	return probe.Probe(ctx, ffprobePath, path)
 }
 
+// Stability timing (task 03): a changed file must not grow for this long
+// (and its mtime must be at least this old) before it is probed. The poll
+// interval and max wait bound the wait.
+const (
+	StableDefault         = 5 * time.Second
+	stabilityPollInterval = 250 * time.Millisecond
+	stabilityMaxWait      = time.Hour
+)
+
 // ScanResult summarizes one library scan.
 type ScanResult struct {
 	Seen      int // media files found on disk
@@ -50,7 +61,9 @@ type ScanResult struct {
 
 // Scanner walks libraries, probes changed files, applies Evaluate and
 // queues jobs for files that need work. Scans of one library serialize on a
-// per-library mutex.
+// per-library mutex. Before probing a changed file it waits until the file
+// is stable (size unchanged and mtime older than the stability window), so
+// a file that is still being copied is never probed or queued part-way.
 type Scanner struct {
 	st          store.Store
 	queue       *Queue
@@ -58,6 +71,7 @@ type Scanner struct {
 	log         *slog.Logger
 	ffprobePath string
 	prober      Prober
+	stable      time.Duration // stability window before probing
 	procs       chan struct{} // bounds simultaneous fingerprint+probe work
 	locks       *libraryLocks
 
@@ -75,6 +89,9 @@ type ScannerConfig struct {
 	Prober Prober
 	// ProbeConcurrency bounds simultaneous probes; default 4.
 	ProbeConcurrency int
+	// StableWindow is how long a file must not change before probing;
+	// default 5s (task 03).
+	StableWindow time.Duration
 }
 
 // NewScanner builds a scanner.
@@ -90,6 +107,10 @@ func NewScanner(st store.Store, queue *Queue, events *EventBus, cfg ScannerConfi
 	if procs <= 0 {
 		procs = 4
 	}
+	stable := cfg.StableWindow
+	if stable <= 0 {
+		stable = StableDefault
+	}
 	return &Scanner{
 		st:          st,
 		queue:       queue,
@@ -97,6 +118,7 @@ func NewScanner(st store.Store, queue *Queue, events *EventBus, cfg ScannerConfi
 		log:         log,
 		ffprobePath: cfg.FFprobePath,
 		prober:      prober,
+		stable:      stable,
 		procs:       make(chan struct{}, procs),
 		locks:       newLibraryLocks(),
 		ctx:         context.Background(),
@@ -294,6 +316,19 @@ func (s *Scanner) examine(ctx context.Context, libraryID, path string) (*finding
 		return nil, notRelevant
 	}
 
+	// The file is new or changed: wait until it stops growing (a copy in
+	// progress must never be probed part-way), then fingerprint again —
+	// the size may have moved during the wait.
+	if err := s.waitStable(ctx, path); err != nil {
+		s.log.Debug("scanner: stability wait aborted", "path", path, "err", err)
+		return nil, notRelevant
+	}
+	size, mtime, fp, err = statAndFingerprint(path)
+	if err != nil {
+		s.log.Debug("scanner: fingerprint failed", "path", path, "err", err)
+		return nil, probeFailed
+	}
+
 	select {
 	case <-ctx.Done():
 		return nil, notRelevant
@@ -305,6 +340,42 @@ func (s *Scanner) examine(ctx context.Context, libraryID, path string) (*finding
 		return nil, probeFailed
 	}
 	return &finding{path: path, size: size, mtime: mtime, fp: fp, existing: existing, info: info}, examined
+}
+
+// waitStable blocks until path's size has not changed for the stability
+// window and its mtime is at least that old. Bounded by stabilityMaxWait so
+// a pathological writer cannot wedge a scan forever.
+func (s *Scanner) waitStable(ctx context.Context, path string) error {
+	deadline := time.Now().Add(stabilityMaxWait)
+	var (
+		lastSize   int64 = -1
+		lastChange     = time.Now()
+	)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		st, err := os.Stat(path)
+		if err != nil {
+			return nil // vanished mid-wait; the caller handles that
+		}
+		now := time.Now()
+		if st.Size() != lastSize {
+			lastSize = st.Size()
+			lastChange = now
+		}
+		if now.Sub(st.ModTime()) >= s.stable && now.Sub(lastChange) >= s.stable {
+			return nil
+		}
+		if now.After(deadline) {
+			return nil // give up waiting; scan anyway
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(stabilityPollInterval):
+		}
+	}
 }
 
 // apply stores one examined file and reports what happened: whether a job

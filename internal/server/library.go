@@ -37,6 +37,9 @@ type LibraryManager struct {
 	log     *slog.Logger
 	locks   *libraryLocks
 	watcher *Watcher
+	// scan kicks off an initial scan of a newly created library; set by
+	// the server wiring, nil-safe elsewhere.
+	scan func(libraryID string)
 }
 
 // NewLibraryManager builds the manager. watcher may be nil (watch state is
@@ -55,6 +58,9 @@ func NewLibraryManager(st store.Store, queue *Queue, events *EventBus, watcher *
 	}
 }
 
+// setScanHook wires the initial-scan trigger for newly created libraries.
+func (m *LibraryManager) setScanHook(scan func(libraryID string)) { m.scan = scan }
+
 // Create validates and stores a new library.
 func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Library, error) {
 	lib, err := m.build(nil, p)
@@ -69,6 +75,9 @@ func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Li
 
 	if m.watcher != nil {
 		m.watcher.Add(lib)
+	}
+	if m.scan != nil {
+		m.scan(lib.ID) // initial scan of the new library
 	}
 	return lib, nil
 }

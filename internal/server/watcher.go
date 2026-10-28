@@ -14,16 +14,13 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// Watch timing defaults (task 03): debounce events 2s, then wait until a
-// file's size has been stable for 5s before scanning (files may still be
-// mid-copy). When fsnotify cannot watch a path (network mounts), fall back
-// to a poll scan every 5 minutes.
+// Watch timing (task 03): debounce event bursts 2s before scanning; the
+// scanner itself waits for file stability before probing. When fsnotify
+// cannot watch a path (network mounts), fall back to a poll scan every 5
+// minutes.
 const (
-	DebounceDefault       = 2 * time.Second
-	StableDefault         = 5 * time.Second
-	WatchPollDefault      = 5 * time.Minute
-	stabilityPollInterval = 500 * time.Millisecond
-	stabilityMaxWait      = time.Hour // runaway copy guard
+	DebounceDefault  = 2 * time.Second
+	WatchPollDefault = 5 * time.Minute
 )
 
 // Watcher watches library folders with fsnotify and triggers scans. One
@@ -34,7 +31,6 @@ type Watcher struct {
 	log     *slog.Logger
 
 	debounce  time.Duration
-	stable    time.Duration
 	pollEvery time.Duration
 
 	mu      sync.Mutex
@@ -43,15 +39,12 @@ type Watcher struct {
 
 // NewWatcher builds a watcher. Durations of zero select the defaults
 // (shrink them in tests).
-func NewWatcher(scanner *Scanner, log *slog.Logger, debounce, stable, pollEvery time.Duration) *Watcher {
+func NewWatcher(scanner *Scanner, log *slog.Logger, debounce, pollEvery time.Duration) *Watcher {
 	if log == nil {
 		log = slog.Default()
 	}
 	if debounce == 0 {
 		debounce = DebounceDefault
-	}
-	if stable == 0 {
-		stable = StableDefault
 	}
 	if pollEvery == 0 {
 		pollEvery = WatchPollDefault
@@ -60,14 +53,16 @@ func NewWatcher(scanner *Scanner, log *slog.Logger, debounce, stable, pollEvery 
 		scanner:   scanner,
 		log:       log,
 		debounce:  debounce,
-		stable:    stable,
 		pollEvery: pollEvery,
 		watches:   map[string]context.CancelFunc{},
 	}
 }
 
 // Add starts (or restarts) the watch for a library. Libraries with
-// watch=false are removed instead.
+// watch=false are removed instead. The fsnotify setup happens synchronously
+// here, so once Add returns, events for the library path are guaranteed to
+// be seen — writes that land a microsecond later cannot fall into a setup
+// gap.
 func (w *Watcher) Add(lib *store.Library) {
 	if lib == nil {
 		return
@@ -77,11 +72,35 @@ func (w *Watcher) Add(lib *store.Library) {
 		return
 	}
 
+	fsw, err := fsnotify.NewWatcher()
+	if err != nil {
+		w.log.Warn("watcher: fsnotify unavailable, polling instead",
+			"library", lib.ID, "err", err)
+		ctx, cancel := context.WithCancel(context.Background())
+		w.mu.Lock()
+		w.watches[lib.ID] = cancel
+		w.mu.Unlock()
+		go w.pollLoop(ctx, lib.ID)
+		return
+	}
+	if err := w.addRecursive(fsw, lib.Path); err != nil {
+		// Network mounts and some exotic filesystems cannot be watched.
+		w.log.Warn("watcher: cannot watch path, polling instead",
+			"library", lib.ID, "path", lib.Path, "err", err)
+		_ = fsw.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		w.mu.Lock()
+		w.watches[lib.ID] = cancel
+		w.mu.Unlock()
+		go w.pollLoop(ctx, lib.ID)
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	w.mu.Lock()
 	w.watches[lib.ID] = cancel
 	w.mu.Unlock()
-	go w.run(ctx, lib.ID, lib.Path)
+	go w.run(ctx, lib.ID, fsw)
 }
 
 // Remove stops the watch for a library. Missing watches are fine.
@@ -95,6 +114,14 @@ func (w *Watcher) Remove(libraryID string) {
 	if ok {
 		cancel()
 	}
+}
+
+// Watching reports whether a watch is registered for the library.
+func (w *Watcher) Watching(libraryID string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, ok := w.watches[libraryID]
+	return ok
 }
 
 // Stop tears down every watch.
@@ -111,34 +138,15 @@ func (w *Watcher) Stop() {
 	}
 }
 
-// run is the event loop for one library watch.
-func (w *Watcher) run(ctx context.Context, libraryID, root string) {
-	fsw, err := fsnotify.NewWatcher()
-	if err != nil {
-		w.log.Warn("watcher: fsnotify unavailable, polling instead",
-			"library", libraryID, "err", err)
-		w.pollLoop(ctx, libraryID)
-		return
-	}
+// run is the event loop for one library watch. fsw arrives with the watch
+// already registered (set up synchronously by Add).
+func (w *Watcher) run(ctx context.Context, libraryID string, fsw *fsnotify.Watcher) {
 	defer func() { _ = fsw.Close() }()
 
-	pollOnly := false
-	if err := w.addRecursive(fsw, root); err != nil {
-		// Network mounts and some exotic filesystems cannot be watched.
-		w.log.Warn("watcher: cannot watch path, polling instead",
-			"library", libraryID, "path", root, "err", err)
-		pollOnly = true
-	}
-
 	var (
-		timer   *time.Timer
-		timerC  <-chan time.Time
-		pending map[string]struct{}
+		timer  *time.Timer
+		timerC <-chan time.Time
 	)
-	if pollOnly {
-		w.pollLoop(ctx, libraryID)
-		return
-	}
 
 	for {
 		select {
@@ -155,16 +163,24 @@ func (w *Watcher) run(ctx context.Context, libraryID, root string) {
 				continue
 			}
 			if st, err := os.Stat(ev.Name); err == nil && st.IsDir() && ev.Has(fsnotify.Create) {
-				// A directory appeared (mkdir -p): watch below it too.
+				// A directory appeared (mkdir -p): watch below it too and
+				// scan twice — once now, once after the stability window.
+				// Files written between the mkdir and the new watch's
+				// first event would otherwise be missed.
 				if err := w.addRecursive(fsw, ev.Name); err != nil {
 					w.log.Debug("watcher: add subdir", "path", ev.Name, "err", err)
 				}
+				w.scanner.ScanAsync(libraryID)
+				time.AfterFunc(w.debounce+StableDefault, func() {
+					if ctx.Err() == nil {
+						w.scanner.ScanAsync(libraryID)
+					}
+				})
 				continue // directory create alone is not a file change
 			}
-			if pending == nil {
-				pending = map[string]struct{}{}
-			}
-			pending[ev.Name] = struct{}{}
+			// Any file-level change restarts the debounce window; the
+			// scan fires once the folder has been quiet for a while. The
+			// scanner skips files that are still growing.
 			if timer != nil {
 				timer.Stop()
 			}
@@ -178,12 +194,9 @@ func (w *Watcher) run(ctx context.Context, libraryID, root string) {
 		case <-timerC:
 			timer = nil
 			timerC = nil
-			paths := make([]string, 0, len(pending))
-			for p := range pending {
-				paths = append(paths, p)
-			}
-			pending = nil
-			go w.stableThenScan(ctx, libraryID, paths)
+			// The scanner itself waits for file stability before probing,
+			// so a debounced burst goes straight to a scan.
+			w.scanner.ScanAsync(libraryID)
 		}
 	}
 }
@@ -201,46 +214,6 @@ func (w *Watcher) pollLoop(ctx context.Context, libraryID string) {
 			w.scanner.ScanAsync(libraryID)
 		}
 	}
-}
-
-// stableThenScan waits until every changed path has a stable size (5s of no
-// growth and an mtime older than the stability window), then scans. Files
-// that vanish while waiting are dropped (removed or renamed).
-func (w *Watcher) stableThenScan(ctx context.Context, libraryID string, paths []string) {
-	deadline := time.Now().Add(stabilityMaxWait)
-	sizes := map[string]int64{}
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			break // give up waiting; scan anyway
-		}
-		stable := true
-		for _, p := range paths {
-			st, err := os.Stat(p)
-			if err != nil {
-				continue // gone: rename/remove, nothing to wait for
-			}
-			if st.IsDir() {
-				continue
-			}
-			last, seen := sizes[p]
-			if !seen || last != st.Size() || time.Since(st.ModTime()) < w.stable {
-				sizes[p] = st.Size()
-				stable = false
-			}
-		}
-		if stable {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(stabilityPollInterval):
-		}
-	}
-	w.scanner.ScanAsync(libraryID)
 }
 
 // addRecursive watches root and every subdirectory (hidden dirs skipped,

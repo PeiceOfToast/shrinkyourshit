@@ -98,8 +98,12 @@ func (h *harness) start() {
 		Debounce:          200 * time.Millisecond,
 		StableWindow:      300 * time.Millisecond,
 		SweepInterval:     50 * time.Millisecond,
+		HeartbeatTimeout:  time.Hour, // background sweeper never interferes; tests sweep directly
 		WatchPollInterval: time.Hour, // poll fallback never fires in tests
 	})
+	// Most tests scan explicitly; a create-triggered scan would race them.
+	// The behavior gets its own dedicated test.
+	h.svc.Libraries().setScanHook(func(string) {})
 	h.svc.Start(context.Background())
 }
 
