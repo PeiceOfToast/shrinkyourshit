@@ -47,7 +47,6 @@ func TestWatcherSlowCopyQueuesOnlyAfterCompletion(t *testing.T) {
 		final[i] = byte(i % 251)
 	}
 	path := filepath.Join(h.root, "slow.mkv")
-	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -59,12 +58,7 @@ func TestWatcherSlowCopyQueuesOnlyAfterCompletion(t *testing.T) {
 		}
 		defer func() { _ = f.Close() }()
 		for off := 0; off < len(final); off += 1024 {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			if _, err := f.Write(final[off : off+1024]); err != nil {
+			if _, err := f.Write(final[off:min(off+1024, len(final))]); err != nil {
 				t.Error(err)
 				return
 			}
@@ -86,16 +80,22 @@ func TestWatcherSlowCopyQueuesOnlyAfterCompletion(t *testing.T) {
 	}
 	assert.Equal(t, 0, queuedCount(), "no job while the file is still copying")
 
-	close(stop)
 	wg.Wait()
 
-	// Debounce (200ms) + stability (300ms) + slack: the job must appear.
+	// Debounce (200ms) + stability (300ms) + slack: the job must appear,
+	// for the complete file and exactly once.
 	waitFor(t, 10*time.Second, "queued job after copy completed", func() bool {
-		return queuedCount() == 1
+		for _, f := range h.files(lib.ID) {
+			if f.Status == store.FileStatusQueued && f.Size == int64(len(final)) {
+				return true
+			}
+		}
+		return false
 	})
 	fs := h.files(lib.ID)
 	require.Len(t, fs, 1)
 	assert.Equal(t, store.FileStatusQueued, fs["slow.mkv"].Status)
+	require.Len(t, h.jobsOf(fs["slow.mkv"].ID), 1)
 }
 
 func TestWatcherNonMediaFilesDoNotQueue(t *testing.T) {

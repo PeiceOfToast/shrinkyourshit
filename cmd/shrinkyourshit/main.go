@@ -13,11 +13,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/api"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/config"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/webui"
 	"github.com/spf13/pflag"
 )
@@ -72,13 +75,30 @@ func serve(args []string, version string) error {
 		return fmt.Errorf("embedded web UI: %w", err)
 	}
 
-	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           api.New(version, static),
-		ReadHeaderTimeout: 10 * time.Second,
+	// The store lives in the data dir; tasks beyond 03 keep everything in
+	// it (settings, node key).
+	st, err := store.New(filepath.Join(cfg.DataDir, "shrinkyourshit.db"))
+	if err != nil {
+		return err
 	}
+	defer func() { _ = st.Close() }()
+
+	svc := server.New(server.Config{
+		Store:       st,
+		Log:         logger,
+		FFprobePath: cfg.FFprobePath(),
+	})
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	svc.Start(ctx)
+
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.Port),
+		Handler:           api.New(version, static, svc),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
@@ -100,7 +120,11 @@ func serve(args []string, version string) error {
 		logger.Info("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		svc.Stop()
+		return nil
 	}
 }
 

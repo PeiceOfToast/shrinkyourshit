@@ -63,14 +63,16 @@ var h264Needs = probe.MediaInfo{
 }
 
 // harness is a full server stack over a temp store and temp library dir,
-// with a fake prober so unit tests never touch ffmpeg.
+// with a fake prober so unit tests never touch ffmpeg. Integration tests
+// flip realProber to run ffprobe for real.
 type harness struct {
-	t      *testing.T
-	st     store.Store
-	dbPath string
-	root   string // library folder
-	svc    *Server
-	prober *fakeProber
+	t          *testing.T
+	st         store.Store
+	dbPath     string
+	root       string // library folder
+	svc        *Server
+	prober     *fakeProber
+	realProber bool
 }
 
 func newHarness(t *testing.T) *harness {
@@ -79,22 +81,31 @@ func newHarness(t *testing.T) *harness {
 		t:      t,
 		dbPath: filepath.Join(t.TempDir(), "data.db"),
 		root:   filepath.Join(t.TempDir(), "library"),
-		prober: newFakeProber(hevcSatisfied),
 	}
 	require.NoError(t, os.MkdirAll(h.root, 0o755))
-	h.start()
+	h.construct(nil)
 	t.Cleanup(h.stop)
 	return h
 }
 
-func (h *harness) start() {
+// construct builds store + server on the existing paths. Used by both the
+// initial build and restart (which reuses dbPath and root). A nil prober
+// with realProber=false selects the fake; realProber selects real ffprobe.
+func (h *harness) construct(prober Prober) {
 	h.t.Helper()
 	st, err := store.New(h.dbPath)
 	require.NoError(h.t, err)
 	h.st = st
+	if h.prober == nil {
+		h.prober = newFakeProber(hevcSatisfied)
+	}
+	useProber := prober
+	if useProber == nil && !h.realProber {
+		useProber = h.prober.Probe
+	}
 	h.svc = New(Config{
 		Store:             st,
-		Prober:            h.prober.Probe,
+		Prober:            useProber,
 		Debounce:          200 * time.Millisecond,
 		StableWindow:      300 * time.Millisecond,
 		SweepInterval:     50 * time.Millisecond,
@@ -123,7 +134,7 @@ func (h *harness) stop() {
 // persistence-under-restart scenario.
 func (h *harness) restart() {
 	h.stop()
-	h.start()
+	h.construct(nil)
 }
 
 // createLibrary writes a library rooted at h.root and runs an initial scan.
