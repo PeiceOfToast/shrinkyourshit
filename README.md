@@ -44,6 +44,32 @@ ShrinkYourShit is AGPL-3.0. Anyone can use, modify and host it, but nobody can c
 4. Install ffmpeg and ffprobe on the machine where agents run tests (integration tests need them; unit tests do not).
 5. Point OpenCode at the repo and give it the kickoff prompt from `AGENTS.md`.
 
+## Run with Docker
+
+```sh
+# Using docker directly (config in ./config, your library at /path/to/media):
+docker run -d --name shrinkyourshit \
+  -p 8765:8765 \
+  -v ./config:/config \
+  -v /path/to/your/media:/media \
+  -v ./scratch:/scratch \
+  ghcr.io/peiceoftoast/shrinkyourshit:latest
+```
+
+Or with compose:
+
+```sh
+cp docker/compose.example.yml docker-compose.yml
+# edit the /media path, then:
+docker compose up -d
+```
+
+The web UI is at http://localhost:8765. GPU passthrough (NVIDIA NVENC, Intel QSV/VAAPI) is in the commented blocks of the compose example. `PUID`/`PGID` are supported by the image entrypoint.
+
+## Building from source
+
+Requires Go 1.23+, Node 20, and make. `make build` compiles the web UI into the binary; `make test`, `make lint`, `make cross` (linux, windows, macOS — arm64 and amd64), `make docker`. For development, `make dev` runs Vite on :5173 with the Go API on :8765 behind a proxy.
+
 ## License
 
 AGPL-3.0. Funding: optional GitHub Sponsors. Built for the author's home lab first, then shared.
