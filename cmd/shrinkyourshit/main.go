@@ -18,7 +18,7 @@ import (
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/api"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/config"
-	"github.com/PeiceOfToast/shrinkyourshit/web"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/webui"
 	"github.com/spf13/pflag"
 )
 
@@ -67,7 +67,7 @@ func serve(args []string, version string) error {
 	logger := newLogger(cfg)
 	slog.SetDefault(logger)
 
-	static, err := fs.Sub(web.Dist, "dist")
+	static, err := fs.Sub(webui.Dist, "dist")
 	if err != nil {
 		return fmt.Errorf("embedded web UI: %w", err)
 	}

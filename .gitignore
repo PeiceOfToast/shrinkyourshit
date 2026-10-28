@@ -14,9 +14,11 @@ node_modules/
 .pnpm-store/
 *.tsbuildinfo
 web/coverage/
-# web/dist is Vite build output; `make` creates a placeholder index.html in a
-# fresh clone so the Go embed works before the first web build.
+# web/dist and internal/webui/dist are build output. `make placeholder`
+# creates a placeholder index.html in a fresh clone so the Go embed works
+# before the first web build.
 web/dist/
+internal/webui/dist/
 
 # Local config and secrets
 .env
