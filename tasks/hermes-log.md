@@ -24,3 +24,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-28T23:31:40Z task 04: PM verification on the VM passed (STATUS done, 5/5 acceptance boxes ticked, make test green incl. go test ./... and vitest 5 tests, make lint 0 issues plus prettier clean, DECISIONS.md unchanged vs origin/main, PR head matches branch head)
 - 2026-10-28T23:31:45Z ci: gh run list still shows failure in 5s (GitHub billing block); CI requirement stays suspended per Michael's standing exception of 2026-10-28
 - 2026-10-28T23:31:50Z task 04: PR #4 merged with squash 19aa0de, branch task/04-encoder-detection-fallback deleted on the remote, main pulled on the VM fast forward 6ec5db0..19aa0de
+- 2026-10-28T23:32:10Z task 04: session ses_e7b331cffffeG9772BenZseatR was still polling CI after the merge; interrupted (work was already complete and merged, CI can never pass in the billing block)
