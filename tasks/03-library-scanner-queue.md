@@ -20,11 +20,11 @@ API.md (conventions, task 03 endpoints), ARCHITECTURE.md (data model, job lifecy
 Running FFmpeg, UI beyond what is needed to test, remote workers, auth.
 
 ## Acceptance
-- [ ] Integration test: library with 3 fixture files (1 needs work, 2 satisfied) queues exactly 1 job; `GET /libraries/{id}/files?status=satisfied` returns 2.
-- [ ] Dropping a new file into a watched folder (copied slowly in the test) queues a job only after the copy completes.
-- [ ] Restarting the server does not duplicate or lose queued jobs.
-- [ ] 50 goroutines calling `Claim` against 10 queued jobs produce exactly 10 claims, no duplicates.
-- [ ] Stale `running` job with an old heartbeat returns to `queued` with `attempt` incremented; after 3 attempts it is `failed`.
-- [ ] Deleting a library removes its DB records and never touches files on disk (test asserts the fixture files still exist).
-- [ ] SSE client receives `job.updated` when a job is queued and `file.updated` when a file is probed.
-- [ ] `PUT /libraries/{id}` with a changed Target re-evaluates and queues only files that now need work.
+- [x] Integration test: library with 3 fixture files (1 needs work, 2 satisfied) queues exactly 1 job; `GET /libraries/{id}/files?status=satisfied` returns 2.
+- [x] Dropping a new file into a watched folder (copied slowly in the test) queues a job only after the copy completes.
+- [x] Restarting the server does not duplicate or lose queued jobs.
+- [x] 50 goroutines calling `Claim` against 10 queued jobs produce exactly 10 claims, no duplicates.
+- [x] Stale `running` job with an old heartbeat returns to `queued` with `attempt` incremented; after 3 attempts it is `failed`.
+- [x] Deleting a library removes its DB records and never touches files on disk (test asserts the fixture files still exist).
+- [x] SSE client receives `job.updated` when a job is queued and `file.updated` when a file is probed.
+- [x] `PUT /libraries/{id}` with a changed Target re-evaluates and queues only files that now need work.
