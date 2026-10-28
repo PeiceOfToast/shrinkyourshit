@@ -7,7 +7,7 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 | Item | Choice |
 |------|--------|
 | Language | Go 1.23 or newer |
-| Module path | `github.com/PeiceOfToast/shrinkyourshit` (owner replaces `OWNER` before task 01; agents read it from `go.mod` afterwards) |
+| Module path | `github.com/PeiceOfToast/shrinkyourshit` (set by the owner; agents read it from `go.mod`) |
 | HTTP | Standard library `net/http` with Go 1.22+ method routing (`mux.HandleFunc("GET /api/v1/...")`). No router framework. |
 | JSON | `encoding/json` |
 | Database | SQLite via `modernc.org/sqlite` (pure Go). All access through the `store.Store` interface. |
