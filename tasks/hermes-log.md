@@ -21,3 +21,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-28T22:33:00Z task 03: PR #3 merged with squash 63968dc, branch task/03-library-scanner-queue deleted on the remote, main pulled on the VM fast forward bdf409a..63968dc
 - 2026-10-28T22:46:14Z task 04: started OpenCode session ses_e7b4ec992ffeIDzglPNLJBU4yK (encoders, quality table, command builder, GPU to CPU fallback; deps 02 done)
 - 2026-10-28T23:16:25Z task 04: previous session ses_e7b4ec992ffeIDzglPNLJBU4yK ended after environment probes with no code (internal/encoders has only doc.go, no branch, no PR). Retry attempt 1 of 2: started session ses_e7b331cffffeG9772BenZseatR with an explicit no-work diagnosis kickoff
+- 2026-10-28T23:31:40Z task 04: PM verification on the VM passed (STATUS done, 5/5 acceptance boxes ticked, make test green incl. go test ./... and vitest 5 tests, make lint 0 issues plus prettier clean, DECISIONS.md unchanged vs origin/main, PR head matches branch head)
+- 2026-10-28T23:31:45Z ci: gh run list still shows failure in 5s (GitHub billing block); CI requirement stays suspended per Michael's standing exception of 2026-10-28
+- 2026-10-28T23:31:50Z task 04: PR #4 merged with squash 19aa0de, branch task/04-encoder-detection-fallback deleted on the remote, main pulled on the VM fast forward 6ec5db0..19aa0de
