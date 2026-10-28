@@ -77,3 +77,40 @@ jobs:
           curl -fsS http://localhost:8765/api/v1/health | grep -o '"status":"ok"'
           curl -fsS http://localhost:8765/ | grep -o '<title>ShrinkYourShit</title>'
           docker rm -f "$container" > /dev/null
+
+  # Posts the job results as a PR comment so agents and owners can read CI
+  # state without the Actions/Checks API scope. The comment is best-effort;
+  # the run summary is the reliable copy.
+  report:
+    needs: [go, web, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Summarize
+        run: |
+          {
+            echo "## CI report"
+            echo "- go: ${{ needs.go.result }}"
+            echo "- web: ${{ needs.web.result }}"
+            echo "- docker: ${{ needs.docker.result }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment on the PR
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!context.issue.number) return
+            const body = [
+              'CI report:',
+              `- go: **${{ needs.go.result }}**`,
+              `- web: **${{ needs.web.result }}**`,
+              `- docker: **${{ needs.docker.result }}**`,
+            ].join('\n')
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            })
