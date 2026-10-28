@@ -22,8 +22,8 @@ ARCHITECTURE.md (hardware and encoders, Target schema, quality step table), DECI
 Scratch dirs, copying, verification, job lifecycle (task 05). AMD and Apple encoders.
 
 ## Acceptance
-- [ ] Golden-file unit tests for `BuildArgs` for each encoder and each quality step, plus `copy`, `compact` audio, subtitle removal, mp4 output, and `extract_removed`.
-- [ ] Detection unit tests with a fake ffmpeg script covering: no GPU, NVENC only, QSV only, both; `Registry` order is correct in each case.
-- [ ] Fallback unit test: fake nvenc fails, cpu succeeds, `Result` reports `EncoderUsed="cpu"` and one fallback reason naming nvenc and the exit error.
-- [ ] Integration test on a CPU-only machine: encode a 3-second `testsrc` fixture from h264 to hevc with step 3 and ffprobe confirms hevc video, correct track count.
-- [ ] Capability JSON matches the node capabilities shape in ARCHITECTURE.md.
+- [x] Golden-file unit tests for `BuildArgs` for each encoder and each quality step, plus `copy`, `compact` audio, subtitle removal, mp4 output, and `extract_removed`.
+- [x] Detection unit tests with a fake ffmpeg script covering: no GPU, NVENC only, QSV only, both; `Registry` order is correct in each case.
+- [x] Fallback unit test: fake nvenc fails, cpu succeeds, `Result` reports `EncoderUsed="cpu"` and one fallback reason naming nvenc and the exit error.
+- [x] Integration test on a CPU-only machine: encode a 3-second `testsrc` fixture from h264 to hevc with step 3 and ffprobe confirms hevc video, correct track count.
+- [x] Capability JSON matches the node capabilities shape in ARCHITECTURE.md.
