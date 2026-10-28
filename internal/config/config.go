@@ -128,12 +128,16 @@ func Load(opts Options) (Config, error) {
 	src := sources{flags: flags, env: env}
 
 	// Locate the config file using the data dir before the file is applied:
-	// flag > env > default.
+	// flag > env > default. Expand ~ first so a home-relative data dir still
+	// finds its config.yaml.
 	dataDir := dataDirDefault()
 	if flags.Changed(flagDataDir) {
 		dataDir, _ = flags.GetString(flagDataDir)
 	} else if v, ok := env[envDataDir]; ok && v != "" {
 		dataDir = v
+	}
+	if expanded, expandErr := expandHome(dataDir); expandErr == nil {
+		dataDir = expanded
 	}
 	if err := readConfigFile(opts.fileLocation(dataDir), &src.file); err != nil {
 		return Config{}, err

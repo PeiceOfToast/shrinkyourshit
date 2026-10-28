@@ -146,6 +146,21 @@ func TestFlagOverridesEnvAndFile(t *testing.T) {
 	assert.Equal(t, "file-node", cfg.NodeName)
 }
 
+func TestHomeRelativeDataDirFindsConfigFile(t *testing.T) {
+	home := testHome(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, "shrink-config"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "shrink-config", "config.yaml"),
+		[]byte("port: 7000\n"), 0o644))
+
+	env := []string{"SHRINK_DATA_DIR=~/shrink-config"}
+
+	cfg, err := Load(Options{Environ: env})
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(home, "shrink-config"), cfg.DataDir)
+	// The config file inside the home-relative data dir must be found.
+	assert.Equal(t, 7000, cfg.Port)
+}
+
 func TestFileDataDirWinsOverDefault(t *testing.T) {
 	testHome(t)
 	// The file lives in the default data dir and moves the data dir.
