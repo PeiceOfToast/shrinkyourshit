@@ -1,0 +1,42 @@
+# Binaries and build output
+/shrinkyourshit
+/bin/
+/dist/
+*.exe
+
+# Go
+*.test
+*.out
+vendor/
+
+# Node / TypeScript (web UI)
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Local config and secrets
+.env
+.env.*
+*.local.yaml
+*.local.yml
+
+# Media and test artifacts (never commit media, generate it with ffmpeg)
+*.mkv
+*.mp4
+*.mov
+*.avi
+*.webm
+*.gguf
+/tmp/
+/testdata/generated/
+
+# Database files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
