@@ -13,6 +13,10 @@ vendor/
 node_modules/
 .pnpm-store/
 *.tsbuildinfo
+web/coverage/
+# web/dist is built by Vite; only the placeholder index.html is committed.
+web/dist/*
+!web/dist/index.html
 
 # Local config and secrets
 .env
