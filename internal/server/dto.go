@@ -143,6 +143,40 @@ func NewJobDTO(j *store.Job) JobDTO {
 	}
 }
 
+// NodeDTO is the JSON shape of a node. Capabilities carries the stored
+// JSON verbatim (null when empty); KeyHash is never exposed. Task 08 adds
+// the nodes API around this shape.
+type NodeDTO struct {
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	OS              string          `json:"os"`
+	Arch            string          `json:"arch"`
+	Capabilities    json.RawMessage `json:"capabilities"`
+	AccessMode      string          `json:"access_mode"`
+	PathMappings    json.RawMessage `json:"path_mappings"`
+	Status          string          `json:"status"`
+	Enabled         bool            `json:"enabled"`
+	LastHeartbeatAt string          `json:"last_heartbeat_at,omitempty"`
+	CreatedAt       string          `json:"created_at"`
+}
+
+// NewNodeDTO maps a stored node to its JSON shape.
+func NewNodeDTO(n *store.Node) NodeDTO {
+	return NodeDTO{
+		ID:              n.ID,
+		Name:            n.Name,
+		OS:              n.OS,
+		Arch:            n.Arch,
+		Capabilities:    rawOrEmpty(n.Capabilities),
+		AccessMode:      n.AccessMode,
+		PathMappings:    rawOrEmpty(n.PathMappings),
+		Status:          n.Status,
+		Enabled:         n.Enabled,
+		LastHeartbeatAt: rfc3339(n.LastHeartbeatAt),
+		CreatedAt:       rfc3339(n.CreatedAt),
+	}
+}
+
 // rfc3339 formats a time for JSON output; zero times become empty strings
 // (omitted by omitempty where it matters).
 func rfc3339(t time.Time) string {

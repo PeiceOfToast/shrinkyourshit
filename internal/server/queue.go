@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,7 +22,13 @@ var (
 	ErrJobNotRetryable = errors.New("queue: job is not retryable")
 	// ErrFileSatisfied: retry of a job whose file no longer needs work.
 	ErrFileSatisfied = errors.New("queue: file no longer needs work")
+	// ErrJobNotClaimed: a worker touching a job another node owns.
+	ErrJobNotClaimed = errors.New("queue: job is not claimed by this node")
 )
+
+// MaxLogTail is the size cap of the ffmpeg stderr tail kept on the job
+// record (ARCHITECTURE.md: log capped at 64KiB tail).
+const MaxLogTail = 64 << 10
 
 // MaxJobAttempts is the attempt cap (ARCHITECTURE.md job lifecycle): a job
 // that times out this many times is failed instead of requeued.
@@ -32,14 +39,16 @@ const MaxJobAttempts = 3
 const HeartbeatTimeoutDefault = 120 * time.Second
 
 // Queue owns job state transitions on top of the store: queueing from the
-// scanner and library updates, claiming for workers (task 05 wires the API),
-// admin cancel/retry, and the heartbeat-timeout sweep. Every transition
-// keeps the file status in step and publishes events.
+// scanner and library updates, claiming and worker updates (progress,
+// complete, fail), admin cancel/retry, and the heartbeat-timeout sweep.
+// Every transition keeps the file status in step and publishes events.
 type Queue struct {
-	st      store.Store
-	events  *EventBus
-	log     *slog.Logger
-	attempt int
+	st        store.Store
+	events    *EventBus
+	log       *slog.Logger
+	attempt   int
+	inspect   ResultInspector
+	ffprobe   string
 }
 
 // NewQueue builds a Queue. events may be nil (no publishing); log may be nil.
@@ -48,6 +57,17 @@ func NewQueue(st store.Store, events *EventBus, log *slog.Logger) *Queue {
 		log = slog.Default()
 	}
 	return &Queue{st: st, events: events, log: log, attempt: MaxJobAttempts}
+}
+
+// SetInspector wires output inspection used by Complete (fingerprint + size
+// + probe of the produced file). Nil selects the default (stat + fingerprint
+// + ffprobe with the given ffprobePath).
+func (q *Queue) SetInspector(inspect ResultInspector, ffprobePath string) {
+	if inspect == nil {
+		inspect = defaultInspector
+	}
+	q.inspect = inspect
+	q.ffprobe = ffprobePath
 }
 
 // QueueJob creates a queued job for a file that needs work and moves the
@@ -109,6 +129,256 @@ func (q *Queue) Claim(ctx context.Context, nodeID string) (*store.Job, error) {
 	q.log.Debug("job claimed", "job", job.ID, "node", nodeID)
 	q.publish(EventJobUpdated, NewJobDTO(job))
 	return job, nil
+}
+
+// ProgressParams are the fields a worker reports while running a job.
+type ProgressParams struct {
+	Percent    float64
+	Speed      float64
+	ETASeconds int64
+	Encoder    string
+}
+
+// Progress records a running worker's progress. The first report moves the
+// job from claimed to running and stamps started_at; every report refreshes
+// the job heartbeat, so the sweeper only requeues genuinely dead workers.
+// Only the claiming node may report.
+func (q *Queue) Progress(ctx context.Context, jobID, nodeID string, p ProgressParams) (*store.Job, error) {
+	job, err := q.ownedActiveJob(ctx, jobID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	job.Percent = clampPercent(p.Percent)
+	job.Speed = p.Speed
+	job.ETASeconds = max(p.ETASeconds, 0)
+	if p.Encoder != "" {
+		job.EncoderUsed = p.Encoder
+	}
+	now := time.Now().UTC()
+	job.HeartbeatAt = now
+	if job.Status == store.JobStatusClaimed {
+		job.Status = store.JobStatusRunning
+		job.StartedAt = now
+	}
+	if err := q.st.UpdateJob(ctx, job); err != nil {
+		return nil, fmt.Errorf("queue: progress job: %w", err)
+	}
+
+	q.publish(EventJobUpdated, NewJobDTO(job))
+	return job, nil
+}
+
+// CompleteParams are the fields a worker reports on success. OutputPath is
+// the final path of the produced file in the library (empty with a
+// SkippedReason when the result policy kept the original). SkippedReason
+// lands on the file's satisfied_reason for the UI.
+type CompleteParams struct {
+	OutputPath      string
+	BytesAfter      int64
+	Encoder         string
+	FallbackReasons []string
+	SkippedReason   string
+	LogTail         string
+}
+
+// Complete finishes a claimed/running job owned by nodeID: the job becomes
+// done and the file reflects the result policy outcome:
+//
+//   - output applied (replace / keep_both): the file is satisfied. When the
+//     file on disk changed identity (replacement with a new extension), the
+//     row's path, size, fingerprint and probe are refreshed from the output;
+//     for keep_both the untouched original row keeps its fingerprint.
+//   - skipped (replace_if_smaller with a not-smaller output): the file is
+//     done with bytes_saved 0 and the skip reason.
+//
+// The worker applies the policy to the filesystem before reporting, so this
+// only records what is already true on disk.
+func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompleteParams) (*store.Job, error) {
+	job, err := q.ownedActiveJob(ctx, jobID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	job.Status = store.JobStatusDone
+	job.BytesAfter = p.BytesAfter
+	job.EncoderUsed = p.Encoder
+	if raw, err := json.Marshal(p.FallbackReasons); err == nil {
+		job.FallbackReasons = string(raw)
+	}
+	job.Log = capLogTail(p.LogTail)
+	job.Percent = 100
+	job.ETASeconds = 0
+	job.FinishedAt = now
+	job.HeartbeatAt = now
+	if err := q.st.UpdateJob(ctx, job); err != nil {
+		return nil, fmt.Errorf("queue: complete job: %w", err)
+	}
+
+	f, err := q.st.GetFile(ctx, job.FileID)
+	if err != nil {
+		return job, fmt.Errorf("queue: complete file lookup: %w", err)
+	}
+	f.LastJobID = job.ID
+	f.BytesSaved = f.Size - p.BytesAfter
+
+	if p.SkippedReason != "" {
+		// The original was kept: nothing on disk changed, so the
+		// fingerprint and probe stay valid and the next scan skips it.
+		f.BytesSaved = 0
+		f.Status = store.FileStatusDone
+		f.SatisfiedReason = p.SkippedReason
+		if err := q.st.UpdateFile(ctx, f); err != nil {
+			return job, fmt.Errorf("queue: complete skipped file: %w", err)
+		}
+		q.finishEvents(job, f)
+		return job, nil
+	}
+
+	// The output is the file's new identity. Drop any row a racing scan
+	// created for the new path first, so (library_id, path) stays unique.
+	if err := q.dropDuplicateFiles(ctx, f.LibraryID, p.OutputPath, f.ID); err != nil {
+		q.log.Error("queue: complete dedupe", "file", f.ID, "err", err)
+	}
+
+	res, inspectErr := q.inspect(ctx, q.ffprobe, p.OutputPath)
+	if inspectErr != nil {
+		// The output could not be inspected (deleted mid-job, or a future
+		// transfer-mode node). Record the failure on the file; the next
+		// scan re-evaluates from disk.
+		q.log.Error("queue: complete inspect", "path", p.OutputPath, "err", inspectErr)
+		f.Status = store.FileStatusFailed
+		f.SatisfiedReason = "output could not be verified: " + inspectErr.Error()
+		if err := q.st.UpdateFile(ctx, f); err != nil {
+			return job, fmt.Errorf("queue: complete failed file: %w", err)
+		}
+		q.finishEvents(job, f)
+		return job, nil
+	}
+
+	f.Path = p.OutputPath
+	f.Size = res.Size
+	f.Mtime = res.Mtime
+	f.Fingerprint = res.Fingerprint
+	if raw, err := json.Marshal(res.Info); err == nil {
+		f.ProbeJSON = string(raw)
+	}
+	f.Status = store.FileStatusSatisfied
+	f.SatisfiedReason = ""
+	if err := q.st.UpdateFile(ctx, f); err != nil {
+		return job, fmt.Errorf("queue: complete file: %w", err)
+	}
+
+	q.log.Info("job completed", "job", job.ID, "file", f.Path,
+		"bytes_saved", f.BytesSaved, "encoder", job.EncoderUsed)
+	q.finishEvents(job, f)
+	return job, nil
+}
+
+// FailParams are the fields a worker reports on failure.
+type FailParams struct {
+	Error   string
+	LogTail string
+}
+
+// Fail marks a claimed/running job owned by nodeID as failed with its last
+// ffmpeg stderr tail. A worker-reported failure is definitive (attempts
+// only count heartbeat timeouts); the file goes to failed so a rescan or a
+// manual retry picks it back up.
+func (q *Queue) Fail(ctx context.Context, jobID, nodeID string, p FailParams) (*store.Job, error) {
+	job, err := q.ownedActiveJob(ctx, jobID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	job.Status = store.JobStatusFailed
+	job.Error = p.Error
+	job.Log = capLogTail(p.LogTail)
+	job.FinishedAt = now
+	job.HeartbeatAt = now
+	if err := q.st.UpdateJob(ctx, job); err != nil {
+		return nil, fmt.Errorf("queue: fail job: %w", err)
+	}
+
+	if f, ferr := q.st.GetFile(ctx, job.FileID); ferr == nil {
+		if f.Status == store.FileStatusProcessing {
+			f.Status = store.FileStatusFailed
+			if uerr := q.st.UpdateFile(ctx, f); uerr != nil {
+				q.log.Error("queue: fail file update", "file", f.ID, "err", uerr)
+			} else {
+				q.publish(EventFileUpdated, NewFileDTO(f))
+			}
+		}
+	} else if !errors.Is(ferr, store.ErrNotFound) {
+		q.log.Error("queue: fail file lookup", "job", job.ID, "err", ferr)
+	}
+
+	q.log.Warn("job failed", "job", job.ID, "error", p.Error)
+	q.publish(EventJobUpdated, NewJobDTO(job))
+	return job, nil
+}
+
+// ownedActiveJob returns the job when it is claimed/running and owned by
+// nodeID; otherwise the caller gets a typed error to map to HTTP.
+func (q *Queue) ownedActiveJob(ctx context.Context, jobID, nodeID string) (*store.Job, error) {
+	job, err := q.st.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	switch job.Status {
+	case store.JobStatusClaimed, store.JobStatusRunning:
+	default:
+		return nil, ErrJobNotActive
+	}
+	if nodeID != "" && job.NodeID != nodeID {
+		return nil, ErrJobNotClaimed
+	}
+	return job, nil
+}
+
+// dropDuplicateFiles removes file rows of a library that already use path,
+// except keepID (a replacement may share its path with a row a racing scan
+// created while the file row still had the old path).
+func (q *Queue) dropDuplicateFiles(ctx context.Context, libraryID, path, keepID string) error {
+	files, err := q.st.ListFiles(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if f.Path == path && f.ID != keepID {
+			if err := q.st.DeleteFile(ctx, f.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// finishEvents publishes the job and file after a completion.
+func (q *Queue) finishEvents(job *store.Job, f *store.File) {
+	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventFileUpdated, NewFileDTO(f))
+}
+
+// capLogTail keeps only the last MaxLogTail bytes of a log.
+func capLogTail(s string) string {
+	if len(s) <= MaxLogTail {
+		return s
+	}
+	return s[len(s)-MaxLogTail:]
+}
+
+// clampPercent bounds a progress percentage to 0..100.
+func clampPercent(p float64) float64 {
+	if p < 0 {
+		return 0
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
 }
 
 // Cancel moves an active job (queued/claimed/running) to cancelled and

@@ -6,9 +6,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
@@ -34,10 +36,49 @@ type Config struct {
 	StableWindow time.Duration
 	// WatchPollInterval is the fallback poll period; default 5m.
 	WatchPollInterval time.Duration
+	// Inspect overrides output inspection on job completion (tests):
+	// fingerprint, size and probe of the produced file. Nil uses stat +
+	// fingerprint + ffprobe (the server reads the library directly in
+	// shared mode; transfer mode arrives with task 09).
+	Inspect ResultInspector
 }
 
+// ResultInfo is what job completion records about the produced file.
+type ResultInfo struct {
+	Fingerprint string
+	Size        int64
+	Mtime       int64 // unix seconds
+	Info        probe.MediaInfo
+}
+
+// ResultInspector inspects one output file (see Config.Inspect).
+type ResultInspector func(ctx context.Context, ffprobePath, path string) (ResultInfo, error)
+
+// defaultInspector stats, fingerprints and probes the file with ffprobe.
+func defaultInspector(ctx context.Context, ffprobePath, path string) (ResultInfo, error) {
+	info, err := probe.Probe(ctx, ffprobePath, path)
+	if err != nil {
+		return ResultInfo{}, err
+	}
+	fp, err := probe.Fingerprint(path)
+	if err != nil {
+		return ResultInfo{}, err
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return ResultInfo{}, err
+	}
+	return ResultInfo{
+		Fingerprint: fp,
+		Size:        st.Size(),
+		Mtime:       st.ModTime().Unix(),
+		Info:        info,
+	}, nil
+}
+
+
 // Server holds the server-side services and their lifecycle: event bus,
-// queue, scanner, watcher, scheduler and library manager.
+// queue, scanner, watcher, scheduler, library manager and node registry.
 type Server struct {
 	cfg       Config
 	log       *slog.Logger
@@ -47,6 +88,7 @@ type Server struct {
 	watcher   *Watcher
 	scheduler *Scheduler
 	libs      *LibraryManager
+	nodes     *NodeRegistry
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -72,12 +114,17 @@ func New(cfg Config) *Server {
 	scheduler := NewScheduler(cfg.Store, scanner, cfg.Log, 0)
 	libs := NewLibraryManager(cfg.Store, queue, events, watcher, cfg.Log)
 	libs.SetScanHook(scanner.ScanAsync)
+	nodes := NewNodeRegistry(cfg.Store, events, cfg.Log)
+	queue.SetInspector(cfg.Inspect, cfg.FFprobePath)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
-		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs}
+		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
 func (s *Server) Events() *EventBus { return s.events }
+
+// Nodes exposes the node registry (worker auth, heartbeat, task 08 pairing).
+func (s *Server) Nodes() *NodeRegistry { return s.nodes }
 
 // Libraries exposes the library manager (library API endpoints).
 func (s *Server) Libraries() *LibraryManager { return s.libs }

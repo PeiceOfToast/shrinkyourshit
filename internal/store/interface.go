@@ -60,6 +60,9 @@ type Store interface {
 	// Nodes.
 	CreateNode(ctx context.Context, n *Node) error
 	GetNode(ctx context.Context, id string) (*Node, error)
+	// GetNodeByKeyHash looks a node up by the SHA-256 hex hash of its raw
+	// key; raw keys are never stored.
+	GetNodeByKeyHash(ctx context.Context, keyHash string) (*Node, error)
 	ListNodes(ctx context.Context) ([]*Node, error)
 	UpdateNode(ctx context.Context, n *Node) error
 	DeleteNode(ctx context.Context, id string) error

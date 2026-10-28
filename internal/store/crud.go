@@ -396,6 +396,24 @@ func (s *SQLite) GetNode(ctx context.Context, id string) (*Node, error) {
 	return n, nil
 }
 
+// GetNodeByKeyHash returns one node by the hash of its raw key, or
+// ErrNotFound.
+func (s *SQLite) GetNodeByKeyHash(ctx context.Context, keyHash string) (*Node, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+nodeColumns+` FROM nodes WHERE key_hash = ?`, keyHash)
+	if err != nil {
+		return nil, fmt.Errorf("store: query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return nil, ErrNotFound
+	}
+	n, err := scanNode(rows)
+	if err != nil {
+		return nil, fmt.Errorf("store: scan node: %w", err)
+	}
+	return n, nil
+}
+
 // ListNodes returns all nodes, oldest first.
 func (s *SQLite) ListNodes(ctx context.Context) ([]*Node, error) {
 	return queryAll(ctx, s.db, `SELECT `+nodeColumns+` FROM nodes ORDER BY created_at`, scanNode)
