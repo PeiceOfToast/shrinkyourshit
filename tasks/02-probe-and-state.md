@@ -17,8 +17,8 @@ ARCHITECTURE.md (data model, Target schema, satisfied rule), STACK.md (database,
 Scanning folders, watching, queueing, encoding, HTTP.
 
 ## Acceptance
-- [ ] Integration tests generate fixtures with ffmpeg (h264+aac+2 audio langs+1 srt in mkv; hevc+aac in mkv; h264 in mp4) and check: h264 vs hevc Target needs work with reason "video is h264, target is hevc"; hevc vs hevc Target is satisfied; hevc with `subtitles.mode=remove` and a subtitle track needs work; hevc with `audio.mode=keep_best` and 2 tracks needs work; same file with 1 track is satisfied; mp4 vs `container=mkv` needs work.
-- [ ] Unit tests (no ffmpeg) cover `Evaluate` and the selection helpers with hand-built `MediaInfo` values, including `keep_preferred` with no matching language keeping all.
-- [ ] Fingerprint is stable across runs and changes when the file content changes.
-- [ ] Store tests run against a temp SQLite file: migrations are idempotent (apply twice), CRUD round-trips for every table, enum validation rejects bad values.
-- [ ] `Target` JSON round-trips and rejects unknown enum values.
+- [x] Integration tests generate fixtures with ffmpeg (h264+aac+2 audio langs+1 srt in mkv; hevc+aac in mkv; h264 in mp4) and check: h264 vs hevc Target needs work with reason "video is h264, target is hevc"; hevc vs hevc Target is satisfied; hevc with `subtitles.mode=remove` and a subtitle track needs work; hevc with `audio.mode=keep_best` and 2 tracks needs work; same file with 1 track is satisfied; mp4 vs `container=mkv` needs work.
+- [x] Unit tests (no ffmpeg) cover `Evaluate` and the selection helpers with hand-built `MediaInfo` values, including `keep_preferred` with no matching language keeping all.
+- [x] Fingerprint is stable across runs and changes when the file content changes.
+- [x] Store tests run against a temp SQLite file: migrations are idempotent (apply twice), CRUD round-trips for every table, enum validation rejects bad values.
+- [x] `Target` JSON round-trips and rejects unknown enum values.
