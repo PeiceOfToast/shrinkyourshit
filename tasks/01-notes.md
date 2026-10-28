@@ -33,6 +33,8 @@
 
 ## Summary (filled at the end)
 
-- Built: …
-- Skipped: …
-- Next task should know: …
+- **Built:** Go module + all nine `internal/*` packages with doc.go; `internal/config` (flag > env > file > default, unit-tested, incl. `~` expansion); `GET /api/v1/health` + embedded-UI serving with index.html fallback and JSON 404s; CLI `serve`/`worker`/`version`; web app (Vite 5, React 18, TS strict, Tailwind 3, router, react-query, `api.ts`, Vitest+RTL tests, ESLint+Prettier); Makefile (build/dev/test/test-integration/lint/docker/cross); SPDX check script; multi-stage Dockerfile + entrypoint + compose example; ci.yml and release.yml; README Docker section.
+- **Skipped (out of scope):** database, real features, auth, discovery, worker logic. No ffmpeg integration tests — nothing in task 01 needs ffmpeg; the target and CI step exist for tasks 02+.
+- **Environment:** Docker not installed → docker acceptance is covered by the CI `docker` job (build, page, ffmpeg NVENC/QSV flag checks). GitHub Actions is blocked at the account level (billing), so no green run could be observed; the ci.yml `report` job posts results as a PR comment for later runs. golangci-lint upgraded from the preinstalled v1.64.8 to v2.15.0 (the old build cannot parse Go 1.27 export data); CI pins v2.15.0 to match.
+- **Next task should know:** `web/` carries a stub `go.mod` — keep it, it stops Go tooling from walking `web/node_modules`; the UI is embedded from `internal/webui/dist`, refreshed by `make web` (and `make placeholder` creates a stub in fresh clones); version is injected via `-X main.version=`; a `codex review` was requested on PR #1 — check for late findings before merging.
+- **Codex findings:** P1 (Dockerfile copied the built UI to the wrong embed path) was fixed in f9bde2b; P2 (`~` in `SHRINK_DATA_DIR`/`--data-dir` not expanded before the config-file lookup) fixed with a regression test in 5f63d90.
