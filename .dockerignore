@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Keeps the Docker build context small and correct. The built web UI is
+# produced inside the image (web stage) and copied into internal/webui/dist.
+.git
+bin/
+dist/
+tasks/
+*.md
+web/node_modules
+web/coverage
+web/dist
+internal/webui/dist

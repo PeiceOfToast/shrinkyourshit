@@ -23,7 +23,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /src/web/dist ./web/dist
+COPY --from=web /src/web/dist ./internal/webui/dist
 ARG VERSION=v0.0.0
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
