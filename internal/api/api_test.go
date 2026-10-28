@@ -22,7 +22,7 @@ func testStatic() fstest.MapFS {
 }
 
 func TestHealth(t *testing.T) {
-	h := New("v1.2.3", testStatic())
+	h := New("v1.2.3", testStatic(), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
 
@@ -39,7 +39,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestServesIndexAtRoot(t *testing.T) {
-	h := New("v0.0.0", testStatic())
+	h := New("v0.0.0", testStatic(), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
@@ -50,7 +50,7 @@ func TestServesIndexAtRoot(t *testing.T) {
 }
 
 func TestUnknownPathFallsBackToIndex(t *testing.T) {
-	h := New("v0.0.0", testStatic())
+	h := New("v0.0.0", testStatic(), nil)
 	for _, p := range []string{"/libraries", "/settings/display", "/deep/nested/path"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
@@ -62,7 +62,7 @@ func TestUnknownPathFallsBackToIndex(t *testing.T) {
 }
 
 func TestServesAsset(t *testing.T) {
-	h := New("v0.0.0", testStatic())
+	h := New("v0.0.0", testStatic(), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
 
@@ -73,7 +73,7 @@ func TestServesAsset(t *testing.T) {
 }
 
 func TestUnknownAPIPathReturnsJSON404(t *testing.T) {
-	h := New("v0.0.0", testStatic())
+	h := New("v0.0.0", testStatic(), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil))
 
@@ -90,14 +90,14 @@ func TestUnknownAPIPathReturnsJSON404(t *testing.T) {
 }
 
 func TestNonGetRootIs405(t *testing.T) {
-	h := New("v0.0.0", testStatic())
+	h := New("v0.0.0", testStatic(), nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", nil))
 	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 func TestEmptyStaticServesIndexFallback(t *testing.T) {
-	h := New("v0.0.0", fstest.MapFS{})
+	h := New("v0.0.0", fstest.MapFS{}, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 

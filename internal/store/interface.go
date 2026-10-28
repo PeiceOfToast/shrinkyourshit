@@ -5,11 +5,13 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // JobFilter narrows ListJobs. Empty fields mean "no filter".
 type JobFilter struct {
 	Status string
+	FileID string
 	NodeID string
 	Limit  int // 0 = no limit
 	Offset int
@@ -45,6 +47,15 @@ type Store interface {
 	ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
 	UpdateJob(ctx context.Context, j *Job) error
 	DeleteJob(ctx context.Context, id string) error
+
+	// Queue operations. ClaimNextJob atomically moves the highest-priority
+	// oldest queued job to claimed for the given node, so concurrent
+	// workers never receive the same job (ErrQueueEmpty when none is left).
+	// RequeueStaleJobs returns claimed/running jobs whose heartbeat is
+	// older than cutoff to queued (attempt+1, claim fields cleared) or, at
+	// maxAttempts, fails them; it returns the jobs it transitioned.
+	ClaimNextJob(ctx context.Context, nodeID string) (*Job, error)
+	RequeueStaleJobs(ctx context.Context, cutoff time.Time, maxAttempts int) ([]*Job, error)
 
 	// Nodes.
 	CreateNode(ctx context.Context, n *Node) error

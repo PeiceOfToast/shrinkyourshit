@@ -3,6 +3,7 @@
 package probe
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -137,4 +138,21 @@ func TestParseFrameRate(t *testing.T) {
 	assert.InDelta(t, 29.97, parseFrameRate("30000/1001"), 0.01)
 	assert.Equal(t, 0.0, parseFrameRate("0/0", "0/0"))
 	assert.InDelta(t, 30.0, parseFrameRate("0/0", "30/1"), 0.0001)
+}
+
+func TestMediaInfoJSONRoundTrip(t *testing.T) {
+	info, err := Parse([]byte(mkvJSON))
+	require.NoError(t, err)
+
+	// The scanner stores MediaInfo as JSON and the API returns it
+	// verbatim: field names must be lowercase snake_case and survive a
+	// round trip.
+	data, err := json.Marshal(info)
+	require.NoError(t, err)
+	var back MediaInfo
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, info, back)
+	assert.Contains(t, string(data), `"container":"mkv"`)
+	assert.Contains(t, string(data), `"pix_fmt":"yuv420p"`)
+	assert.NotContains(t, string(data), `"Container"`)
 }

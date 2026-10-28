@@ -293,6 +293,10 @@ func (s *SQLite) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
 		conds = append(conds, `status = ?`)
 		args = append(args, filter.Status)
 	}
+	if filter.FileID != "" {
+		conds = append(conds, `file_id = ?`)
+		args = append(args, filter.FileID)
+	}
 	if filter.NodeID != "" {
 		conds = append(conds, `node_id = ?`)
 		args = append(args, filter.NodeID)
