@@ -67,7 +67,7 @@ func serveStatic(static fs.FS) http.Handler {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		name := strings.TrimPrefix(path.Clean("/" + r.URL.Path), "/")
+		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 		if name == "" {
 			name = "index.html"
 		}
