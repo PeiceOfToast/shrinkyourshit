@@ -10,3 +10,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-28T20:19:54Z setup: tidied a stale OWNER note in STACK.md
 - 2026-10-28T20:31:54Z task 01: PM verification on the VM passed (go vet, go test, golangci-lint 0 issues, npm lint/format/vitest, make build, cross builds, health + page on SHRINK_PORT=9000)
 - 2026-10-28T20:31:54Z task 01: CI blocked at the account level: every job fails in 2s with "recent account payments have failed or your spending limit needs to be increased". Raised with the owner. No local docker on the coding VM, so the docker acceptance line is only verifiable in CI.
+- 2026-10-28T20:46:57Z task 01: PM verified the finished branch (all acceptance boxes ticked, DECISIONS.md unchanged vs origin/main, make test and make lint green on the VM, health endpoint returned status ok with version 53e28f8, SPA fallback 200, 5 cross targets built)
+- 2026-10-28T20:46:57Z task 01: PR #1 merged with squash 99a7292, branch task/01-skeleton deleted, main pulled on the VM
+- 2026-10-28T20:46:57Z ci: daily check, 3 most recent runs still fail on the GitHub billing block, so the CI requirement stays suspended
