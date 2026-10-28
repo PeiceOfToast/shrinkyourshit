@@ -19,3 +19,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-28T21:46:40Z task 03: started OpenCode session ses_e7b85a715ffe5cG05M28E4iSZd (task 03 library API, scanner, watcher, queue, SSE; deps 02 done)
 - 2026-10-28T22:33:00Z task 03: PM verification on the VM passed (all 8 acceptance boxes ticked, DECISIONS.md unchanged vs origin/main, go test ./... green, vitest 5 tests passed, make lint 0 issues plus prettier clean); the red PR checks are the known GitHub billing block
 - 2026-10-28T22:33:00Z task 03: PR #3 merged with squash 63968dc, branch task/03-library-scanner-queue deleted on the remote, main pulled on the VM fast forward bdf409a..63968dc
+- 2026-10-28T22:46:14Z task 04: started OpenCode session ses_e7b4ec992ffeIDzglPNLJBU4yK (encoders, quality table, command builder, GPU to CPU fallback; deps 02 done)
