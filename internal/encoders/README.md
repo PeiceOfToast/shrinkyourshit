@@ -41,7 +41,7 @@ One ffmpeg invocation per encode, covering video, audio and subtitles at
 once:
 
 ```
--hide_banner -nostdin -progress pipe:1 -nostats
+-hide_banner -nostdin -progress pipe:1 -nostats -y
 [-vaapi_device <node>]              (qsv backend's vaapi variant only)
 -i <input>
 -map 0:V:0  -map 0:a:<i>...  -map 0:s:<i>...   (selected streams only)
@@ -58,6 +58,12 @@ Details worth knowing:
   matching `probe.MediaInfo.Video`. Audio and subtitle indexes are positions
   within their stream type, exactly the `Spec.KeepAudio`/`KeepSubs` values
   (computed by `flow.SelectAudio`/`flow.SelectSubtitles`).
+- `-c:v copy` is used for an explicit `video.codec=copy` target **and** when
+  the file's video already is the target codec with
+  `reencode_if_same_codec` off (the satisfied rule, DECISIONS.md B2): those
+  jobs only remux tracks and change the container. `-y` is included so a
+  failed GPU attempt cannot leave a partial scratch output that blocks the
+  next fallback attempt.
 - `video.codec=copy` never re-encodes: `-c:v copy`, identical from every
   encoder, so the registry for a copy target is just `cpu`.
 - Per-stream specifiers (`-c:a:0`, `-c:s:1`) refer to output stream

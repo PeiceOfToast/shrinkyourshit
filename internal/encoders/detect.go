@@ -120,6 +120,12 @@ func (d *detector) detect(ctx context.Context, ffmpegPath string) (Capability, e
 		// let a later call with a live context try again.
 		return cap, err
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		// The context died mid-run (for example during a self-test):
+		// self-test failures were swallowed as "codec unavailable", so
+		// the result is a partial guess. Never cache it.
+		return cap, ctxErr
+	}
 	d.results[ffmpegPath] = detectResult{cap: cap, err: err}
 	return cap, err
 }

@@ -20,7 +20,7 @@ import (
 // "key=value" progress lines from stdout (STACK.md: always pass
 // -progress pipe:1 -nostats for encodes).
 func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
-	args := []string{"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats"}
+	args := []string{"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y"}
 	args = append(args, preInputArgs...)
 	args = append(args, "-i", spec.Input)
 
@@ -40,8 +40,11 @@ func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
 		args = append(args, "-map", "0:s:"+itoa(i))
 	}
 
-	if spec.Target.Video.Codec == flow.CodecCopy {
-		// copy never re-encodes video (remux and track changes only).
+	if videoShouldCopy(spec) {
+		// copy never re-encodes video (remux and track changes only),
+		// either because video.codec is copy or because the file's video
+		// already is the target codec and reencode_if_same_codec is off
+		// (DECISIONS.md B2 satisfied rule).
 		args = append(args, "-c:v", "copy")
 	} else {
 		args = append(args, videoArgs...)
@@ -55,6 +58,24 @@ func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
 		args = append(args, "-movflags", "+faststart")
 	}
 	return append(args, spec.Output)
+}
+
+// videoShouldCopy reports whether the video must be remuxed instead of
+// re-encoded: an explicit copy target, or the satisfied rule (DECISIONS.md
+// B2) — the file's video already is the target codec and
+// reencode_if_same_codec is off. In both cases the output only needs track
+// and container changes, and re-encoding would add generational loss for
+// nothing.
+func videoShouldCopy(spec Spec) bool {
+	if spec.Target.Video.Codec == flow.CodecCopy {
+		return true
+	}
+	if len(spec.Info.Video) == 0 {
+		return false
+	}
+	// 0:V:0 maps the first real video stream, which is info.Video[0].
+	return spec.Info.Video[0].Codec == spec.Target.Video.Codec &&
+		!spec.Target.Video.ReencodeIfSameCodec
 }
 
 // audioArgs picks a codec per kept audio stream: copy, or the compact
@@ -172,7 +193,7 @@ func ExtractCommands(spec Spec) []ExtractCommand {
 			name = base + "." + lang + "." + strconv.Itoa(n) + ".srt"
 		}
 		args := []string{
-			"-hide_banner", "-nostdin", "-v", "error",
+			"-hide_banner", "-nostdin", "-v", "error", "-y",
 			"-i", spec.Input,
 			"-map", "0:s:" + itoa(i),
 			"-c:s", "srt",

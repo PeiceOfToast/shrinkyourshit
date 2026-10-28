@@ -13,13 +13,14 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 )
 
-// testInfo is a realistic probe result: h264 video, a ger 5.1 eac3 track
-// plus an eng stereo aac track, and three subtitles (srt eng, mov_text
-// ger, pgs eng).
+// testInfo is a realistic probe result: vp9 video (a codec no golden
+// targets, so those goldens always exercise the re-encode path), a ger 5.1
+// eac3 track plus an eng stereo aac track, and three subtitles (srt eng,
+// mov_text ger, pgs eng).
 func testInfo() probe.MediaInfo {
 	return probe.MediaInfo{
 		Container: "mkv",
-		Video:     []probe.VideoStream{{Codec: "h264", Width: 1920, Height: 1080, FPS: 24, PixFmt: "yuv420p"}},
+		Video:     []probe.VideoStream{{Codec: "vp9", Width: 1920, Height: 1080, FPS: 24, PixFmt: "yuv420p"}},
 		Audio: []probe.AudioStream{
 			{Codec: "eac3", Channels: 6, Language: "ger"},
 			{Codec: "aac", Channels: 2, Language: "eng"},
@@ -138,7 +139,7 @@ func TestBuildArgsCPUQualitySteps(t *testing.T) {
 			tg := flow.Default()
 			tg.Video.Quality = mustStep(t, c.step)
 			assertArgs(t, CPU, withTarget(tg), join(
-				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 				"-i", "in.mkv",
 				keepAllMaps,
 				"-c:v", "libx265", "-crf", c.crf, "-preset", "medium",
@@ -149,14 +150,14 @@ func TestBuildArgsCPUQualitySteps(t *testing.T) {
 
 	// The other CPU codecs at step 3.
 	assertArgs(t, CPU, withTarget(codecTarget(flow.CodecH264, 3)), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "libx264", "-crf", "22", "-preset", "medium",
 		keepAllAudioCodecs, keepAllSubCodecs,
 		"out.mkv"))
 	assertArgs(t, CPU, withTarget(codecTarget(flow.CodecAV1, 3)), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "libsvtav1", "-crf", "32", "-preset", "6",
@@ -174,7 +175,7 @@ func TestBuildArgsNVENCQualitySteps(t *testing.T) {
 			tg := flow.Default()
 			tg.Video.Quality = mustStep(t, c.step)
 			assertArgs(t, NVENC, withTarget(tg), join(
-				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 				"-i", "in.mkv",
 				keepAllMaps,
 				"-c:v", "hevc_nvenc", "-cq", c.cq, "-preset", "p5",
@@ -184,14 +185,14 @@ func TestBuildArgsNVENCQualitySteps(t *testing.T) {
 	}
 
 	assertArgs(t, NVENC, withTarget(codecTarget(flow.CodecH264, 3)), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "h264_nvenc", "-cq", "28", "-preset", "p5",
 		keepAllAudioCodecs, keepAllSubCodecs,
 		"out.mkv"))
 	assertArgs(t, NVENC, withTarget(codecTarget(flow.CodecAV1, 3)), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "av1_nvenc", "-cq", "28", "-preset", "p5",
@@ -212,7 +213,7 @@ func TestBuildArgsQSVQualitySteps(t *testing.T) {
 			tg.Video.Quality = mustStep(t, c.step)
 			setQSVVariant(flow.CodecHEVC, qsvVariant{encoderName: "hevc_qsv"})
 			assertArgs(t, QSV, withTarget(tg), join(
-				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 				"-i", "in.mkv",
 				keepAllMaps,
 				"-c:v", "hevc_qsv", "-global_quality", c.gq,
@@ -223,14 +224,14 @@ func TestBuildArgsQSVQualitySteps(t *testing.T) {
 	resetQSVVariants()
 
 	assertArgs(t, QSV, qsvSpec(flow.CodecH264, 3), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "h264_qsv", "-global_quality", "26",
 		keepAllAudioCodecs, keepAllSubCodecs,
 		"out.mkv"))
 	assertArgs(t, QSV, qsvSpec(flow.CodecAV1, 3), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "av1_qsv", "-global_quality", "26",
@@ -246,7 +247,7 @@ func TestBuildArgsQSVVAAPIVariant(t *testing.T) {
 	defer resetQSVVariants()
 
 	assertArgs(t, QSV, vaapiSpec(flow.CodecHEVC, 3, "/dev/dri/renderD128"), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-vaapi_device", "/dev/dri/renderD128",
 		"-i", "in.mkv",
 		keepAllMaps,
@@ -256,7 +257,7 @@ func TestBuildArgsQSVVAAPIVariant(t *testing.T) {
 
 	// h264_vaapi has no global_quality mode; -qp sets the fixed quantizer.
 	assertArgs(t, QSV, vaapiSpec(flow.CodecH264, 3, "/dev/dri/renderD128"), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-vaapi_device", "/dev/dri/renderD128",
 		"-i", "in.mkv",
 		keepAllMaps,
@@ -272,7 +273,7 @@ func TestBuildArgsCopyVideo(t *testing.T) {
 	defer resetQSVVariants()
 
 	want := join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "copy",
@@ -288,7 +289,7 @@ func TestBuildArgsCopyVideo(t *testing.T) {
 func TestBuildArgsCompactAudio(t *testing.T) {
 	// keep_best with ger preference selects the eac3 ger track (index 0).
 	assertArgs(t, CPU, withTarget(compactTarget(flow.CompactCodecAAC, flow.CodecHEVC, "ger")), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		"-map", "0:V:0", "-map", "0:a:0",
 		"-map", "0:s:0", "-map", "0:s:1", "-map", "0:s:2",
@@ -298,7 +299,7 @@ func TestBuildArgsCompactAudio(t *testing.T) {
 		"out.mkv"))
 
 	assertArgs(t, CPU, withTarget(compactTarget(flow.CompactCodecOpus, flow.CodecHEVC, "ger")), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		"-map", "0:V:0", "-map", "0:a:0",
 		"-map", "0:s:0", "-map", "0:s:1", "-map", "0:s:2",
@@ -310,7 +311,7 @@ func TestBuildArgsCompactAudio(t *testing.T) {
 	// keep_best with eng preference selects the aac eng track (index 1),
 	// already in the compact codec: plain copy.
 	assertArgs(t, CPU, withTarget(compactTarget(flow.CompactCodecAAC, flow.CodecHEVC, "eng")), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		"-map", "0:V:0", "-map", "0:a:1",
 		"-map", "0:s:0", "-map", "0:s:1", "-map", "0:s:2",
@@ -324,7 +325,7 @@ func TestBuildArgsCompactAudio(t *testing.T) {
 // given codec options.
 func TestBuildArgsSubtitleRemoval(t *testing.T) {
 	assertArgs(t, CPU, withTarget(removeSubsTarget()), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		"-map", "0:V:0", "-map", "0:a:0", "-map", "0:a:1",
 		"-c:v", "libx265", "-crf", "24", "-preset", "medium",
@@ -336,7 +337,7 @@ func TestBuildArgsSubtitleRemoval(t *testing.T) {
 // mov_text (the only text codec mp4 reliably holds).
 func TestBuildArgsMP4Output(t *testing.T) {
 	assertArgs(t, CPU, withTargetOut(mp4Target(), "out.mp4"), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		keepAllMaps,
 		"-c:v", "libx265", "-crf", "24", "-preset", "medium",
@@ -351,7 +352,7 @@ func TestBuildArgsFileWithoutSubtitles(t *testing.T) {
 	info := testInfo()
 	info.Subtitle = nil
 	assertArgs(t, CPU, NewSpec("in.mkv", "out.mkv", info, flow.Default()), join(
-		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats",
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
 		"-i", "in.mkv",
 		"-map", "0:V:0", "-map", "0:a:0", "-map", "0:a:1",
 		"-c:v", "libx265", "-crf", "24", "-preset", "medium",
@@ -371,6 +372,39 @@ func TestBuildArgsQualityOutOfRange(t *testing.T) {
 	assert.Contains(t, strings.Join(args, " "), "-crf 20", "quality 99 clamps to step 5")
 }
 
+// TestBuildArgsAlreadyTargetCodec: a file whose video already is the target
+// codec is remuxed, not re-encoded (DECISIONS.md B2 satisfied rule) — but
+// reencode_if_same_codec forces the encoder.
+func TestBuildArgsAlreadyTargetCodec(t *testing.T) {
+	resetQSVVariants()
+	defer resetQSVVariants()
+
+	alreadyHEVC := testInfo()
+	alreadyHEVC.Video[0].Codec = "hevc"
+
+	// Video already hevc, target hevc: remux and track changes only.
+	spec := NewSpec("in.mkv", "out.mkv", alreadyHEVC, flow.Default())
+	assertArgs(t, CPU, spec, join(
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+		"-i", "in.mkv",
+		keepAllMaps,
+		"-c:v", "copy",
+		keepAllAudioCodecs, keepAllSubCodecs,
+		"out.mkv"))
+
+	// Same file, but the override flag forces a re-encode.
+	tg := flow.Default()
+	tg.Video.ReencodeIfSameCodec = true
+	spec = NewSpec("in.mkv", "out.mkv", alreadyHEVC, tg)
+	assertArgs(t, CPU, spec, join(
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+		"-i", "in.mkv",
+		keepAllMaps,
+		"-c:v", "libx265", "-crf", "24", "-preset", "medium",
+		keepAllAudioCodecs, keepAllSubCodecs,
+		"out.mkv"))
+}
+
 // TestExtractCommandsGolden covers the extract_removed side commands.
 func TestExtractCommandsGolden(t *testing.T) {
 	target := flow.Default()
@@ -385,7 +419,7 @@ func TestExtractCommandsGolden(t *testing.T) {
 		SubIndex: 0,
 		Language: "eng",
 		Args: []string{
-			"-hide_banner", "-nostdin", "-v", "error",
+			"-hide_banner", "-nostdin", "-v", "error", "-y",
 			"-i", "in.mkv",
 			"-map", "0:s:0",
 			"-c:s", "srt",
@@ -396,7 +430,7 @@ func TestExtractCommandsGolden(t *testing.T) {
 		SubIndex: 1,
 		Language: "ger",
 		Args: []string{
-			"-hide_banner", "-nostdin", "-v", "error",
+			"-hide_banner", "-nostdin", "-v", "error", "-y",
 			"-i", "in.mkv",
 			"-map", "0:s:1",
 			"-c:s", "srt",

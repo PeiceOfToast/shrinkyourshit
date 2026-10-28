@@ -67,10 +67,16 @@ tests point it at a temp dir with fake device files and a fake ffmpeg script;
   subtitle copy+conversion, faststart, progress flags, extract commands),
   RunWithFallback with injectable runFn, golden/detection/fallback unit tests,
   CPU-only integration test, README.
+- Review fixes (Codex on PR #4): already-target video is remuxed (`-c:v copy`)
+  per the B2 satisfied rule unless reencode_if_same_codec; `-y` on encode and
+  extract commands so a failed GPU attempt cannot leave a partial output that
+  blocks the next fallback; detection results are never cached when the
+  context died mid-run (ctx.Err() checked before caching).
 - Skipped: AMD/Apple encoders, attachments mapping, HDR pix_fmt logic
   (documented as limitations/ideas).
 - Next task should know: call `encoders.DetectAll(ctx, ffmpegPath)` once
   (cached), then `encoders.Registry(target, caps)`; run
   `encoders.ExtractCommands(spec)` after the main encode; `RunWithFallback`
   takes the registry slice and an injectable run function; `Result` fields are
-  `EncoderUsed` and `Fallbacks []FallbackReason{Encoder, Error}`.
+  `EncoderUsed` and `Fallbacks []FallbackReason{Encoder, Error}`. Partially
+  satisfied files (e.g. subtitle-only changes) copy video automatically.
