@@ -65,11 +65,6 @@ func (a *API) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return next
 }
 
-// unavailable is the 503 used when the handlers run without services.
-func (a *API) unavailable(w http.ResponseWriter) {
-	writeError(w, http.StatusServiceUnavailable, "unavailable", "server services are not wired up")
-}
-
 // healthResponse is the /api/v1/health body (API.md, task 01).
 type healthResponse struct {
 	Status  string `json:"status"`

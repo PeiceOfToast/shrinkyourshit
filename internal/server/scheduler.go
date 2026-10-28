@@ -36,8 +36,11 @@ func (s *Scheduler) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
-	// lastMinute is the last whole minute (unix/60) already processed.
-	lastMinute := time.Now().Unix() / 60
+	// Seed to the previous minute so the current minute is evaluated on
+	// the first tick — a scheduler started mid-minute does not have to
+	// wait a full minute to fire. Double-firing is harmless: scans
+	// collapse and the queue's active-job guard prevents duplicates.
+	lastMinute := time.Now().Unix() / 60 - 1
 	for {
 		select {
 		case <-ctx.Done():

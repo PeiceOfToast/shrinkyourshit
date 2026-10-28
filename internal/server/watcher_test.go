@@ -164,6 +164,6 @@ func TestWatcherRemoveStopsWatching(t *testing.T) {
 	lib := h.createLibrary(true)
 	require.True(t, h.svc.watcher.Watching(lib.ID))
 
-	h.svc.Libraries().Delete(context.Background(), lib.ID)
+	require.NoError(t, h.svc.Libraries().Delete(context.Background(), lib.ID))
 	assert.False(t, h.svc.watcher.Watching(lib.ID), "delete removes the watch")
 }
