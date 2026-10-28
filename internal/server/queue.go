@@ -43,12 +43,12 @@ const HeartbeatTimeoutDefault = 120 * time.Second
 // complete, fail), admin cancel/retry, and the heartbeat-timeout sweep.
 // Every transition keeps the file status in step and publishes events.
 type Queue struct {
-	st        store.Store
-	events    *EventBus
-	log       *slog.Logger
-	attempt   int
-	inspect   ResultInspector
-	ffprobe   string
+	st      store.Store
+	events  *EventBus
+	log     *slog.Logger
+	attempt int
+	inspect ResultInspector
+	ffprobe string
 }
 
 // NewQueue builds a Queue. events may be nil (no publishing); log may be nil.

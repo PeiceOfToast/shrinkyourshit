@@ -76,7 +76,6 @@ func defaultInspector(ctx context.Context, ffprobePath, path string) (ResultInfo
 	}, nil
 }
 
-
 // Server holds the server-side services and their lifecycle: event bus,
 // queue, scanner, watcher, scheduler, library manager and node registry.
 type Server struct {
