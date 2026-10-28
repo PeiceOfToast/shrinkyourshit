@@ -71,7 +71,7 @@ func New(cfg Config) *Server {
 	watcher := NewWatcher(scanner, cfg.Log, cfg.Debounce, cfg.WatchPollInterval)
 	scheduler := NewScheduler(cfg.Store, scanner, cfg.Log, 0)
 	libs := NewLibraryManager(cfg.Store, queue, events, watcher, cfg.Log)
-	libs.setScanHook(scanner.ScanAsync)
+	libs.SetScanHook(scanner.ScanAsync)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs}
 }
@@ -87,6 +87,9 @@ func (s *Server) Queue() *Queue { return s.queue }
 
 // Scanner exposes the scanner (the scan endpoint).
 func (s *Server) Scanner() *Scanner { return s.scanner }
+
+// Store exposes the underlying store (read-only listing in the API).
+func (s *Server) Store() store.Store { return s.cfg.Store }
 
 // Start launches the background loops: an initial scan per library, a
 // watcher for every watched library, the schedule loop and the stale-job

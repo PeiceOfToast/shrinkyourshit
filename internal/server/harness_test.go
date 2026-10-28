@@ -103,7 +103,7 @@ func (h *harness) start() {
 	})
 	// Most tests scan explicitly; a create-triggered scan would race them.
 	// The behavior gets its own dedicated test.
-	h.svc.Libraries().setScanHook(func(string) {})
+	h.svc.Libraries().SetScanHook(func(string) {})
 	h.svc.Start(context.Background())
 }
 

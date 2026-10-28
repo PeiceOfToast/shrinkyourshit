@@ -58,8 +58,9 @@ func NewLibraryManager(st store.Store, queue *Queue, events *EventBus, watcher *
 	}
 }
 
-// setScanHook wires the initial-scan trigger for newly created libraries.
-func (m *LibraryManager) setScanHook(scan func(libraryID string)) { m.scan = scan }
+// SetScanHook wires the initial-scan trigger for newly created libraries.
+// The server wiring installs Scanner.ScanAsync; tests may install a no-op.
+func (m *LibraryManager) SetScanHook(scan func(libraryID string)) { m.scan = scan }
 
 // Create validates and stores a new library.
 func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Library, error) {

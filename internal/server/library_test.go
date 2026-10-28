@@ -223,7 +223,7 @@ func TestLibraryCreateTriggersInitialScan(t *testing.T) {
 	h := newHarness(t)
 	// Re-install the real hook: creating a library must scan its folder
 	// without any manual trigger.
-	h.svc.Libraries().setScanHook(h.svc.Scanner().ScanAsync)
+	h.svc.Libraries().SetScanHook(h.svc.Scanner().ScanAsync)
 
 	h.prober.mu.Lock()
 	h.prober.byName["movie.mkv"] = h264Needs
