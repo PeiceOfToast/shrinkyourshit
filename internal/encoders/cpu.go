@@ -43,6 +43,14 @@ func (e *cpuEncoder) Detect(ctx context.Context, ffmpegPath string) (Capability,
 	return Capability{Encoders: []EncoderInfo{*entry}}, nil
 }
 
+// cpuSelfTestArgs are speed-optimized settings per ffmpeg encoder for the
+// self-test (libsvtav1 uses numeric presets, x265/x264 the named ones).
+var cpuSelfTestArgs = map[string][]string{
+	"libx265":   {"-preset", "ultrafast", "-crf", "40"},
+	"libsvtav1": {"-preset", "12", "-crf", "55"},
+	"libx264":   {"-preset", "ultrafast", "-crf", "40"},
+}
+
 // detectWithEnv runs detection against a prepared environment (see detect.go).
 func (e *cpuEncoder) detectWithEnv(ctx context.Context, env detectEnv) (*EncoderInfo, error) {
 	var codecs []string
@@ -51,10 +59,10 @@ func (e *cpuEncoder) detectWithEnv(ctx context.Context, env detectEnv) (*Encoder
 		if !env.encoders[name] {
 			continue
 		}
-		// ultrafast keeps the self-test fast; real encodes use the
+		// Fast settings keep the self-test short; real encodes use the
 		// quality step table.
 		err := selfTest(ctx, env.ffmpegPath, nil,
-			[]string{"-c:v", name, "-preset", "ultrafast", "-crf", "40"})
+			append([]string{"-c:v", name}, cpuSelfTestArgs[name]...))
 		if err != nil {
 			continue
 		}

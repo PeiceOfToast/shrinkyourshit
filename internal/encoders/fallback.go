@@ -55,8 +55,11 @@ func RunWithFallback(ctx context.Context, list []Encoder, spec Spec, run RunFn) 
 	if len(list) == 0 {
 		return res, fmt.Errorf("encoders: no encoder in the registry")
 	}
-	// Unreachable with a well-formed registry (it always ends with cpu),
-	// but a GPU-only list must not silently lose the error.
+	// Unreachable with a well-formed registry (it always ends with cpu
+	// exactly once), but a GPU-only list must not silently lose the error.
+	if len(res.Fallbacks) == 0 {
+		return res, fmt.Errorf("encoders: all %d encoder(s) failed", len(list))
+	}
 	last := res.Fallbacks[len(res.Fallbacks)-1]
 	return res, fmt.Errorf("encoders: all %d encoder(s) failed, last error (%s): %s",
 		len(list), last.Encoder, last.Error)
