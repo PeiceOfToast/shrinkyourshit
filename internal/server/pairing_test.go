@@ -363,6 +363,7 @@ func TestPairingNeverLogsSecrets(t *testing.T) {
 	node, key, err := reg.Pair(ctx, PairInput{Token: rawToken, Name: "quiet-worker"})
 	require.NoError(t, err)
 	require.NotEmpty(t, key)
+	require.NotEmpty(t, node.ID)
 
 	pending, _, err := reg.Pair(ctx, PairInput{Name: "pending-worker"})
 	require.NoError(t, err)
