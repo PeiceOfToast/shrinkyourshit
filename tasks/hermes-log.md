@@ -46,3 +46,7 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T05:31:53Z task 08: PR #8 merged squash ed90c4a, remote branch task/08-node-pairing deleted, main fast-forwarded on the VM to ed90c4a, no open PRs left
 - 2026-10-29T05:31:53Z task 09: dependencies satisfied (08 done); will start on the next tick
 - 2026-10-29T05:46:11Z task 09: started OpenCode session ses_e79ce47ebfferOnWcXo00EGGy2 (file transfer mode, access check, installers; dep 08 done)
+- 2026-10-29T06:47:00Z task 09: PM verification on the VM passed (STATUS done, acceptance boxes all ticked, DECISIONS.md identical to origin/main, make lint exit 0 (go vet, golangci 0 issues, spdx, eslint and prettier clean), make test exit 0 (Go packages ok, vitest 53 tests in 11 files))
+- 2026-10-29T06:47:00Z task 09: stuck OpenCode session ses_e79ce47ebfferOnWcXo00EGGy2 was polling CI for green; interrupted per the CI-closed standing exception
+- 2026-10-29T06:47:00Z task 09: PR #9 merged squash af119de, branch task/09-file-transfer-installer deleted, main pulled on the VM (aa322e0..af119de)
+- 2026-10-29T06:47:00Z task 09: milestone reached (tasks 05, 07 and 09 merged: encode pipeline, MVP UI and file transfer plus installers all in main); milestone message sent to Michael
