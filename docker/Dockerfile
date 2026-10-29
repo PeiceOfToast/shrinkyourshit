@@ -30,22 +30,33 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /out/shrinkyourshit ./cmd/shrinkyourshit
 
 # --- runtime ---
+# amd64 only: the pinned jellyfin-ffmpeg deb below has no arm64 build on
+# this channel; another image source would be needed for arm64.
 FROM debian:bookworm-slim AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
+# jellyfin-ffmpeg comes from the official deb, not the jellyfin apt repo
+# (the bookworm repo no longer ships the package and the old key URL 404s).
+# The exact filename is pinned even though latest-7.x is a rolling channel;
+# the sha256 check fails the build on mismatch. apt installs the local deb
+# and resolves its dependencies from Debian bookworm.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gpg gosu \
- && curl -fsSL https://repo.jellyfin.org/keys/jellyfin.asc \
-      | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg \
- && echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian bookworm main" \
-      > /etc/apt/sources.list.d/jellyfin.list \
- && apt-get update \
- && apt-get install -y --no-install-recommends jellyfin-ffmpeg \
- && apt-get purge -y curl gpg \
+ && apt-get install -y --no-install-recommends ca-certificates curl gosu \
+ && curl -fsSL -o /tmp/jellyfin-ffmpeg7.deb \
+      https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb \
+ && echo "0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c  /tmp/jellyfin-ffmpeg7.deb" \
+      | sha256sum -c - \
+ && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg7.deb \
+ && rm -f /tmp/jellyfin-ffmpeg7.deb \
+ && apt-get purge -y curl \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
 
+# The deb puts the binaries in /usr/lib/jellyfin-ffmpeg with the bundled
+# shared libraries in ./lib, but sets no RPATH and ships no ld.so.conf
+# entry, so ffmpeg only runs with LD_LIBRARY_PATH set.
 ENV PUID=1000 \
     PGID=1000 \
+    LD_LIBRARY_PATH=/usr/lib/jellyfin-ffmpeg/lib \
     SHRINK_DATA_DIR=/config \
     SHRINK_SCRATCH_DIR=/scratch \
     SHRINK_FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg
