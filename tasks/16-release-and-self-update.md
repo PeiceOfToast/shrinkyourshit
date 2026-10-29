@@ -7,6 +7,7 @@ Users update without rebuilding. Every tagged release publishes verifiable binar
 ARCHITECTURE.md (update path). STACK.md (release, Docker). API.md (task 16). Depends on task 12 so the release gate includes the layout tests.
 
 ## Do
+- Fix the Windows build first. `internal/discovery/discovery.go` calls `syscall.SetsockoptInt(int(fd), ...)` around line 315, which does not compile for `GOOS=windows` because the argument type is `syscall.Handle`. The v0.1.0 tag failed on exactly this: the docker job published the image, the binaries job died at `windows/amd64`, so no GitHub release was created. Split the socket option call into per OS files with build tags, or move to `golang.org/x/sys`, and confirm all five targets build. The Windows installer from task 09 has never had a binary to install.
 - `.github/workflows/release.yml`:
   - Add a `checksums` job that writes `checksums.txt` with the sha256 of every archive and attaches it to the release. Without this the updater cannot verify a download.
   - Make `docker` depend on `binaries` and `checksums`, so an image never publishes from a broken release.
@@ -34,6 +35,7 @@ ARCHITECTURE.md (update path). STACK.md (release, Docker). API.md (task 16). Dep
 Delta or binary diff updates, signing keys beyond GitHub artifact attestation, self updating a container image from inside the container.
 
 ## Acceptance
+- [ ] All five targets build, including `windows/amd64`, which fails on the current `main`. (`make release-cross` or the workflow's cross compile step run locally)
 - [ ] A release built from a `v*` tag contains five archives plus `checksums.txt`, and every checksum verifies. (`TestReleaseArtifacts` against the dry run output, or the run recorded in `tasks/hermes-log.md`)
 - [ ] `shrink version` prints the injected version, commit and date from a build made with the release flags. (`TestVersionOutput`)
 - [ ] `internal/update` selects the correct asset for linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darwin/arm64. (`TestAssetSelection`)

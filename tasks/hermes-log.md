@@ -70,3 +70,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T20:04:02Z docs: DECISIONS.md deliberately untouched; the flow schema is already covered by decision 6 and B3, so no new decision entry was needed
 - 2026-10-29T20:07:59Z docs: added the update path as tasks 16 (release artifacts and self update) and 17 (in app update UI), scheduled as v1.3; ROADMAP, API, ARCHITECTURE and STACK updated
 - 2026-10-29T20:14:28Z docs: task 16 now requires OCI licence and source labels on the image and public package visibility inherited from the repo
+- 2026-10-29T20:18:44Z release: tagged v0.1.0 on the owner's instruction; docker job published ghcr.io/peiceoftoast/shrinkyourshit:v0.1.0 and :latest, package visibility is public and an anonymous manifest pull returns 200
+- 2026-10-29T20:18:44Z release: binaries job FAILED on windows/amd64 at internal/discovery/discovery.go:315 (syscall.SetsockoptInt takes syscall.Handle on Windows), so no GitHub release exists yet; task 16 now carries the fix
+- 2026-10-29T20:18:44Z deploy: the Hermes VM container now runs the published image via /home/mb/sys/docker-compose.yml, health reports version v0.1.0, data intact (2 files, 15185350 bytes saved)
