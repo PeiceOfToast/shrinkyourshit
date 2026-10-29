@@ -102,3 +102,24 @@ None so far.
   + integration, eslint, prettier, vitest, web build); the repo token cannot
   read PR check rollups (`gh pr checks` → 403), same as task 05, so the
   owner should glance at the PR's checks once — the same commands pass here.
+
+## Post-verification fix (VM flake)
+
+- The VM saw `ReferenceError: EventSource is not defined` from `events.ts`
+  in the App route-guard test. jsdom has no EventSource; `stubEventSource()`
+  installs the fake with `vi.stubGlobal` in `beforeEach`, but
+  `installFetchMock().restore()` (the `afterEach`, and also called inside
+  three tests that swap routes) is `vi.unstubAllGlobals()` — vitest 2.1.9 has
+  no single-global unstub, so that tears the EventSource stub down too.
+  When that teardown lands before RTL unmounts the tree, a shell mount that
+  happens after a redirect (exactly the setup-page → `/` test) can hit the
+  window with no global — timing-dependent, hence flaky (reproduced 1-in-8
+  locally under back-to-back runs, not on a quiet machine).
+- Fix: `web/src/test/setup.ts` now installs `FakeEventSource` as a baseline
+  global per test file, assigned directly (outside the `vi` stub registry) so
+  no `unstubAllGlobals` can remove it. Per-test `stubEventSource()` still
+  resets the instance list, so the "subscribes once" assertions are unchanged.
+  No production code or assertions touched.
+- Verified after the fix: `make test` and `make lint` green; 36 stress runs
+  of App.test.tsx + 6 full-suite runs, 0 failures (the same loop failed
+  1-in-8 before).
