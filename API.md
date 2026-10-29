@@ -309,11 +309,16 @@ No new endpoints. Route and shell changes only:
 
 Details:
 
-- `POST /api/v1/worker/heartbeat` responses gain `desired_state`, `concurrency`, and `effective_state`. This is how a worker learns it was started or stopped, so a stopped node makes no claim calls at all.
-- `GET /api/v1/nodes` responses gain `desired_state`, `effective_state`, `concurrency`, and `current_job_id`.
+- `POST /api/v1/worker/heartbeat` responses gain `desired_state`, `concurrency`, and `effective_state`. This is how a worker learns it was started or stopped, so a stopped node makes no claim calls at all. `concurrency` is now the node's own cap (`nodes.concurrency`), not the global `worker_concurrency` setting; the setting only seeds that column in the task-11 migration.
+- The heartbeat *request* body gains an optional `state` — the worker's own lifecycle state. A `stopped` report while the node is `draining` completes the drain (the worker went idle, so the server sets `desired_state=stopped`). Any other value, and an absent field (a pre-task-11 worker), changes nothing.
+- `POST /api/v1/worker/claim` answers `409 {"code":"node_not_running"}` when the node's `desired_state` is not `running` (nodeAuth already refuses non-approved or disabled nodes with 401).
+- `GET /api/v1/nodes` responses gain `desired_state`, `effective_state`, `concurrency`, and `current_job_id` (the id of the node's oldest claimed/running job; omitted when it holds none — event payloads always omit it). `state_error` appears when a lifecycle transition failed to apply, and `effective_state` is `error` while it is set; any successful start/stop/drain clears it.
 - `PUT /api/v1/nodes/{id}` accepts `concurrency` (integer 1 to 16; anything else is `400 {"code":"invalid_request"}`).
+- The start/stop/drain endpoints return the updated `NodeDTO` (200). `pause-all` returns `{"paused": n}`, `resume-all` returns `{"resumed": n}`. pause-all snapshots every node's prior `desired_state` once — a repeat pause-all keeps the first snapshot, so resume-all always restores what the operator actually had running; nodes joined after a pause are not in the snapshot and stay stopped. resume-all without a snapshot is a no-op (`{"resumed": 0}`).
+- Stopping (drain or now) never deletes a job. Stop-now abandons the node's in-flight encodes: the worker kills them without reporting, the job's heartbeat goes stale, and the sweeper returns it to `queued` (attempt+1) after the heartbeat timeout with the original file untouched.
 - `enabled` stays the hard off switch enforced by node auth. `desired_state` is the operator control. A claim needs `status=approved`, `enabled=true` and `desired_state=running`.
-- A fresh install, and any completed setup wizard that did not explicitly start the node, leaves `desired_state=stopped`.
+- A fresh install, and any completed setup wizard that did not explicitly start the node, leaves `desired_state=stopped`. Every newly created node (built-in, token-paired, pending) is created stopped: a node never encodes unless a human started it. The task-11 migration keeps `running` only for nodes that had claimed/running jobs at upgrade time; `nodes.concurrency` is seeded from the old global `worker_concurrency` setting.
+- `POST /api/v1/setup` (task 06 body) gains `start_node` (bool, default false, mode `server` only): the wizard's explicit "Start the built-in node now" choice. The default leaves the node stopped — completing setup never begins encoding on its own. A failed start is logged, never fails setup.
 
 ### Task 12
 
