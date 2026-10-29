@@ -50,7 +50,7 @@ export default function EasyLibraryForm({
         <span className="text-sm font-medium text-slate-300">Folder</span>
         {value.path ? (
           <p
-            className="rounded-lg bg-slate-800 px-3 py-2 text-sm"
+            className="min-w-0 break-words rounded-lg bg-slate-800 px-3 py-2 text-sm"
             data-testid="easy-folder"
           >
             {value.path}

@@ -241,7 +241,10 @@ export default function AppShell() {
   }, [drawerOpen])
 
   return (
-    <div className="flex min-h-dvh bg-slate-950 text-slate-100">
+    <div
+      className="flex min-h-dvh bg-slate-950 text-slate-100"
+      data-testid="app-shell"
+    >
       <LiveEvents />
 
       {isDesktop && (

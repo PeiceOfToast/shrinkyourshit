@@ -14,6 +14,9 @@ node_modules/
 .pnpm-store/
 *.tsbuildinfo
 web/coverage/
+# Playwright build/test artifacts (task 12)
+web/test-results/
+web/playwright-report/
 # web/dist and internal/webui/dist are build output. `make placeholder`
 # creates a placeholder index.html in a fresh clone so the Go embed works
 # before the first web build.

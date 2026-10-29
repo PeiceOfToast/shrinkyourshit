@@ -70,6 +70,19 @@ The web UI is at http://localhost:8765. GPU passthrough (NVIDIA NVENC, Intel QSV
 
 Requires Go 1.23+, Node 20, and make. `make build` compiles the web UI into the binary; `make test`, `make lint`, `make cross` (linux, windows, macOS — arm64 and amd64), `make docker`. For development, `make dev` runs Vite on :5173 with the Go API on :8765 behind a proxy.
 
+## End-to-end layout tests
+
+`make e2e` runs the Playwright layout suite (task 12) at three viewports — phone 390x844, tablet 768x1024 and desktop 1280x800. Every page is asserted to have no horizontal overflow, a shell that covers the viewport, and a reachable nav (drawer on phones, left rail on tablet and desktop). The tests drive the real Go binary serving the built web app — never the Vite dev server: the harness builds the binary, starts it with throwaway data and scratch dirs, completes first-run setup with login off, generates one small test clip with ffmpeg and creates a library over it through the API. Failing runs leave a screenshot per page per viewport in `web/test-results`.
+
+Requirements: Go, Node 20, ffmpeg in `PATH`, and a Chromium the Playwright cache can run (`npx playwright install chromium`; on Linux the first run may need `npx playwright install-deps chromium` for system libraries, which wants root).
+
+Useful overrides (all optional):
+
+- `SHRINK_E2E_PORT` — port for the local server (default 8712).
+- `SHRINK_E2E_BASE_URL` — drive an already running server (this is how CI runs the suite against the docker image) instead of starting one; `SHRINK_E2E_MEDIA_DIR` places the generated test file, `SHRINK_E2E_LIBRARY_PATH` names the path as that server sees it.
+- `SHRINK_E2E_BIN` — the binary to start (default `bin/shrinkyourshit`).
+- `SHRINK_E2E_FFMPEG` — ffmpeg binary for the test clip (default `ffmpeg` from `PATH`; without ffmpeg the file-table tests are skipped with a note).
+
 ## License
 
 AGPL-3.0. Funding: optional GitHub Sponsors. Built for the author's home lab first, then shared.

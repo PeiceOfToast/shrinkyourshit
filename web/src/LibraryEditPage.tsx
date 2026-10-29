@@ -134,7 +134,7 @@ export default function LibraryEditPage() {
             type="text"
             value={nameState}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-lg bg-slate-800 px-3 py-2"
+            className="w-full rounded-lg bg-slate-800 px-3 py-2"
             data-testid="library-edit-name"
           />
         </label>
@@ -219,7 +219,7 @@ export default function LibraryEditPage() {
                     video: { ...targetState.video, codec: e.target.value },
                   })
                 }
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="advanced-codec"
               >
                 {CODEC_CHOICES.map((c) => (
@@ -268,7 +268,7 @@ export default function LibraryEditPage() {
                     },
                   })
                 }
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="advanced-quality"
               />
             </label>
@@ -279,7 +279,7 @@ export default function LibraryEditPage() {
                 onChange={(e) =>
                   setTarget({ ...targetState, container: e.target.value })
                 }
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="advanced-container"
               >
                 <option value="mkv">mkv</option>
@@ -296,7 +296,7 @@ export default function LibraryEditPage() {
                     audio: { ...targetState.audio, mode: e.target.value },
                   })
                 }
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="advanced-audio-mode"
               >
                 <option value="keep_all">keep_all</option>
@@ -326,7 +326,7 @@ export default function LibraryEditPage() {
                     },
                   })
                 }}
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="advanced-languages"
               />
             </label>
@@ -343,7 +343,7 @@ export default function LibraryEditPage() {
                     },
                   })
                 }
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="advanced-subtitles-mode"
               >
                 <option value="keep_all">keep_all</option>

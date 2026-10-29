@@ -120,7 +120,7 @@ export default function AppSettingsPage() {
             max={16}
             value={form.worker_concurrency}
             onChange={(e) => set({ worker_concurrency: e.target.value })}
-            className="rounded-lg bg-slate-800 px-3 py-2"
+            className="w-full rounded-lg bg-slate-800 px-3 py-2"
             data-testid="worker-concurrency"
           />
         </label>
@@ -132,7 +132,7 @@ export default function AppSettingsPage() {
             type="text"
             value={form.scratch_dir}
             onChange={(e) => set({ scratch_dir: e.target.value })}
-            className="rounded-lg bg-slate-800 px-3 py-2"
+            className="w-full rounded-lg bg-slate-800 px-3 py-2"
             data-testid="scratch-dir"
           />
         </label>
@@ -155,7 +155,7 @@ export default function AppSettingsPage() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 autoComplete="current-password"
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="current-password"
               />
             </label>
@@ -166,7 +166,7 @@ export default function AppSettingsPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
-                className="rounded-lg bg-slate-800 px-3 py-2"
+                className="w-full rounded-lg bg-slate-800 px-3 py-2"
                 data-testid="new-password"
               />
             </label>
@@ -240,7 +240,7 @@ export default function AppSettingsPage() {
                   type="text"
                   value={form.admin_username}
                   onChange={(e) => set({ admin_username: e.target.value })}
-                  className="rounded-lg bg-slate-800 px-3 py-2"
+                  className="w-full rounded-lg bg-slate-800 px-3 py-2"
                   data-testid="enable-username"
                 />
               </label>
@@ -251,7 +251,7 @@ export default function AppSettingsPage() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
-                  className="rounded-lg bg-slate-800 px-3 py-2"
+                  className="w-full rounded-lg bg-slate-800 px-3 py-2"
                   data-testid="enable-password"
                 />
               </label>

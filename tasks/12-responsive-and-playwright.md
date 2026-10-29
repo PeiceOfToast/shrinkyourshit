@@ -23,8 +23,8 @@ UI review at `docs/ui-review-2026-10-29.md` sections 2 and 8. Depends on task 10
 Visual diff screenshots against baselines, mobile device farm testing, accessibility auditing beyond what task 13 covers.
 
 ## Acceptance
-- [ ] `npm run e2e` passes at all three viewports for all five pages.
-- [ ] A deliberately broken layout (a fixed 900 px wide div added in a scratch branch) fails the overflow assertion, and the failure text names the page and the overflow in px. Recorded in `tasks/hermes-log.md`, then reverted.
-- [ ] CI runs the e2e job on every pull request and the job is green on the task branch.
-- [ ] At 390 px the file table renders as cards, not a squeezed table. (Playwright assertion on a layout class or a computed width check)
-- [ ] `make e2e` documented in README and working on a clean checkout.
+- [x] `npm run e2e` passes at all three viewports for all five pages.
+- [x] A deliberately broken layout (a fixed 900 px wide div added in a scratch branch) fails the overflow assertion, and the failure text names the page and the overflow in px. Recorded in `tasks/hermes-log.md`, then reverted.
+- [x] CI runs the e2e job on every pull request and the job is green on the task branch.
+- [x] At 390 px the file table renders as cards, not a squeezed table. (Playwright assertion on a layout class or a computed width check)
+- [x] `make e2e` documented in README and working on a clean checkout.
