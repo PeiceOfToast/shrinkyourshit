@@ -41,3 +41,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T03:46:44Z task 07: PR #7 merged squash cba272a, branch task/07-easy-mode-ui deleted on the remote, main pulled on the VM, already up to date at cba272a
 - 2026-10-29T03:46:44Z task 07: milestone reached (tasks 01 to 07 done, MVP user interface complete); milestone message sent to Michael
 - 2026-10-29T03:46:44Z task 08: dependencies satisfied (07 done), will start on the next tick
+- 2026-10-29T04:02:16Z task 08: started OpenCode session ses_e7a2e6a11ffe8kQ14yFrfX8ezr (node discovery via mDNS/broadcast, token and approval pairing, revoke, path mappings, Nodes UI; dep 07 done)
