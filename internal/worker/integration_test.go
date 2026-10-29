@@ -868,14 +868,17 @@ func TestIntegrationSharedModePathMapping(t *testing.T) {
 	require.NoError(t, err)
 	s.scanSync(lib.ID)
 
-	// The job spec hands the node its own view of the source.
+	// The job spec hands the node its own view of the source. Task 09
+	// changed the spec semantics: the node's configured mode passes
+	// through and `auto` is resolved by the worker with the shared-storage
+	// check (this node was paired in auto mode).
 	claimed, err := NewClient(s.apiSrv.URL, key).Claim(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, claimed)
 	spec, err := NewClient(s.apiSrv.URL, key).JobSpec(context.Background(), claimed.ID)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(alias, "movie.mkv"), spec.SourcePath)
-	require.Equal(t, store.NodeAccessShared, spec.AccessMode)
+	require.Equal(t, store.NodeAccessAuto, spec.AccessMode)
 
 	// Hand the job back so the real worker can take it.
 	_, err = s.svc.Queue().Cancel(context.Background(), claimed.ID)

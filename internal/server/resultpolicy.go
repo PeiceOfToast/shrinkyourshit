@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package worker
+package server
 
 import (
 	"context"
@@ -13,16 +13,21 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
-// applyResult is the outcome of applying a result policy to the verified
+// Result-policy application (task 05), shared by the worker (which applies
+// it next to the library in shared mode) and the server (which applies it in
+// transfer mode after verifying the uploaded output). It lives here because
+// internal/worker imports internal/server, not the other way around.
+
+// ApplyResult is the outcome of applying a result policy to the verified
 // output: its final path in the library, or a skip reason when the original
 // was kept.
-type applyResult struct {
+type ApplyResult struct {
 	FinalPath  string // "" when the original was kept
 	SkipReason string
 }
 
-// applyResultPolicy moves the verified scratch output to its final place
-// (task 05; ARCHITECTURE.md result policies and replacement rules):
+// ApplyResultPolicy moves the verified output to its final place
+// (ARCHITECTURE.md result policies and replacement rules):
 //
 //   - replace_if_smaller: replace only when the output is strictly smaller,
 //     otherwise keep the original and report why;
@@ -34,7 +39,7 @@ type applyResult struct {
 // verified output exists in place, and only when the extension changed.
 // Extracted subtitle files move beside the final output; extracts are
 // dropped when the original is kept (it still holds the embedded tracks).
-func applyResultPolicy(ctx context.Context, policy, output, original string, outSize, originalSize int64, extracts []string) (applyResult, error) {
+func ApplyResultPolicy(ctx context.Context, policy, output, original string, outSize, originalSize int64, extracts []string) (ApplyResult, error) {
 	ext := filepath.Ext(output)
 	dir := filepath.Dir(original)
 	origBase := strings.TrimSuffix(filepath.Base(original), filepath.Ext(original))
@@ -42,9 +47,9 @@ func applyResultPolicy(ctx context.Context, policy, output, original string, out
 	switch policy {
 	case store.ResultPolicyReplaceIfSmaller:
 		if outSize >= originalSize {
-			return applyResult{SkipReason: fmt.Sprintf(
+			return ApplyResult{SkipReason: fmt.Sprintf(
 				"output (%s) is not smaller than the original (%s); original kept",
-				humanBytes(outSize), humanBytes(originalSize))}, nil
+				HumanBytes(outSize), HumanBytes(originalSize))}, nil
 		}
 		return replace(ctx, output, original, dir, origBase, ext, extracts)
 	case store.ResultPolicyReplace:
@@ -53,49 +58,49 @@ func applyResultPolicy(ctx context.Context, policy, output, original string, out
 		base := origBase + ".shrunk"
 		dest := filepath.Join(dir, base+ext)
 		if err := copyFile(ctx, output, dest); err != nil {
-			return applyResult{}, fmt.Errorf("write %s: %w", dest, err)
+			return ApplyResult{}, fmt.Errorf("write %s: %w", dest, err)
 		}
 		if err := moveExtracts(ctx, extracts, dir, base); err != nil {
-			return applyResult{}, err
+			return ApplyResult{}, err
 		}
-		return applyResult{FinalPath: dest}, nil
+		return ApplyResult{FinalPath: dest}, nil
 	default:
-		return applyResult{}, fmt.Errorf("unknown result policy %q", policy)
+		return ApplyResult{}, fmt.Errorf("unknown result policy %q", policy)
 	}
 }
 
 // replace copies the output over original (possibly with a new extension).
-func replace(ctx context.Context, output, original, dir, origBase, ext string, extracts []string) (applyResult, error) {
+func replace(ctx context.Context, output, original, dir, origBase, ext string, extracts []string) (ApplyResult, error) {
 	dest := filepath.Join(dir, origBase+ext)
 	if dest == original {
 		// Same path: rename replaces the file atomically in one step.
 		tmp := filepath.Join(dir, "."+origBase+".shrink-tmp")
 		if err := copyFile(ctx, output, tmp); err != nil {
-			return applyResult{}, fmt.Errorf("stage %s: %w", tmp, err)
+			return ApplyResult{}, fmt.Errorf("stage %s: %w", tmp, err)
 		}
 		if err := os.Rename(tmp, dest); err != nil {
 			_ = os.Remove(tmp)
-			return applyResult{}, fmt.Errorf("replace %s: %w", dest, err)
+			return ApplyResult{}, fmt.Errorf("replace %s: %w", dest, err)
 		}
 	} else {
 		tmp := filepath.Join(dir, "."+filepath.Base(dest)+".shrink-tmp")
 		if err := copyFile(ctx, output, tmp); err != nil {
-			return applyResult{}, fmt.Errorf("stage %s: %w", tmp, err)
+			return ApplyResult{}, fmt.Errorf("stage %s: %w", tmp, err)
 		}
 		if err := os.Rename(tmp, dest); err != nil {
 			_ = os.Remove(tmp)
-			return applyResult{}, fmt.Errorf("replace %s: %w", dest, err)
+			return ApplyResult{}, fmt.Errorf("replace %s: %w", dest, err)
 		}
 		// The verified output is in place; now (and only now) the original
 		// with the old extension goes away.
 		if err := os.Remove(original); err != nil && !os.IsNotExist(err) {
-			return applyResult{}, fmt.Errorf("remove original %s: %w", original, err)
+			return ApplyResult{}, fmt.Errorf("remove original %s: %w", original, err)
 		}
 	}
 	if err := moveExtracts(ctx, extracts, dir, strings.TrimSuffix(filepath.Base(dest), ext)); err != nil {
-		return applyResult{}, err
+		return ApplyResult{}, err
 	}
-	return applyResult{FinalPath: dest}, nil
+	return ApplyResult{FinalPath: dest}, nil
 }
 
 // moveExtracts copies scratch extract files (named base.<...>.srt) beside
@@ -156,8 +161,9 @@ func copyFile(ctx context.Context, src, dst string) error {
 	return nil
 }
 
-// humanBytes formats a byte count for skip reasons and logs.
-func humanBytes(n int64) string {
+// HumanBytes formats a byte count for skip reasons and logs. Exported so
+// the worker's transfer skip message matches the server's exactly.
+func HumanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%d B", n)

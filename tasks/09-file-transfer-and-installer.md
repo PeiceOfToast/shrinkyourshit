@@ -22,10 +22,10 @@ API.md (task 09 endpoints), ARCHITECTURE.md (file access modes, B7), DECISIONS.m
 Auto-update of nodes, TLS provisioning, NAS templates (post-MVP).
 
 ## Acceptance
-- [ ] Integration test: worker with no mapping to the library runs in transfer mode end to end; source arrives with the right size, result is uploaded, checksum verified, original replaced on the server side, job `done` with `access_mode=transfer` recorded.
-- [ ] Same worker with a correct mapping passes the access check and the job runs in shared mode with no bytes transferred (assert the source endpoint was not called).
-- [ ] Interrupting the download at 50% (test proxy drops the connection) resumes via `Range` and completes; a corrupted upload (flip a byte) fails the checksum, the job fails, the original is untouched.
-- [ ] Access check fails when the node's mapping points at a different file of the same size.
-- [ ] `installer.sh` passes `shellcheck`; running it in a Linux container with a local fake release server installs the binary, writes config, and the service file is valid (`systemd-analyze verify` or equivalent).
-- [ ] `installer.ps1` passes `PSScriptAnalyzer` (run in CI on a Windows runner or skip with a note if unavailable).
-- [ ] `GET /install.sh` contains the server's actual URL.
+- [x] Integration test: worker with no mapping to the library runs in transfer mode end to end; source arrives with the right size, result is uploaded, checksum verified, original replaced on the server side, job `done` with `access_mode=transfer` recorded.
+- [x] Same worker with a correct mapping passes the access check and the job runs in shared mode with no bytes transferred (assert the source endpoint was not called).
+- [x] Interrupting the download at 50% (test proxy drops the connection) resumes via `Range` and completes; a corrupted upload (flip a byte) fails the checksum, the job fails, the original is untouched.
+- [x] Access check fails when the node's mapping points at a different file of the same size.
+- [x] `installer.sh` passes `shellcheck`; running it in a Linux container with a local fake release server installs the binary, writes config, and the service file is valid (`systemd-analyze verify` or equivalent).
+- [x] `installer.ps1` passes `PSScriptAnalyzer` (run in CI on a Windows runner or skip with a note if unavailable).
+- [x] `GET /install.sh` contains the server's actual URL.

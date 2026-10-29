@@ -3,7 +3,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,18 +53,42 @@ type fakeAPI struct {
 	heartbeats   []HeartbeatInput
 	concurrency  int
 	authFailures int
-	srv          *httptest.Server
+	// Transfer endpoints (task 09): per-job source payloads, assembled
+	// uploads, canned access-check challenges and scripted upload status
+	// overrides.
+	sources     map[string][]byte
+	uploads     map[string][]byte
+	challenges  map[string]*AccessChallenge
+	uploadState map[string]*uploadCapture
+	dropped     map[string]bool
+	// rejectChecksum answers 422 on every final chunk (corrupt upload).
+	rejectChecksum bool
+	srv            *httptest.Server
+}
+
+// uploadCapture reassembles one result upload and can script a failure
+// (a status answered instead of storing, exactly once).
+type uploadCapture struct {
+	total     int64
+	parts     map[int64][]byte // start offset → chunk bytes
+	failOnce  int              // answer this status on the Nth chunk (1-based), once
+	chunks    int
+	droppedOK bool
 }
 
 func newFakeAPI(t *testing.T, key string) *fakeAPI {
 	t.Helper()
 	f := &fakeAPI{
-		t:        t,
-		key:      key,
-		specs:    map[string]*server.JobSpec{},
-		statuses: map[string]string{},
-		complete: map[string]CompleteInput{},
-		fails:    map[string]failReport{},
+		t:           t,
+		key:         key,
+		specs:       map[string]*server.JobSpec{},
+		statuses:    map[string]string{},
+		complete:    map[string]CompleteInput{},
+		fails:       map[string]failReport{},
+		sources:     map[string][]byte{},
+		uploads:     map[string][]byte{},
+		challenges:  map[string]*AccessChallenge{},
+		uploadState: map[string]*uploadCapture{},
 	}
 	mux := http.NewServeMux()
 	guard := func(next http.HandlerFunc) http.HandlerFunc {
@@ -142,6 +170,104 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		writeFakeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}))
 
+	// Transfer mode (task 09).
+	mux.HandleFunc("POST /api/v1/worker/jobs/{id}/access-check", guard(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		ch, ok := f.challenges[r.PathValue("id")]
+		f.mu.Unlock()
+		if !ok {
+			writeFakeError(w, http.StatusNotFound, "not_found", "no challenge")
+			return
+		}
+		writeFakeJSON(w, http.StatusOK, ch)
+	}))
+	mux.HandleFunc("GET /api/v1/worker/jobs/{id}/source", guard(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		data, ok := f.sources[r.PathValue("id")]
+		spec := f.specs[r.PathValue("id")]
+		f.mu.Unlock()
+		if !ok {
+			writeFakeError(w, http.StatusNotFound, "not_found", "no source")
+			return
+		}
+		if spec != nil {
+			w.Header().Set("ETag", `"`+spec.Fingerprint+`"`)
+		}
+		if drop := f.partialDrop(r.PathValue("id"), int64(len(data))); drop > 0 {
+			// Abort mid-body: the client sees a broken transfer and must
+			// resume with a Range request.
+			w.Header().Set("Content-Length", itoaFake(int64(len(data))))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data[:drop])
+			panic(http.ErrAbortHandler)
+		}
+		http.ServeContent(w, r, "source", time.Unix(1_700_000_000, 0), bytes.NewReader(data))
+	}))
+	mux.HandleFunc("PUT /api/v1/worker/jobs/{id}/result", guard(func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		start, end, total, err := parseContentRangeFake(r.Header.Get("Content-Range"))
+		if err != nil {
+			writeFakeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil || int64(len(body)) != end-start+1 {
+			writeFakeError(w, http.StatusBadRequest, "invalid_request", "chunk size mismatch")
+			return
+		}
+		f.mu.Lock()
+		cap := f.uploadState[id]
+		if cap == nil {
+			cap = &uploadCapture{total: total, parts: map[int64][]byte{}}
+			f.uploadState[id] = cap
+		}
+		cap.chunks++
+		if cap.failOnce > 0 && cap.chunks == cap.failOnce && !cap.droppedOK {
+			cap.droppedOK = true
+			f.mu.Unlock()
+			writeFakeError(w, http.StatusConflict, "upload_gap", "lost state; restart from zero")
+			return
+		}
+		cap.parts[start] = body
+		final := end+1 >= total
+		if final {
+			if f.rejectChecksum {
+				f.mu.Unlock()
+				writeFakeError(w, http.StatusUnprocessableEntity, "checksum_mismatch", "bad checksum")
+				return
+			}
+			sum := sha256.New()
+			for off := int64(0); off < total; {
+				part, ok := cap.parts[off]
+				if !ok {
+					f.mu.Unlock()
+					writeFakeError(w, http.StatusConflict, "upload_gap", "missing chunk")
+					return
+				}
+				sum.Write(part)
+				off += int64(len(part))
+			}
+			got := hex.EncodeToString(sum.Sum(nil))
+			if got != r.Header.Get("X-Checksum-SHA256") {
+				f.mu.Unlock()
+				writeFakeError(w, http.StatusUnprocessableEntity, "checksum_mismatch", "bad checksum")
+				return
+			}
+			upload := make([]byte, 0, total)
+			for off := int64(0); off < total; {
+				upload = append(upload, cap.parts[off]...)
+				off += int64(len(cap.parts[off]))
+			}
+			f.uploads[id] = upload
+		}
+		f.mu.Unlock()
+		if final {
+			writeFakeJSON(w, http.StatusOK, map[string]int64{"received": total})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
@@ -185,6 +311,98 @@ func (f *fakeAPI) heartbeatHadRunningJob(jobID string) bool {
 	}
 	return false
 }
+
+// setSource wires the fake source endpoint for a job.
+func (f *fakeAPI) setSource(jobID string, data []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sources[jobID] = data
+}
+
+// setChallenge wires the fake access-check answer for a job.
+func (f *fakeAPI) setChallenge(jobID string, ch *AccessChallenge) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.challenges[jobID] = ch
+}
+
+// failUploadNth scripts a 409 upload_gap answer on the nth chunk (once),
+// forcing the client to restart the upload from byte 0.
+func (f *fakeAPI) failUploadNth(jobID string, n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.uploadState[jobID] == nil {
+		f.uploadState[jobID] = &uploadCapture{parts: map[int64][]byte{}}
+	}
+	f.uploadState[jobID].failOnce = n
+}
+
+// uploadOf returns the assembled upload of a job.
+func (f *fakeAPI) uploadOf(jobID string) ([]byte, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	up, ok := f.uploads[jobID]
+	return up, ok
+}
+
+// progressOf returns the last recorded progress input for a job.
+func (f *fakeAPI) progressOf(jobID string) (ProgressInput, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.progressJobs) - 1; i >= 0; i-- {
+		if f.progressJobs[i] == jobID {
+			return f.progress[i], true
+		}
+	}
+	return ProgressInput{}, false
+}
+
+// partialDrop returns where (if ever) the source transfer for a job aborts
+// mid-body: the first request is cut at half, later requests stream whole.
+func (f *fakeAPI) partialDrop(jobID string, size int64) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sources[jobID] == nil {
+		return 0
+	}
+	if _, requested := f.dropped[jobID]; !requested {
+		if f.dropped == nil {
+			f.dropped = map[string]bool{}
+		}
+		f.dropped[jobID] = true
+		return size / 2
+	}
+	return 0
+}
+
+// wasDropped reports whether a source transfer aborted mid-body.
+func (f *fakeAPI) wasDropped(jobID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.dropped[jobID]
+}
+
+// parseContentRangeFake mirrors the server's strict Content-Range parser.
+func parseContentRangeFake(header string) (start, end, total int64, err error) {
+	h := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(header), "bytes "))
+	startS, rest, ok := strings.Cut(h, "-")
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("bad range %q", header)
+	}
+	endS, totalS, ok := strings.Cut(rest, "/")
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("bad range %q", header)
+	}
+	start, err1 := strconv.ParseInt(startS, 10, 64)
+	end, err2 := strconv.ParseInt(endS, 10, 64)
+	total, err3 := strconv.ParseInt(totalS, 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return 0, 0, 0, fmt.Errorf("bad range %q", header)
+	}
+	return start, end, total, nil
+}
+
+func itoaFake(v int64) string { return strconv.FormatInt(v, 10) }
 
 func writeFakeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -290,6 +508,7 @@ func newRunner(t *testing.T, api *fakeAPI, scratchDir string, opts runnerOpts) *
 		prober:  proberByBase(prober),
 		runFn:   opts.run,
 		sc:      newScratch(scratchDir),
+		access:  newAccessCache(),
 		log:     cfg.Log,
 		tracker: &encoderTracker{},
 	}
@@ -408,20 +627,22 @@ func TestRunnerFailsOnFingerprintMismatch(t *testing.T) {
 	_ = src
 }
 
-func TestRunnerFailsOnTransferMode(t *testing.T) {
+func TestRunnerFallsBackToTransferWhenAccessCheckFails(t *testing.T) {
 	api := newFakeAPI(t, "key")
 	dir := t.TempDir()
 	_, spec := defaultSpec(t, dir, "job1")
-	spec.AccessMode = store.NodeAccessTransfer
+	spec.AccessMode = store.NodeAccessAuto
+	// The access check answers 404: no verified shared view → transfer.
 	api.enqueue("job1", spec)
 
 	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
 		run: writeRun("x", nil),
 	})
 	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
 	rep, ok := api.failOf("job1")
-	require.True(t, ok)
-	require.Contains(t, rep.Error, "task 09")
+	require.True(t, ok, "the job must fail when the source endpoint is missing")
+	require.Contains(t, rep.Error, "download source")
 }
 
 func TestRunnerFallbackReasonsRecorded(t *testing.T) {

@@ -114,25 +114,28 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		return
 	}
 	writeJSON(w, http.StatusOK, server.JobSpec{
-		ID:           job.ID,
-		FileID:       f.ID,
-		LibraryID:    lib.ID,
-		Attempt:      job.Attempt,
-		Target:       target,
-		SourcePath:   server.ResolveNodePath(node, f.Path),
-		SourceSize:   f.Size,
-		SourceMtime:  f.Mtime,
-		Fingerprint:  f.Fingerprint,
-		AccessMode:   effectiveAccessMode(node),
-		ResultPolicy: lib.ResultPolicy,
-		BytesBefore:  job.BytesBefore,
+		ID:                 job.ID,
+		FileID:             f.ID,
+		LibraryID:          lib.ID,
+		Attempt:            job.Attempt,
+		Target:             target,
+		SourcePath:         server.ResolveNodePath(node, f.Path),
+		SourceSize:         f.Size,
+		SourceMtime:        f.Mtime,
+		Fingerprint:        f.Fingerprint,
+		AccessMode:         effectiveAccessMode(node),
+		ResultPolicy:       lib.ResultPolicy,
+		BytesBefore:        job.BytesBefore,
+		ThroughputLimitMBs: node.ThroughputLimit,
 	})
 }
 
 // completeBody is the POST .../complete request (API.md). output_path is
 // the final path of the produced file in the library. skipped_reason is set
 // when the result policy kept the original (replace_if_smaller with a
-// not-smaller output); log_tail is stored for the UI.
+// not-smaller output); log_tail is stored for the UI. access_mode (task 09)
+// is the mode the node ran in: when it is "transfer" the server applies the
+// result policy itself from the verified upload before recording.
 type completeBody struct {
 	OutputPath      string   `json:"output_path"`
 	BytesAfter      int64    `json:"bytes_after"`
@@ -140,38 +143,63 @@ type completeBody struct {
 	FallbackReasons []string `json:"fallback_reasons"`
 	SkippedReason   string   `json:"skipped_reason"`
 	LogTail         string   `json:"log_tail"`
+	AccessMode      string   `json:"access_mode"`
 }
 
 // workerComplete records a successful job. The worker reports the output
 // path in its own view (it replaced the file where it was told the source
 // was); the server maps it back through the node's path mappings so the
 // library row and the output inspection always use the library-side path.
+// In transfer mode the worker uploads the output instead (task 09): the
+// server takes the verified upload, applies the result policy itself, and
+// records the final library path.
 func (a *API) workerComplete(w http.ResponseWriter, r *http.Request, node *store.Node) {
 	body, err := decode[completeBody](r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	job, err := a.svc.Queue().Complete(workerCtx(r), r.PathValue("id"), node.ID, server.CompleteParams{
+	params := server.CompleteParams{
 		OutputPath:      server.ResolveServerPath(node, body.OutputPath),
 		BytesAfter:      body.BytesAfter,
 		Encoder:         body.Encoder,
 		FallbackReasons: body.FallbackReasons,
 		SkippedReason:   body.SkippedReason,
 		LogTail:         body.LogTail,
-	})
+		AccessMode:      body.AccessMode,
+	}
+	if body.AccessMode != "" && body.AccessMode != store.NodeAccessShared && body.AccessMode != store.NodeAccessTransfer {
+		writeError(w, http.StatusBadRequest, "invalid_request", "access_mode must be shared or transfer")
+		return
+	}
+	if body.AccessMode == store.NodeAccessTransfer {
+		transferOut, ok := a.transferComplete(w, r, node)
+		if !ok {
+			return
+		}
+		params.OutputPath = transferOut.OutputPath
+		params.SkippedReason = transferOut.SkipReason
+		params.BytesAfter = transferOut.BytesAfter
+	}
+	job, err := a.svc.Queue().Complete(workerCtx(r), r.PathValue("id"), node.ID, params)
 	if a.queueError(w, err) {
 		return
+	}
+	if body.AccessMode == store.NodeAccessTransfer {
+		a.svc.Transfer().Discard(r.PathValue("id"))
 	}
 	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
 }
 
-// progressBody is the POST .../progress request (API.md).
+// progressBody is the POST .../progress request (API.md). access_mode
+// (task 09) is the mode the node resolved for this job; the server stores
+// it on the job when present.
 type progressBody struct {
 	Percent    float64 `json:"percent"`
 	Speed      float64 `json:"speed"`
 	ETASeconds int64   `json:"eta_seconds"`
 	Encoder    string  `json:"encoder"`
+	AccessMode string  `json:"access_mode"`
 }
 
 // workerProgress records encode progress. The response carries the job's
@@ -185,11 +213,16 @@ func (a *API) workerProgress(w http.ResponseWriter, r *http.Request, node *store
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	if body.AccessMode != "" && body.AccessMode != store.NodeAccessShared && body.AccessMode != store.NodeAccessTransfer {
+		writeError(w, http.StatusBadRequest, "invalid_request", "access_mode must be shared or transfer")
+		return
+	}
 	job, err := a.svc.Queue().Progress(workerCtx(r), r.PathValue("id"), node.ID, server.ProgressParams{
 		Percent:    body.Percent,
 		Speed:      body.Speed,
 		ETASeconds: body.ETASeconds,
 		Encoder:    body.Encoder,
+		AccessMode: body.AccessMode,
 	})
 	if err != nil && errors.Is(err, server.ErrJobNotActive) {
 		if j, gerr := a.st.GetJob(workerCtx(r), r.PathValue("id")); gerr == nil && j.NodeID == node.ID {
@@ -209,7 +242,8 @@ type failBody struct {
 	LogTail string `json:"log_tail"`
 }
 
-// workerFail records a failed job.
+// workerFail records a failed job. Any partial transfer upload (task 09)
+// goes away with it.
 func (a *API) workerFail(w http.ResponseWriter, r *http.Request, node *store.Node) {
 	body, err := decode[failBody](r)
 	if err != nil {
@@ -223,6 +257,7 @@ func (a *API) workerFail(w http.ResponseWriter, r *http.Request, node *store.Nod
 	if a.queueError(w, err) {
 		return
 	}
+	a.svc.Transfer().Discard(r.PathValue("id"))
 	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
 }
 
@@ -268,12 +303,14 @@ func (a *API) queueError(w http.ResponseWriter, err error) bool {
 	return true
 }
 
-// effectiveAccessMode resolves the node's access mode for job specs. auto
-// means shared for now; the shared-storage check and transfer mode arrive
-// with task 09.
+// effectiveAccessMode resolves the node's configured access mode for job
+// specs (task 09): shared and transfer pass through; auto stays auto — the
+// worker runs the shared-storage check and reports the mode it chose.
 func effectiveAccessMode(n *store.Node) string {
-	if n.AccessMode == store.NodeAccessAuto || n.AccessMode == "" {
-		return store.NodeAccessShared
+	switch n.AccessMode {
+	case store.NodeAccessShared, store.NodeAccessTransfer:
+		return n.AccessMode
+	default:
+		return store.NodeAccessAuto
 	}
-	return n.AccessMode
 }

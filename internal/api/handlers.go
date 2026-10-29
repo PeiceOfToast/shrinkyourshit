@@ -22,13 +22,13 @@ import (
 // Target and Easy may be present: Easy is the easy-screen input the server
 // compiles into a Target (and stores verbatim for round-tripping).
 type libraryBody struct {
-	Name         string             `json:"name"`
-	Path         string             `json:"path"`
-	Target       *flow.Target       `json:"target"`
+	Name         string              `json:"name"`
+	Path         string              `json:"path"`
+	Target       *flow.Target        `json:"target"`
 	Easy         *flow.EasyModeInput `json:"easy"`
-	Watch        bool               `json:"watch"`
-	Schedule     string             `json:"schedule"`
-	ResultPolicy string             `json:"result_policy"`
+	Watch        bool                `json:"watch"`
+	Schedule     string              `json:"schedule"`
+	ResultPolicy string              `json:"result_policy"`
 }
 
 // listLibraries returns every library.
@@ -219,7 +219,8 @@ func (a *API) getJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
 }
 
-// cancelJob stops an active job.
+// cancelJob stops an active job. A transfer-mode upload (task 09) is
+// discarded with it: a cancelled job's partial upload is dead weight.
 func (a *API) cancelJob(w http.ResponseWriter, r *http.Request) {
 	_, err := a.svc.Queue().Cancel(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
@@ -234,6 +235,7 @@ func (a *API) cancelJob(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
+	a.svc.Transfer().Discard(r.PathValue("id"))
 	w.WriteHeader(http.StatusNoContent)
 }
 

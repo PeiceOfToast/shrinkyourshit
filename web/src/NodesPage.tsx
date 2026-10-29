@@ -181,6 +181,7 @@ function EditNodeDialog({
     enabled: boolean
     access_mode: string
     path_mappings: PathMapping[]
+    throughput_limit_mbps: number
   }) => void
   onClose: () => void
 }) {
@@ -190,6 +191,7 @@ function EditNodeDialog({
   const [mappings, setMappings] = useState<PathMapping[]>(
     node.path_mappings ?? [],
   )
+  const [limit, setLimit] = useState(String(node.throughput_limit_mbps ?? 0))
 
   const setRow = (i: number, key: keyof PathMapping, value: string) => {
     setMappings((rows) =>
@@ -239,6 +241,21 @@ function EditNodeDialog({
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="mt-3 grid gap-1">
+          <span className="text-sm text-slate-300">Transfer speed limit</span>
+          <span className="text-xs text-slate-500">
+            Only used when files are sent over the network. 0 = no limit.
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={limit}
+            onChange={(e) => setLimit(e.target.value)}
+            className="rounded-lg bg-slate-800 px-3 py-2"
+            data-testid="edit-node-throughput"
+          />
         </label>
 
         <div className="mt-4">
@@ -316,6 +333,7 @@ function EditNodeDialog({
                   (m) =>
                     m.server_path.trim() !== '' && m.node_path.trim() !== '',
                 ),
+                throughput_limit_mbps: Math.max(0, Number(limit) || 0),
               })
             }
             disabled={busy || name.trim() === ''}

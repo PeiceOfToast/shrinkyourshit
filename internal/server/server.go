@@ -42,6 +42,10 @@ type Config struct {
 	// fingerprint + ffprobe (the server reads the library directly in
 	// shared mode; transfer mode arrives with task 09).
 	Inspect ResultInspector
+	// ScratchDir is where transfer-mode result uploads land before the
+	// server applies them (task 09). Empty falls back to a directory
+	// under the OS temp path; main wires the configured scratch dir.
+	ScratchDir string
 
 	// Discover finds servers on the LAN for the setup wizard's join card
 	// (task 08). Nil → the wizard list stays empty. Wired by main to
@@ -87,7 +91,7 @@ func defaultInspector(ctx context.Context, ffprobePath, path string) (ResultInfo
 
 // Server holds the server-side services and their lifecycle: event bus,
 // queue, scanner, watcher, scheduler, library manager, node registry,
-// auth and settings.
+// auth, settings, stats and transfer.
 type Server struct {
 	cfg       Config
 	log       *slog.Logger
@@ -101,6 +105,7 @@ type Server struct {
 	auth      *Auth
 	settings  *Settings
 	stats     *StatsService
+	transfer  *Transfer
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -137,9 +142,10 @@ func New(cfg Config) *Server {
 	settings := NewSettings(cfg.Store, cfg.Log)
 	stats := NewStats(cfg.Store)
 	queue.SetInspector(cfg.Inspect, cfg.FFprobePath)
+	transfer := NewTransfer(cfg.Store, cfg.ScratchDir)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
-		auth: auth, settings: settings, stats: stats}
+		auth: auth, settings: settings, stats: stats, transfer: transfer}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
@@ -177,6 +183,10 @@ func (s *Server) Settings() *Settings { return s.settings }
 
 // Stats exposes the stats service (GET /stats; task 07).
 func (s *Server) Stats() *StatsService { return s.stats }
+
+// Transfer exposes the transfer service (worker access checks and result
+// uploads; task 09).
+func (s *Server) Transfer() *Transfer { return s.transfer }
 
 // discoveredTTL is how long Discovered reuses the last LAN scan.
 const discoveredTTL = 10 * time.Second

@@ -14,7 +14,7 @@ CROSS_TARGETS := \
 	darwin/arm64
 
 .PHONY: all build dev web web-deps placeholder test test-go test-web \
-	test-integration lint lint-go lint-web spdx docker cross clean
+	test-integration lint lint-go lint-web spdx installer-check docker cross clean
 
 all: build
 
@@ -71,6 +71,11 @@ lint-web: web-deps
 # spdx fails when a Go or TypeScript source file is missing its license header.
 spdx:
 	./scripts/check-spdx.sh
+
+# installer-check runs shellcheck over the POSIX installer (CI installs
+# shellcheck; locally install it first, e.g. from your package manager).
+installer-check:
+	shellcheck scripts/installer.sh scripts/test-installer.sh
 
 docker:
 	docker build -f docker/Dockerfile --build-arg VERSION=$(VERSION) -t $(IMAGE) .

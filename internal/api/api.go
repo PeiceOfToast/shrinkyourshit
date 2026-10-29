@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 
+	shrink "github.com/PeiceOfToast/shrinkyourshit"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
@@ -22,6 +23,9 @@ type API struct {
 	// through the server services.
 	st  store.Store
 	log *slog.Logger
+	// version is the server's build version; /health reports it and the
+	// installer scripts (task 09) bake it into the release download URL.
+	version string
 	// logins rate-limits failed login attempts per IP (task 06).
 	logins *loginLimiter
 	// join records a setup "join" decision (task 08); main owns the
@@ -45,7 +49,7 @@ func WithJoin(fn func(serverURL, token string) error) Option {
 // the server services; requireAdmin enforces session auth (open when login
 // is disabled).
 func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.Handler {
-	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter()}
+	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter(), version: version}
 	for _, o := range opts {
 		o(a)
 	}
@@ -55,6 +59,13 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/v1/health", health(version))
+
+	// Installer scripts (task 09): open, templated with this request's
+	// origin so a node reaches the server the way the admin's browser does.
+	mux.HandleFunc("GET /install.sh", a.serveInstaller(shrink.InstallShell,
+		"text/x-shellscript; charset=utf-8"))
+	mux.HandleFunc("GET /install.ps1", a.serveInstaller(shrink.InstallPowerShell,
+		"text/plain; charset=utf-8"))
 
 	if svc != nil {
 		// First-run setup and login stay open; requireAdmin is applied to
@@ -103,6 +114,12 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/progress", a.nodeAuth(a.workerProgress))
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/complete", a.nodeAuth(a.workerComplete))
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/fail", a.nodeAuth(a.workerFail))
+
+		// Transfer mode (task 09): shared-storage access check, resumable
+		// source stream, chunked result upload.
+		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/access-check", a.nodeAuth(a.workerAccessCheck))
+		mux.HandleFunc("GET /api/v1/worker/jobs/{id}/source", a.nodeAuth(a.workerSource))
+		mux.HandleFunc("PUT /api/v1/worker/jobs/{id}/result", a.nodeAuth(a.workerResult))
 	}
 
 	mux.Handle("/api/", apiNotFound())
@@ -151,6 +168,24 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		Error string `json:"error"`
 		Code  string `json:"code"`
 	}{Error: message, Code: code})
+}
+
+// serveInstaller answers GET /install.sh and /install.ps1 with the
+// embedded installer script templated for this request's origin
+// (X-Forwarded-Proto aware, like the pairing commands) and the server's
+// version, so the node downloads the release matching the server it joins.
+func (a *API) serveInstaller(render func(serverURL, version string) string, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(render(baseURL(r), a.version)))
+	}
 }
 
 // serveStatic serves the embedded web UI. Unknown paths fall back to

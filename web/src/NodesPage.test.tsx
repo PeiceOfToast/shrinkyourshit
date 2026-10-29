@@ -21,6 +21,7 @@ function nodeFixture(overrides: Record<string, unknown> = {}) {
     capabilities: { encoders: [{ name: 'cpu', codecs: ['hevc'] }] },
     access_mode: 'auto',
     path_mappings: [],
+    throughput_limit_mbps: 0,
     status: 'approved',
     enabled: true,
     created_at: '2026-10-29T00:00:00Z',
@@ -201,7 +202,8 @@ describe('NodesPage', () => {
     const dialog = screen.getByTestId('edit-node-dialog')
     expect(dialog).toBeInTheDocument()
 
-    // Existing mapping is shown; rename, add a second mapping, save.
+    // Existing mapping is shown; rename, add a second mapping, set a
+    // transfer speed cap, save.
     expect(screen.getByTestId('mapping-server-0')).toHaveValue('/media')
     fireEvent.change(screen.getByTestId('edit-node-name'), {
       target: { value: 'renamed-box' },
@@ -212,6 +214,9 @@ describe('NodesPage', () => {
     })
     fireEvent.change(screen.getByTestId('mapping-node-1'), {
       target: { value: '/srv/two' },
+    })
+    fireEvent.change(screen.getByTestId('edit-node-throughput'), {
+      target: { value: '50' },
     })
     fireEvent.click(screen.getByTestId('edit-node-save'))
 
@@ -226,7 +231,43 @@ describe('NodesPage', () => {
           { server_path: '/media', node_path: '/mnt/nas' },
           { server_path: '/media2', node_path: '/srv/two' },
         ],
+        throughput_limit_mbps: 50,
       })
+    })
+  })
+
+  it('saves a zero transfer cap as unlimited', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture({ throughput_limit_mbps: 25 })], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/nodes\/node-1$/,
+        body: nodeFixture(),
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-edit-node-1'))
+    fireEvent.click(screen.getByTestId('node-edit-node-1'))
+    expect(screen.getByTestId('edit-node-throughput')).toHaveValue(25)
+    fireEvent.change(screen.getByTestId('edit-node-throughput'), {
+      target: { value: '0' },
+    })
+    fireEvent.click(screen.getByTestId('edit-node-save'))
+
+    await waitFor(() => {
+      const puts = mock.calls('PUT', /\/api\/v1\/nodes\/node-1$/)
+      expect(puts.length).toBeGreaterThan(0)
+      expect(puts[0].body).toMatchObject({ throughput_limit_mbps: 0 })
     })
   })
 

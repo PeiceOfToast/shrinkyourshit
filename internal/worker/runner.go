@@ -29,7 +29,9 @@ type Prober func(ctx context.Context, ffprobePath, path string) (probe.MediaInfo
 // into scratch, encode with GPU-to-CPU fallback while streaming progress,
 // run subtitle extracts, verify the output, apply the result policy to the
 // library, and report complete or fail. The original is only touched after
-// the output verified.
+// the output verified. Transfer mode (task 09) swaps the copy for a
+// resumable download and the policy apply for a checksum-verified upload;
+// the server then does the verify-and-replace.
 type runner struct {
 	cfg     Config
 	client  *Client
@@ -38,6 +40,7 @@ type runner struct {
 	prober  Prober
 	runFn   encoders.RunFn // test override; nil → ffmpeg subprocess
 	sc      *scratch
+	access  *accessCache
 	log     *slog.Logger
 	tracker *encoderTracker
 }
@@ -65,26 +68,39 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		return fail("prepare scratch: %v", err)
 	}
 
-	if spec.AccessMode != store.NodeAccessShared {
-		return fail("access mode %q is not supported yet: transfer mode arrives with task 09", spec.AccessMode)
+	// How does this node reach the source? Configured modes pass through;
+	// auto runs the shared-storage check (cached per library, task 09).
+	mode, err := resolveAccessMode(ctx, r.client, spec, r.access, r.log)
+	if err != nil {
+		return fail("resolve access mode: %v", err)
 	}
 
-	// Copy the source into scratch (never encode on the library), keeping
-	// its mtime so the fingerprint matches the original row.
+	// Bring the source into scratch, keeping its mtime so the fingerprint
+	// matches the original row.
 	srcExt := filepath.Ext(spec.SourcePath)
 	local := filepath.Join(dir, "source"+srcExt)
-	if err := copyWithContext(ctx, spec.SourcePath, local); err != nil {
-		if cancelled.Load() || ctx.Err() != nil {
-			return nil
+	if mode == store.NodeAccessTransfer {
+		local, err = downloadSource(ctx, r.client, spec, dir, spec.ThroughputLimitMBs, r.log)
+		if err != nil {
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			return fail("download source: %v", err)
 		}
-		return fail("copy source: %v", err)
-	}
-	mtime := time.Unix(spec.SourceMtime, 0)
-	_ = os.Chtimes(local, mtime, mtime) // best effort; the check below is authoritative
-	if fp, err := probe.Fingerprint(local); err != nil {
-		return fail("fingerprint scratch copy: %v", err)
-	} else if fp != spec.Fingerprint {
-		return fail("source changed since the job was queued; the next scan will re-evaluate it")
+	} else {
+		if err := copyWithContext(ctx, spec.SourcePath, local); err != nil {
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			return fail("copy source: %v", err)
+		}
+		mtime := time.Unix(spec.SourceMtime, 0)
+		_ = os.Chtimes(local, mtime, mtime) // best effort; the check below is authoritative
+		if fp, err := probe.Fingerprint(local); err != nil {
+			return fail("fingerprint scratch copy: %v", err)
+		} else if fp != spec.Fingerprint {
+			return fail("source changed since the job was queued; the next scan will re-evaluate it")
+		}
 	}
 
 	srcInfo, err := r.prober(ctx, r.cfg.FFprobePath, local)
@@ -103,7 +119,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	stopReport := make(chan struct{})
 	go func() {
 		defer close(reportDone)
-		r.reportLoop(stopReport, runCtx, spec, state, srcInfo.DurationSeconds, cancelled, cancelRun)
+		r.reportLoop(stopReport, runCtx, spec, state, srcInfo.DurationSeconds, cancelled, cancelRun, mode)
 	}()
 
 	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(spec.Target), sp,
@@ -122,7 +138,16 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 
 	// Removed text subtitles become .srt files beside the (scratch) output;
 	// they move into the library only when the result is applied.
-	for _, ec := range encoders.ExtractCommands(sp) {
+	extractCmds := encoders.ExtractCommands(sp)
+	if mode == store.NodeAccessTransfer && len(extractCmds) > 0 {
+		// Transfer mode has no extract channel yet (task 09): the removed
+		// tracks stay in the source; the engine still strips them from the
+		// uploaded output. Logged so the behavior is visible.
+		r.log.Warn("worker: subtitle extracts are not uploaded in transfer mode; skipping extract commands",
+			"job", spec.ID, "extracts", len(extractCmds))
+		extractCmds = nil
+	}
+	for _, ec := range extractCmds {
 		if err := r.execExtract(runCtx, ec.Args, tail); err != nil {
 			if cancelled.Load() || ctx.Err() != nil {
 				return nil
@@ -143,7 +168,13 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		return fail("output verification failed: %v", err)
 	}
 
-	applied, err := applyResultPolicy(ctx, spec.ResultPolicy, output, spec.SourcePath,
+	// Transfer mode (task 09): the output is uploaded and the server does
+	// the verify-and-replace with the library's result policy.
+	if mode == store.NodeAccessTransfer {
+		return r.completeTransfer(ctx, spec, output, st.Size(), res, tail, cancelled)
+	}
+
+	applied, err := server.ApplyResultPolicy(ctx, spec.ResultPolicy, output, spec.SourcePath,
 		st.Size(), spec.BytesBefore, r.sc.extractFiles(dir, "output"))
 	if err != nil {
 		if cancelled.Load() || ctx.Err() != nil {
@@ -157,6 +188,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		Encoder:         res.EncoderUsed,
 		FallbackReasons: fallbackStrings(res),
 		LogTail:         tail.Tail(),
+		AccessMode:      mode,
 	}
 	if applied.SkipReason != "" {
 		in.SkippedReason = applied.SkipReason
@@ -181,16 +213,70 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	return nil
 }
 
+// completeTransfer uploads the verified output and reports the job done;
+// the server applies the result policy from the upload (its
+// verify-and-replace) and answers with the recorded job. A replace_if_smaller
+// output that is not smaller is never uploaded: the node reports the skip
+// directly, saving the whole transfer.
+func (r *runner) completeTransfer(ctx context.Context, spec *server.JobSpec, output string, outSize int64,
+	res encoders.Result, tail *tailBuffer, cancelled *atomic.Bool) error {
+	fail := func(format string, args ...any) error {
+		msg := fmt.Sprintf(format, args...)
+		r.log.Warn("job failed", "job", spec.ID, "error", msg)
+		if err := r.client.Fail(ctx, spec.ID, msg, tail.Tail()); err != nil && !isAPIStatus(err, 409) {
+			r.log.Error("worker: fail report", "job", spec.ID, "err", err)
+		}
+		return nil
+	}
+
+	in := CompleteInput{
+		BytesAfter:      outSize,
+		Encoder:         res.EncoderUsed,
+		FallbackReasons: fallbackStrings(res),
+		LogTail:         tail.Tail(),
+		AccessMode:      store.NodeAccessTransfer,
+	}
+	if spec.ResultPolicy == store.ResultPolicyReplaceIfSmaller && outSize >= spec.BytesBefore {
+		in.SkippedReason = fmt.Sprintf(
+			"output (%s) is not smaller than the original (%s); original kept",
+			server.HumanBytes(outSize), server.HumanBytes(spec.BytesBefore))
+		in.BytesAfter = spec.BytesBefore
+	} else {
+		if err := r.client.UploadResult(ctx, spec.ID, output, spec.ThroughputLimitMBs, r.log); err != nil {
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			return fail("upload result: %v", err)
+		}
+	}
+	if err := r.client.Complete(ctx, spec.ID, in); err != nil {
+		if isAPIStatus(err, 409) {
+			// The job left the active state while we finished; the server
+			// already discarded or kept the upload as it saw fit.
+			r.log.Warn("worker: complete rejected", "job", spec.ID, "err", err)
+			return nil
+		}
+		r.log.Error("worker: complete report", "job", spec.ID, "err", err)
+		return err
+	}
+	r.log.Info("job complete (transfer)", "job", spec.ID,
+		"encoder", res.EncoderUsed, "bytes_after", in.BytesAfter,
+		"skipped", in.SkippedReason != "")
+	return nil
+}
+
 // reportLoop sends progress on a fixed ticker and watches for cancellation:
 // a progress response carrying a terminal job status kills the encode
 // within the tick interval. The first report goes out immediately, so a
 // claimed job flips to running (and starts refreshing its heartbeat) as
-// soon as the encode begins.
+// soon as the encode begins. accessMode is the mode the node resolved for
+// this job; the server records it.
 func (r *runner) reportLoop(stop <-chan struct{}, runCtx context.Context, spec *server.JobSpec,
-	state *progressState, srcDuration float64, cancelled *atomic.Bool, cancelRun context.CancelFunc) {
+	state *progressState, srcDuration float64, cancelled *atomic.Bool, cancelRun context.CancelFunc,
+	accessMode string) {
 	report := func() bool {
 		out, speed, _ := state.snapshot()
-		in := ProgressInput{Speed: speed, Encoder: r.tracker.current()}
+		in := ProgressInput{Speed: speed, Encoder: r.tracker.current(), AccessMode: accessMode}
 		if srcDuration > 0 && out > 0 {
 			in.Percent = clampPercent(out / srcDuration * 100)
 			if speed > 0 {

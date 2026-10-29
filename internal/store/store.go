@@ -92,11 +92,14 @@ type Job struct {
 	BytesAfter      int64
 	Log             string // capped at 64KiB tail
 	Error           string
-	ClaimedAt       time.Time
-	StartedAt       time.Time
-	FinishedAt      time.Time
-	HeartbeatAt     time.Time
-	CreatedAt       time.Time
+	// AccessMode is how the node actually reached the source: shared or
+	// transfer. Empty until the node reports it (task 09).
+	AccessMode  string
+	ClaimedAt   time.Time
+	StartedAt   time.Time
+	FinishedAt  time.Time
+	HeartbeatAt time.Time
+	CreatedAt   time.Time
 }
 
 // Node statuses (ARCHITECTURE.md; do not add values without updating it).
@@ -115,18 +118,21 @@ const (
 
 // Node is a registered worker machine.
 type Node struct {
-	ID              string
-	Name            string
-	KeyHash         string
+	ID      string
+	Name    string
+	KeyHash string
 	// KeyOnce holds the raw key between admin approval and the node's
 	// first retrieval (pairing flow, task 08). It is wiped on first
 	// retrieval, revoke and delete — afterwards only the hash remains.
-	KeyOnce         string
-	OS              string
-	Arch            string
-	Capabilities    string // JSON: {encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}
-	AccessMode      string // auto | shared | transfer
-	PathMappings    string // JSON
+	KeyOnce      string
+	OS           string
+	Arch         string
+	Capabilities string // JSON: {encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}
+	AccessMode   string // auto | shared | transfer
+	PathMappings string // JSON
+	// ThroughputLimit caps this node's transfer speed in MB/s; 0 (and the
+	// zero value) means unlimited (task 09).
+	ThroughputLimit int64
 	Status          string // pending | approved | revoked
 	Enabled         bool
 	LastHeartbeatAt time.Time

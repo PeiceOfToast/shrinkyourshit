@@ -63,12 +63,14 @@ Status enums are fixed strings; do not add values without updating this file.
 - `status`: `new | satisfied | queued | processing | done | failed | missing`
 - `fingerprint`: `size:mtime_unix:sha256(first 1MiB + last 1MiB)` as a string. Re-probe only when it changes.
 
-**Job:** `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons (JSON), percent, speed, eta_seconds, bytes_before, bytes_after, log (text, capped at 64KiB tail), error, claimed_at, started_at, finished_at, heartbeat_at, created_at`
+**Job:** `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons (JSON), percent, speed, eta_seconds, bytes_before, bytes_after, log (text, capped at 64KiB tail), error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
 - `status`: `queued | claimed | running | done | failed | cancelled`
+- `access_mode`: how the node actually reached the source — `shared` or `transfer`. Empty until the node reports it (progress and complete, task 09).
 
-**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), status, enabled, last_heartbeat_at, created_at`
+**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), throughput_limit_mbps, status, enabled, last_heartbeat_at, created_at`
 - `status`: `pending | approved | revoked`
 - `access_mode`: `auto | shared | transfer`
+- `throughput_limit_mbps`: cap on this node's transfer speed (MB/s, 0 = unlimited; task 09)
 - `capabilities`: `{encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}`
 - `key_once`: the raw key between admin approval and the node's first retrieval; wiped on retrieval, revoke and delete (only the hash remains afterwards).
 
@@ -161,9 +163,11 @@ Each worker detects on start: NVENC (NVIDIA), QSV and VAAPI (Intel), CPU (libx26
 
 ## File access modes (per node)
 
-- **shared:** node can read the library path (possibly at a different mount point; path mappings stored on the node). Verified read-only: server returns `{path, size, sample_offset, sample_sha256}` for an existing file and the node must produce the same hash.
-- **transfer:** server streams the source to the node's scratch dir over the worker API (range requests, resumable), node encodes, node uploads the result with a checksum.
-- **auto (default):** shared if the check passes for that library, otherwise transfer.
+- **shared:** node can read the library path (possibly at a different mount point; path mappings stored on the node). Verified read-only: the node asks `POST /worker/jobs/{id}/access-check`, which returns `{path (node-side), size, sample_offset, sample_sha256}` — a 1 MiB sample at a random offset of the job's source. The node hashes the same bytes through its mapping and compares. Match → shared for that library; the node caches the outcome per library for 10 minutes.
+- **transfer:** server streams the source to the node's scratch dir over the worker API (range requests, resumable), node encodes, node uploads the result in 8 MiB chunks with `Content-Range`; the final chunk carries `X-Checksum-SHA256`, which the server verifies before applying the result policy itself (verify-and-replace reuses the shared result-policy code). The server keeps uploads under `<scratch>/uploads/job-<id>/`.
+- **auto (default):** the worker runs the access check per job (cached per library for 10 minutes): shared if it passes, otherwise transfer. The node reports the mode it chose in the progress payload and the server stores it on the job.
+
+A node's `throughput_limit_mbps` (0 = unlimited) caps both transfer directions; the worker paces its reads and writes.
 
 In every mode the node copies to local scratch, encodes there, verifies, then writes back. Never encode in place on a network share.
 

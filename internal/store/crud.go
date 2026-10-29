@@ -223,13 +223,13 @@ func (s *SQLite) DeleteFile(ctx context.Context, id string) error {
 }
 
 // jobColumns is the column list shared by every job query.
-const jobColumns = `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons, percent, speed, eta_seconds, bytes_before, bytes_after, log, error, claimed_at, started_at, finished_at, heartbeat_at, created_at`
+const jobColumns = `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons, percent, speed, eta_seconds, bytes_before, bytes_after, log, error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
 
 // scanJob reads one job row.
 func scanJob(rows *sql.Rows) (*Job, error) {
 	var j Job
 	var claimed, started, finished, heartbeat, created sql.NullString
-	err := rows.Scan(&j.ID, &j.FileID, &j.LibraryID, &j.NodeID, &j.Status, &j.Priority, &j.Attempt, &j.EncoderUsed, &j.FallbackReasons, &j.Percent, &j.Speed, &j.ETASeconds, &j.BytesBefore, &j.BytesAfter, &j.Log, &j.Error, &claimed, &started, &finished, &heartbeat, &created)
+	err := rows.Scan(&j.ID, &j.FileID, &j.LibraryID, &j.NodeID, &j.Status, &j.Priority, &j.Attempt, &j.EncoderUsed, &j.FallbackReasons, &j.Percent, &j.Speed, &j.ETASeconds, &j.BytesBefore, &j.BytesAfter, &j.Log, &j.Error, &j.AccessMode, &claimed, &started, &finished, &heartbeat, &created)
 	if err != nil {
 		return nil, err
 	}
@@ -255,8 +255,8 @@ func (s *SQLite) CreateJob(ctx context.Context, j *Job) error {
 	if j.CreatedAt.IsZero() {
 		j.CreatedAt = nowUTC()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		j.ID, j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		j.ID, j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error, j.AccessMode,
 		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt), fmtTime(j.CreatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create job: %w", err)
@@ -327,8 +327,8 @@ func (s *SQLite) UpdateJob(ctx context.Context, j *Job) error {
 	if err := validateJobStatus(j.Status); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ? WHERE id = ?`,
-		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error,
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, access_mode = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ? WHERE id = ?`,
+		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error, j.AccessMode,
 		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt), j.ID)
 	if err != nil {
 		return fmt.Errorf("store: update job: %w", err)
@@ -352,14 +352,14 @@ func (s *SQLite) DeleteJob(ctx context.Context, id string) error {
 }
 
 // nodeColumns is the column list shared by every node query.
-const nodeColumns = `id, name, key_hash, key_once, os, arch, capabilities, access_mode, path_mappings, status, enabled, last_heartbeat_at, created_at`
+const nodeColumns = `id, name, key_hash, key_once, os, arch, capabilities, access_mode, path_mappings, throughput_limit_mbps, status, enabled, last_heartbeat_at, created_at`
 
 // scanNode reads one node row.
 func scanNode(rows *sql.Rows) (*Node, error) {
 	var n Node
 	var enabled string
 	var heartbeat, created sql.NullString
-	if err := rows.Scan(&n.ID, &n.Name, &n.KeyHash, &n.KeyOnce, &n.OS, &n.Arch, &n.Capabilities, &n.AccessMode, &n.PathMappings, &n.Status, &enabled, &heartbeat, &created); err != nil {
+	if err := rows.Scan(&n.ID, &n.Name, &n.KeyHash, &n.KeyOnce, &n.OS, &n.Arch, &n.Capabilities, &n.AccessMode, &n.PathMappings, &n.ThroughputLimit, &n.Status, &enabled, &heartbeat, &created); err != nil {
 		return nil, err
 	}
 	n.Enabled = parseBool(enabled)
@@ -382,8 +382,8 @@ func (s *SQLite) CreateNode(ctx context.Context, n *Node) error {
 	if n.CreatedAt.IsZero() {
 		n.CreatedAt = nowUTC()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.ID, n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), fmtTime(n.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.ThroughputLimit, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), fmtTime(n.CreatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create node: %w", err)
 	}
@@ -438,8 +438,8 @@ func (s *SQLite) UpdateNode(ctx context.Context, n *Node) error {
 	if err := validateNodeAccessMode(n.AccessMode); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET name = ?, key_hash = ?, key_once = ?, os = ?, arch = ?, capabilities = ?, access_mode = ?, path_mappings = ?, status = ?, enabled = ?, last_heartbeat_at = ? WHERE id = ?`,
-		n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), n.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET name = ?, key_hash = ?, key_once = ?, os = ?, arch = ?, capabilities = ?, access_mode = ?, path_mappings = ?, throughput_limit_mbps = ?, status = ?, enabled = ?, last_heartbeat_at = ? WHERE id = ?`,
+		n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.ThroughputLimit, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), n.ID)
 	if err != nil {
 		return fmt.Errorf("store: update node: %w", err)
 	}

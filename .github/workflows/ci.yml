@@ -77,12 +77,75 @@ jobs:
           curl -fsS http://localhost:8765/api/v1/health | grep -o '"status":"ok"'
           curl -fsS http://localhost:8765/ | grep -o '<title>ShrinkYourShit</title>'
           docker rm -f "$container" > /dev/null
+      - name: Image serves the templated installer scripts
+        run: |
+          container=$(docker run -d -p 8765:8765 shrinkyourshit:ci)
+          sleep 2
+          curl -fsS http://localhost:8765/install.sh | grep -o 'SERVER="http://localhost:8765"'
+          curl -fsS http://localhost:8765/install.ps1 | grep -o "'http://localhost:8765'"
+          docker rm -f "$container" > /dev/null
+
+  # Installer checks (task 09): shellcheck over the POSIX installer, an
+  # install run inside a throwaway container against a fake release
+  # server, a structural systemd-analyze verify of the written unit, and
+  # PSScriptAnalyzer over the PowerShell installer on a Windows runner.
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          make installer-check
+      - name: Fake release server (release layout of the GitHub release)
+        run: |
+          make placeholder
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -o /tmp/fake/v0.0.0-test/shrinkyourshit-linux-amd64 ./cmd/shrinkyourshit
+          tar -czf /tmp/fake/v0.0.0-test/shrinkyourshit-linux-amd64.tar.gz \
+            -C /tmp/fake/v0.0.0-test shrinkyourshit-linux-amd64
+          python3 -m http.server 8099 --directory /tmp/fake &
+          sleep 1
+      - name: Install inside a throwaway container (debian bookworm)
+        run: |
+          docker run --rm --network=host -v "$PWD":/repo debian:bookworm-slim \
+            bash -c 'apt-get update -qq >/dev/null \
+              && apt-get install -y -qq --no-install-recommends curl ca-certificates >/dev/null \
+              && REPO_DIR=/repo FAKE_RELEASE_URL=http://127.0.0.1:8099 sh /repo/scripts/test-installer.sh'
+      - name: systemd unit verifies (systemd-analyze on the runner)
+        run: |
+          tmp="$(mktemp -d)"
+          sh scripts/installer.sh \
+            --server http://127.0.0.1:8765 \
+            --version v0.0.0-test \
+            --release-url http://127.0.0.1:8099 \
+            --install-dir "$tmp/bin" \
+            --data-dir "$tmp/data" \
+            --service-dir "$tmp/systemd" \
+            --token ci-token
+          systemd-analyze verify "$tmp/systemd/shrinkyourshit.service"
+          rm -rf "$tmp"
+
+  installer-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer over installer.ps1
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          Invoke-ScriptAnalyzer -Path scripts/installer.ps1 -Severity Error -EnableExit
 
   # Posts the job results as a PR comment so agents and owners can read CI
   # state without the Actions/Checks API scope. The comment is best-effort;
   # the run summary is the reliable copy.
   report:
-    needs: [go, web, docker]
+    needs: [go, web, docker, installer, installer-powershell]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -95,6 +158,8 @@ jobs:
             echo "- go: ${{ needs.go.result }}"
             echo "- web: ${{ needs.web.result }}"
             echo "- docker: ${{ needs.docker.result }}"
+            echo "- installer (shell): ${{ needs.installer.result }}"
+            echo "- installer (powershell): ${{ needs.installer-powershell.result }}"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Comment on the PR
         continue-on-error: true
@@ -107,6 +172,8 @@ jobs:
               `- go: **${{ needs.go.result }}**`,
               `- web: **${{ needs.web.result }}**`,
               `- docker: **${{ needs.docker.result }}**`,
+              `- installer (shell): **${{ needs.installer.result }}**`,
+              `- installer (powershell): **${{ needs.installer-powershell.result }}**`,
             ].join('\n')
             await github.rest.issues.createComment({
               owner: context.repo.owner,

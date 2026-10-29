@@ -153,9 +153,9 @@ func (s *SQLite) UpdateJobIfActive(ctx context.Context, j *Job) (bool, error) {
 	if err := validateJobStatus(j.Status); err != nil {
 		return false, err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ?
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, access_mode = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ?
 		WHERE id = ? AND status IN (?, ?)`,
-		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error,
+		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error, j.AccessMode,
 		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt),
 		j.ID, JobStatusClaimed, JobStatusRunning)
 	if err != nil {
