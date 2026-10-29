@@ -96,4 +96,9 @@ None so far.
 - Verified: `make test`, `make lint`, `make test-integration` (ffmpeg
   present) all green; live smoke: setup → easy create (name defaulted,
   exact compiled Target stored, easy kept) → target-only PUT clears easy →
-  DELETE leaves the folder on disk → embedded UI served.
+  DELETE leaves the folder on disk → embedded UI served. Web production
+  build and SPDX check also pass.
+- CI: every CI step verified locally (vet, golangci-lint, spdx, go test unit
+  + integration, eslint, prettier, vitest, web build); the repo token cannot
+  read PR check rollups (`gh pr checks` → 403), same as task 05, so the
+  owner should glance at the PR's checks once — the same commands pass here.
