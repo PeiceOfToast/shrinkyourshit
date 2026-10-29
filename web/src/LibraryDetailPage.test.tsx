@@ -2,7 +2,8 @@
 
 /**
  * Library detail tests (task 07): file table with status, reasons and
- * bytes saved; status filter; retry failed.
+ * bytes saved; status filter; retry failed. Task 13 adds pagination
+ * (page size, previous/next), the cancel-job confirmation and toasts.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -10,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import LibraryDetailPage from './LibraryDetailPage'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
+import { ToastProvider } from './toast'
 
 function file(id: string, status: string, extra: Record<string, unknown> = {}) {
   return {
@@ -30,19 +32,36 @@ function file(id: string, status: string, extra: Record<string, unknown> = {}) {
   }
 }
 
+function libraryDoc() {
+  return {
+    id: 'lib-1',
+    name: 'Movies',
+    path: '/media/movies',
+    target: {},
+    easy: null,
+    watch: true,
+    schedule: '',
+    result_policy: 'replace_if_smaller',
+    created_at: '',
+    updated_at: '',
+  }
+}
+
 let mock: FetchMock
 
 function renderPage() {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/libraries/lib-1']}>
-        <Routes>
-          <Route path="/libraries/:id" element={<LibraryDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/libraries/lib-1']}>
+          <Routes>
+            <Route path="/libraries/:id" element={<LibraryDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -52,22 +71,7 @@ afterEach(() => mock?.restore())
 describe('LibraryDetailPage', () => {
   it('lists files with status, reason and saved bytes', async () => {
     mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: {
-          id: 'lib-1',
-          name: 'Movies',
-          path: '/media/movies',
-          target: {},
-          easy: null,
-          watch: true,
-          schedule: '',
-          result_policy: 'replace_if_smaller',
-          created_at: '',
-          updated_at: '',
-        },
-      },
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -107,22 +111,7 @@ describe('LibraryDetailPage', () => {
   // the structural contract is what the unit test can assert.
   it('renders the phone card list with label/value pairs', async () => {
     mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: {
-          id: 'lib-1',
-          name: 'Movies',
-          path: '/media/movies',
-          target: {},
-          easy: null,
-          watch: true,
-          schedule: '',
-          result_policy: 'replace_if_smaller',
-          created_at: '',
-          updated_at: '',
-        },
-      },
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -154,24 +143,9 @@ describe('LibraryDetailPage', () => {
     expect(card.querySelector('.break-words')).not.toBeNull()
   })
 
-  it('filters files by status', async () => {
+  it('filters files by status and keeps the filter in the request', async () => {
     mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: {
-          id: 'lib-1',
-          name: 'Movies',
-          path: '/media/movies',
-          target: {},
-          easy: null,
-          watch: true,
-          schedule: '',
-          result_policy: 'replace_if_smaller',
-          created_at: '',
-          updated_at: '',
-        },
-      },
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -187,32 +161,72 @@ describe('LibraryDetailPage', () => {
       target: { value: 'failed' },
     })
     await waitFor(() => {
-      const failed = mock.requests.find(
-        (r) => r.url === '/api/v1/libraries/lib-1/files?status=failed',
+      const failed = mock.requests.find((r) =>
+        r.url.startsWith('/api/v1/libraries/lib-1/files?status=failed'),
       )
       expect(failed).toBeDefined()
     })
   })
 
-  it('retries every failed file once', async () => {
-    const retried: string[] = []
+  it('paginates with a page size selector and previous/next (task 13)', async () => {
+    const all = Array.from({ length: 120 }, (_, i) => file(`f${i}`, 'new'))
     mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
       {
         method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: {
-          id: 'lib-1',
-          name: 'Movies',
-          path: '/media/movies',
-          target: {},
-          easy: null,
-          watch: true,
-          schedule: '',
-          result_policy: 'replace_if_smaller',
-          created_at: '',
-          updated_at: '',
+        match: /\/api\/v1\/libraries\/lib-1\/files$/,
+        bodyFn: (ctx) => {
+          const offset = Number(ctx.url.searchParams.get('offset') ?? 0)
+          const limit = Number(ctx.url.searchParams.get('limit') ?? 50)
+          return { items: all.slice(offset, offset + limit), total: 120 }
         },
       },
+    ])
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByTestId('files-page-info')).toHaveTextContent(
+        'Page 1 of 3 · 120 files',
+      ),
+    )
+    // First page: previous disabled, next enabled.
+    expect(screen.getByTestId('files-prev')).toBeDisabled()
+    const next = screen.getByTestId('files-next')
+    expect(next).not.toBeDisabled()
+
+    fireEvent.click(next)
+    await waitFor(() => {
+      const second = mock.requests.find((r) => r.url.includes('offset=50'))
+      expect(second).toBeDefined()
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('files-page-info')).toHaveTextContent(
+        'Page 2 of 3',
+      ),
+    )
+    expect(screen.getByTestId('files-prev')).not.toBeDisabled()
+
+    // Changing the page size resets to the first page with the new limit.
+    // (offset 0 is omitted from the query string; the first request of a
+    // fresh page is just the limit.)
+    fireEvent.change(screen.getByTestId('files-page-size'), {
+      target: { value: '25' },
+    })
+    await waitFor(() => {
+      const resized = mock.requests.find((r) => r.url.includes('limit=25'))
+      expect(resized).toBeDefined()
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('files-page-info')).toHaveTextContent(
+        'Page 1 of 5',
+      ),
+    )
+  })
+
+  it('retries every failed file once and toasts the count', async () => {
+    const retried: string[] = []
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -248,10 +262,61 @@ describe('LibraryDetailPage', () => {
         ]),
       ),
     )
+    // Task 13: the result is a toast now, not an inline notice.
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('Retrying 2 job(s).')
+  })
+
+  it('cancels a running job only after the confirmation says what happens', async () => {
+    let cancelled = false
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files$/,
+        body: {
+          items: [
+            file('f1', 'processing', { last_job_id: 'job-7' }),
+            file('f2', 'queued', { last_job_id: 'job-8' }),
+            file('f3', 'done', { bytes_saved: 1 }),
+          ],
+          total: 3,
+        },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/jobs\/job-7\/cancel$/,
+        bodyFn: () => {
+          cancelled = true
+          return null
+        },
+      },
+    ])
+    renderPage()
+    const button = await screen.findByTestId('file-cancel-f1')
+    // Done files are not cancellable.
+    expect(screen.queryByTestId('file-cancel-f3')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('file-cancel-f3-card')).not.toBeInTheDocument()
+
+    fireEvent.click(button)
+    const dialog = screen.getByTestId('confirm-cancel-job')
+    expect(dialog).toHaveTextContent('Cancel this job?')
+    expect(dialog).toHaveTextContent('temporary file is thrown away')
+    expect(dialog).toHaveTextContent('original file is never touched')
+
+    // Keeping it running sends nothing.
+    fireEvent.click(screen.getByTestId('confirm-cancel-job-no'))
     await waitFor(() =>
-      expect(screen.getByTestId('library-notice')).toHaveTextContent(
-        'Retrying 2 job(s).',
-      ),
+      expect(screen.queryByTestId('confirm-cancel-job')).not.toBeInTheDocument(),
     )
+    expect(cancelled).toBe(false)
+
+    // Confirming posts exactly one cancel.
+    fireEvent.click(screen.getByTestId('file-cancel-f1'))
+    fireEvent.click(screen.getByTestId('confirm-cancel-job-yes'))
+    await waitFor(() => expect(cancelled).toBe(true))
+    expect(mock.calls('POST', /\/api\/v1\/jobs\/job-7\/cancel$/)).toHaveLength(1)
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('Job cancelled')
   })
 })

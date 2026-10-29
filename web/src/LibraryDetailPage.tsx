@@ -2,14 +2,21 @@
 
 /**
  * Library detail (task 07): the file table with status, reasons and bytes
- * saved, a status filter and a retry-failed action.
+ * saved, a status filter and a retry-failed action. Task 13 adds server
+ * side pagination (page size selector plus previous/next), a per-file
+ * cancel for queued and processing files behind a confirmation, toasts for
+ * every action, skeletons while loading and ErrorBox for failures.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { getFiles, getLibrary, retryJob } from './api'
-import { formatBytes, statusLabel } from './easyModel'
+import { cancelJob, getFiles, getLibrary, retryJob, type FileItem } from './api'
+import ConfirmDialog from './ConfirmDialog'
+import { formatBytes, statusLabel, truncateMiddle } from './easyModel'
+import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
+import { SkeletonRows } from './skeleton'
+import { useToast } from './toastContext'
 
 const FILE_STATUSES = [
   'new',
@@ -20,6 +27,8 @@ const FILE_STATUSES = [
   'failed',
   'missing',
 ]
+
+const PAGE_SIZES = [25, 50, 100, 200]
 
 function statusColor(status: string): string {
   switch (status) {
@@ -37,19 +46,34 @@ function statusColor(status: string): string {
   }
 }
 
+/** A file the user may still cancel: work queued or running for it. */
+function isCancellable(f: FileItem): boolean {
+  return (
+    (f.status === 'queued' || f.status === 'processing') && f.last_job_id !== ''
+  )
+}
+
 export default function LibraryDetailPage() {
   const { id = '' } = useParams()
   const client = useQueryClient()
+  const toast = useToast()
   const [status, setStatus] = useState('')
-  const [notice, setNotice] = useState<string | null>(null)
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(50)
+  const [toCancel, setToCancel] = useState<FileItem | null>(null)
 
   const library = useQuery({
     queryKey: ['library', id],
     queryFn: () => getLibrary(id),
   })
   const files = useQuery({
-    queryKey: ['files', id, status],
-    queryFn: () => getFiles(id, status ? { status } : { limit: 500 }),
+    queryKey: ['files', id, status, page, pageSize],
+    queryFn: () =>
+      getFiles(id, {
+        status: status || undefined,
+        limit: pageSize,
+        offset: page * pageSize,
+      }),
   })
 
   const refresh = () => {
@@ -58,9 +82,17 @@ export default function LibraryDetailPage() {
     void client.invalidateQueries({ queryKey: ['stats'] })
   }
 
+  // Retries every failed file, not just the visible page: the failed set
+  // is fetched server-side (up to the API's own page cap) so pagination
+  // cannot hide a failed file from the retry action.
   const retry = useMutation({
-    mutationFn: async (failed: Array<{ last_job_id: string }>) => {
-      const ids = [...new Set(failed.map((f) => f.last_job_id).filter(Boolean))]
+    mutationFn: async () => {
+      const failed = await getFiles(id, { status: 'failed', limit: 1000 })
+      const ids = [
+        ...new Set(
+          failed.items.map((f) => f.last_job_id).filter(Boolean),
+        ),
+      ]
       for (const jobId of ids) {
         try {
           await retryJob(jobId)
@@ -72,21 +104,78 @@ export default function LibraryDetailPage() {
       return ids.length
     },
     onSuccess: (n) => {
-      setNotice(n > 0 ? `Retrying ${n} job(s).` : 'Nothing to retry.')
+      toast.success(n > 0 ? `Retrying ${n} job(s).` : 'Nothing to retry.')
       refresh()
     },
+    onError: (err: unknown) => toast.failure('Retrying failed', err),
   })
 
+  const cancel = useMutation({
+    mutationFn: (jobId: string) => cancelJob(jobId),
+    onSuccess: () => {
+      setToCancel(null)
+      toast.success(
+        'Job cancelled. The unfinished temporary copy is thrown away; the original file is untouched.',
+      )
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Cancelling the job failed', err),
+  })
+
+  // A page past the end (files removed under us) falls back to page 0.
+  useEffect(() => {
+    if (files.data && page > 0 && files.data.items.length === 0 && files.data.total > 0) {
+      setPage(0)
+    }
+  }, [files.data, page])
+
   if (library.isPending) {
-    return <p className="text-slate-400">Loading library…</p>
+    return (
+      <PageContainer className="space-y-4" data-testid="library-detail">
+        <SkeletonRows rows={2} />
+      </PageContainer>
+    )
   }
   if (library.isError || !library.data) {
-    return <p className="text-red-400">Cannot load this library.</p>
+    return (
+      <PageContainer className="space-y-4" data-testid="library-detail">
+        <ErrorBox title="Cannot load this library." error={library.error} />
+      </PageContainer>
+    )
   }
   const lib = library.data
-  const failedFiles = (files.data?.items ?? []).filter(
+  const total = files.data?.total ?? 0
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  const failedOnPage = (files.data?.items ?? []).filter(
     (f) => f.status === 'failed',
   )
+
+  const changeStatus = (next: string) => {
+    setStatus(next)
+    setPage(0)
+  }
+  const changePageSize = (next: number) => {
+    setPageSize(next)
+    setPage(0)
+  }
+
+  const cancelButton = (f: FileItem, onCard: boolean) => {
+    if (!isCancellable(f)) return null
+    const name = f.path.split('/').pop() ?? f.path
+    return (
+      <button
+        type="button"
+        onClick={() => setToCancel(f)}
+        className={`rounded-lg bg-slate-800 px-2 py-1 text-xs text-amber-300 hover:bg-slate-700 ${
+          onCard ? 'shrink-0' : ''
+        }`}
+        aria-label={`Cancel the job for ${name}`}
+        data-testid={`file-cancel-${f.id}${onCard ? '-card' : ''}`}
+      >
+        Cancel
+      </button>
+    )
+  }
 
   return (
     <PageContainer className="space-y-4" data-testid="library-detail">
@@ -106,12 +195,12 @@ export default function LibraryDetailPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm text-slate-400">
           Status
           <select
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            onChange={(e) => changeStatus(e.target.value)}
             className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
             data-testid="file-status-filter"
           >
@@ -125,29 +214,19 @@ export default function LibraryDetailPage() {
         </label>
         <button
           type="button"
-          onClick={() => retry.mutate(failedFiles)}
-          disabled={failedFiles.length === 0 || retry.isPending}
+          onClick={() => retry.mutate()}
+          disabled={failedOnPage.length === 0 || retry.isPending}
           className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-50"
           data-testid="retry-failed"
         >
-          Retry failed ({failedFiles.length})
+          {retry.isPending ? 'Retrying…' : `Retry failed (${failedOnPage.length})`}
         </button>
       </div>
 
-      {notice && (
-        <p
-          className="text-sm text-emerald-400"
-          role="status"
-          data-testid="library-notice"
-        >
-          {notice}
-        </p>
-      )}
-
       {files.isPending ? (
-        <p className="text-slate-400">Loading files…</p>
+        <SkeletonRows />
       ) : files.isError ? (
-        <p className="text-red-400">Cannot load the files.</p>
+        <ErrorBox title="Cannot load the files." error={files.error} />
       ) : files.data.total === 0 ? (
         <p className="text-slate-400" data-testid="files-empty">
           No files here yet. Wait for a scan or add files to the folder.
@@ -169,6 +248,9 @@ export default function LibraryDetailPage() {
                     <th className="px-4 py-3">Why</th>
                     <th className="px-4 py-3">Size</th>
                     <th className="px-4 py-3">Saved</th>
+                    <th className="px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 bg-slate-900/50">
@@ -199,6 +281,9 @@ export default function LibraryDetailPage() {
                         </td>
                         <td className="px-4 py-2 text-emerald-400">
                           {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {cancelButton(f, false)}
                         </td>
                       </tr>
                     )
@@ -243,7 +328,7 @@ export default function LibraryDetailPage() {
                       {f.satisfied_reason}
                     </p>
                   )}
-                  <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
                     <span className="text-slate-400">
                       <span className="text-slate-600">Size: </span>
                       {formatBytes(f.size)}
@@ -252,12 +337,86 @@ export default function LibraryDetailPage() {
                       <span className="text-slate-600">Saved: </span>
                       {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
                     </span>
+                    {cancelButton(f, true)}
                   </div>
                 </li>
               )
             })}
           </ul>
+
+          {/* Pagination (task 13): server side, so 40k files never load at
+              once. The status filter and page size reset to the first page
+              when they change. */}
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400"
+            data-testid="files-pagination"
+          >
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2">
+                Per page
+                <select
+                  value={pageSize}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                  className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+                  data-testid="files-page-size"
+                >
+                  {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span data-testid="files-page-info">
+                Page {page + 1} of {pages} · {total} file{total === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-40"
+                data-testid="files-prev"
+              >
+                ← Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+                disabled={page >= pages - 1}
+                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-40"
+                data-testid="files-next"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
         </>
+      )}
+
+      {toCancel && (
+        <ConfirmDialog
+          title="Cancel this job?"
+          confirmLabel="Cancel job"
+          cancelLabel="Keep it running"
+          danger={false}
+          busy={cancel.isPending}
+          onConfirm={() => cancel.mutate(toCancel.last_job_id)}
+          onClose={() => setToCancel(null)}
+          testId="confirm-cancel-job"
+          confirmTestId="confirm-cancel-job-yes"
+          cancelTestId="confirm-cancel-job-no"
+        >
+          <p>
+            The job for{' '}
+            <span className="break-all text-slate-100">
+              {truncateMiddle(toCancel.path, 64)}
+            </span>{' '}
+            stops. The partially encoded temporary file is thrown away, the
+            job goes back to waiting, and the original file is never touched.
+          </p>
+        </ConfirmDialog>
       )}
     </PageContainer>
   )

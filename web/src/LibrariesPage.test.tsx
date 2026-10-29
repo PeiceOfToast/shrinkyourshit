@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import LibrariesPage from './LibrariesPage'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
+import { ToastProvider } from './toast'
 
 function lib(id: string, name: string) {
   return {
@@ -69,13 +70,15 @@ const stats = {
 
 function renderPage() {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <LibrariesPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -139,6 +142,49 @@ describe('LibrariesPage', () => {
     )
   })
 
+  it('toasts on a successful scan (task 13)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/libraries\/lib-1\/scan$/,
+        status: 202,
+        body: { started: true },
+      },
+    ])
+    renderPage()
+    fireEvent.click(await screen.findByTestId('library-scan-lib-1'))
+    const toasts = await screen.findAllByTestId('toast')
+    expect(toasts[0]).toHaveTextContent('Scan started.')
+  })
+
+  it('toasts the status and server code when a scan fails (task 13)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/libraries\/lib-1\/scan$/,
+        status: 409,
+        body: { error: 'a scan is already running', code: 'scan_running' },
+      },
+    ])
+    renderPage()
+    fireEvent.click(await screen.findByTestId('library-scan-lib-1'))
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('Scan failed (409, scan_running)')
+    expect(toast).toHaveTextContent('a scan is already running')
+  })
+
   it('deletes only after confirmation, promising the files stay on disk', async () => {
     let deleted = false
     mock = installFetchMock([
@@ -183,6 +229,11 @@ describe('LibrariesPage', () => {
     await waitFor(() =>
       expect(screen.queryByTestId('confirm-delete')).not.toBeInTheDocument(),
     )
+    // The removal is announced, and the message repeats the promise the
+    // dialog made.
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('Library removed')
+    expect(toast).toHaveTextContent('files on disk are untouched')
   })
 
   it('offers the easy-mode form when there are no libraries', async () => {
