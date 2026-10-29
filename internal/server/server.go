@@ -77,7 +77,8 @@ func defaultInspector(ctx context.Context, ffprobePath, path string) (ResultInfo
 }
 
 // Server holds the server-side services and their lifecycle: event bus,
-// queue, scanner, watcher, scheduler, library manager and node registry.
+// queue, scanner, watcher, scheduler, library manager, node registry,
+// auth and settings.
 type Server struct {
 	cfg       Config
 	log       *slog.Logger
@@ -88,6 +89,8 @@ type Server struct {
 	scheduler *Scheduler
 	libs      *LibraryManager
 	nodes     *NodeRegistry
+	auth      *Auth
+	settings  *Settings
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -114,9 +117,12 @@ func New(cfg Config) *Server {
 	libs := NewLibraryManager(cfg.Store, queue, events, watcher, cfg.Log)
 	libs.SetScanHook(scanner.ScanAsync)
 	nodes := NewNodeRegistry(cfg.Store, events, cfg.Log)
+	auth := NewAuth(cfg.Store, cfg.Log)
+	settings := NewSettings(cfg.Store, cfg.Log)
 	queue.SetInspector(cfg.Inspect, cfg.FFprobePath)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
-		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes}
+		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
+		auth: auth, settings: settings}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
@@ -136,6 +142,12 @@ func (s *Server) Scanner() *Scanner { return s.scanner }
 
 // Store exposes the underlying store (read-only listing in the API).
 func (s *Server) Store() store.Store { return s.cfg.Store }
+
+// Auth exposes the auth service (setup, login, sessions, passwords).
+func (s *Server) Auth() *Auth { return s.auth }
+
+// Settings exposes the settings service (GET/PUT /settings).
+func (s *Server) Settings() *Settings { return s.settings }
 
 // Start launches the background loops: an initial scan per library, a
 // watcher for every watched library, the schedule loop and the stale-job

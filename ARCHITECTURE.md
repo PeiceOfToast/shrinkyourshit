@@ -60,7 +60,9 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **PairingToken:** `id, token_hash, expires_at, used_at`
 
-**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete`.
+**Session:** `token_hash (PK), created_at, expires_at`. Admin login sessions (task 06): random 32-byte token, only the SHA-256 hex hash is stored, 30-day expiry checked on lookup. Stored in the `sessions` table (migration 0002).
+
+**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec`.
 
 **Webhook:** `id, url, events (JSON list), enabled` (task post-MVP; schema can wait).
 

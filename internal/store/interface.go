@@ -81,6 +81,14 @@ type Store interface {
 	UpdatePairingToken(ctx context.Context, t *PairingToken) error
 	DeletePairingToken(ctx context.Context, id string) error
 
+	// Sessions (task 06 admin auth). Only the SHA-256 of the raw token is
+	// stored. GetSessionByHash returns the row even when expired; callers
+	// check ExpiresAt. DeleteExpiredSessions prunes past expiry.
+	CreateSession(ctx context.Context, s *Session) error
+	GetSessionByHash(ctx context.Context, tokenHash string) (*Session, error)
+	DeleteSession(ctx context.Context, tokenHash string) error
+	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+
 	// Settings is an open key/value table; the Setting* constants name
 	// the keys ARCHITECTURE.md defines.
 	GetSetting(ctx context.Context, key string) (string, bool, error)

@@ -23,11 +23,11 @@ API.md (task 06 endpoints, auth conventions), ARCHITECTURE.md (settings keys, se
 Easy-mode screen, dashboard content, node pages, multi-user, SSO.
 
 ## Acceptance
-- [ ] Fresh data dir: `GET /setup/status` reports incomplete; any UI route redirects to `/setup`; completing setup with login enabled then calling `GET /libraries` without a cookie returns 401.
-- [ ] Setup with login disabled: `GET /libraries` works with no cookie; `GET /auth/me` reports `login_enabled=false`.
-- [ ] `POST /setup` after completion returns 409.
-- [ ] Wrong password returns 401; sixth attempt within a minute returns 429.
-- [ ] Logout invalidates the session; expired sessions are rejected.
-- [ ] Password hashes are argon2id (test inspects the stored prefix) and never appear in any API response or log.
-- [ ] Turning login on from settings when it was off requires setting a password in the same request.
-- [ ] Vitest tests: wizard step navigation and validation, route guard redirects.
+- [x] Fresh data dir: `GET /setup/status` reports incomplete; any UI route redirects to `/setup`; completing setup with login enabled then calling `GET /libraries` without a cookie returns 401.
+- [x] Setup with login disabled: `GET /libraries` works with no cookie; `GET /auth/me` reports `login_enabled=false`.
+- [x] `POST /setup` after completion returns 409.
+- [x] Wrong password returns 401; sixth attempt within a minute returns 429.
+- [x] Logout invalidates the session; expired sessions are rejected.
+- [x] Password hashes are argon2id (test inspects the stored prefix) and never appear in any API response or log.
+- [x] Turning login on from settings when it was off requires setting a password in the same request.
+- [x] Vitest tests: wizard step navigation and validation, route guard redirects.

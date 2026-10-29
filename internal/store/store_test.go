@@ -54,10 +54,14 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	require.Len(t, libs, 1)
 	assert.Equal(t, "Movies", libs[0].Name)
 
-	// schema_migrations recorded every migration exactly once.
+	// schema_migrations recorded every migration exactly once (the count
+	// tracks the number of embedded migration files).
+	migrations, err := loadMigrations()
+	require.NoError(t, err)
+	require.NotEmpty(t, migrations)
 	var count int
 	require.NoError(t, second.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count))
-	assert.Equal(t, 1, count)
+	assert.Equal(t, len(migrations), count)
 }
 
 func TestLibraryCRUD(t *testing.T) {
