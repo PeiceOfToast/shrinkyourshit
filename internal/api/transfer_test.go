@@ -73,7 +73,8 @@ func newTransferFixture(t *testing.T, accessMode string) *transferFixture {
 	f.key = "transfer-node-key"
 	f.node = &store.Node{ID: "transfer-node", Name: "remote", KeyHash: server.HashKey(f.key),
 		AccessMode: accessMode, PathMappings: "[]",
-		Status: store.NodeStatusApproved, Enabled: true}
+		Status: store.NodeStatusApproved, Enabled: true,
+		DesiredState: store.NodeStateRunning}
 	require.NoError(t, h.st.CreateNode(ctx, f.node))
 
 	resp := h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, f.key)

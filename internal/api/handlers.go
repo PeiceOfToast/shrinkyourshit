@@ -3,9 +3,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -503,6 +505,24 @@ func decode[T any](r *http.Request) (T, error) {
 	var body T
 	err := json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
+		return body, errors.New("invalid JSON body")
+	}
+	return body, nil
+}
+
+// decodeLenient reads an optional JSON request body: an empty body yields
+// the zero struct (the stop endpoint's drain flag defaults to false),
+// anything present must parse as JSON.
+func decodeLenient[T any](r *http.Request) (T, error) {
+	var body T
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return body, errors.New("could not read the request body")
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return body, nil
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
 		return body, errors.New("invalid JSON body")
 	}
 	return body, nil

@@ -19,13 +19,15 @@ import (
 )
 
 // nodeKey is the raw key a test node authenticates with; only its hash is
-// stored.
+// stored. The node is created running (desired_state=running, task 11):
+// worker-API tests exercise a started node. A test that needs a stopped
+// node sets node.DesiredState back through the store.
 func (h *apiHarness) addNode(t *testing.T, name string, status string, enabled bool) (key string, node *store.Node) {
 	t.Helper()
 	key = "node-key-" + name
 	node = &store.Node{
 		Name: name, KeyHash: server.HashKey(key), AccessMode: store.NodeAccessShared,
-		Status: status, Enabled: enabled,
+		Status: status, Enabled: enabled, DesiredState: store.NodeStateRunning,
 	}
 	require.NoError(t, h.st.CreateNode(context.Background(), node))
 	return key, node
@@ -331,15 +333,22 @@ func TestWorkerHeartbeat(t *testing.T) {
 	require.Contains(t, updated.Capabilities, "cpu_cores")
 }
 
-func TestWorkerConcurrencyFromSettings(t *testing.T) {
+func TestWorkerConcurrencyFromNode(t *testing.T) {
 	h := newAPIHarness(t)
-	key, _ := h.addNode(t, "w1", store.NodeStatusApproved, true)
-	require.NoError(t, h.st.SetSetting(context.Background(), store.SettingWorkerConcurrency, "3"))
-
+	key, node := h.addNode(t, "w1", store.NodeStatusApproved, true)
+	// The heartbeat carries the node's own cap (task 11); a fresh node
+	// defaults to 1.
 	resp := h.doNode(http.MethodPost, "/api/v1/worker/heartbeat", map[string]any{}, key)
 	var out struct {
 		Concurrency int `json:"concurrency"`
 	}
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &out))
+	require.Equal(t, 1, out.Concurrency)
+
+	// Raising the cap on the node shows up on the next heartbeat.
+	node.Concurrency = 3
+	require.NoError(t, h.st.UpdateNode(context.Background(), node))
+	resp = h.doNode(http.MethodPost, "/api/v1/worker/heartbeat", map[string]any{}, key)
 	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &out))
 	require.Equal(t, 3, out.Concurrency)
 }

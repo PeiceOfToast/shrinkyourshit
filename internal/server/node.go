@@ -225,6 +225,7 @@ func (r *NodeRegistry) EnsureBuiltinNode(ctx context.Context, dataDir, name stri
 		PathMappings: "[]",
 		Status:       store.NodeStatusApproved,
 		Enabled:      true,
+		DesiredState: store.NodeStateStopped, // a human starts it (task 11)
 	}
 	if err := r.st.CreateNode(ctx, node); err != nil {
 		return "", nil, fmt.Errorf("node: create built-in: %w", err)
@@ -234,18 +235,37 @@ func (r *NodeRegistry) EnsureBuiltinNode(ctx context.Context, dataDir, name stri
 	return key, node, nil
 }
 
+// HeartbeatState is the heartbeat response (API.md, task 11): the
+// instruction the worker honours. concurrency is the node's own cap;
+// desired_state is the operator intent; effective_state adds the error
+// state for observability.
+type HeartbeatState struct {
+	Concurrency    int    `json:"concurrency"`
+	DesiredState   string `json:"desired_state"`
+	EffectiveState string `json:"effective_state"`
+}
+
 // Heartbeat records a node heartbeat, refreshes the heartbeats of the
 // node's claimed/running jobs (a long encode with no progress must not be
-// swept) and returns the worker concurrency setting. capabilities is stored
+// swept) and returns the instruction the worker honours: the node's
+// desired_state and its own concurrency cap. capabilities is stored
 // verbatim when non-empty; unknown running job ids are ignored.
-func (r *NodeRegistry) Heartbeat(ctx context.Context, node *store.Node, capabilities string, runningJobIDs []string) (int, error) {
+//
+// A worker report of `stopped` while the node is `draining` completes the
+// drain: the worker went idle, so the operator's intent resolves to
+// stopped (ARCHITECTURE.md worker lifecycle).
+func (r *NodeRegistry) Heartbeat(ctx context.Context, node *store.Node, capabilities, reportState string, runningJobIDs []string) (HeartbeatState, error) {
 	now := time.Now().UTC()
 	if capabilities != "" {
 		node.Capabilities = capabilities
 	}
+	if reportState == store.NodeStateStopped && node.DesiredState == store.NodeStateDraining {
+		r.log.Info("node drain complete", "node", node.ID, "name", node.Name)
+		node.DesiredState = store.NodeStateStopped
+	}
 	node.LastHeartbeatAt = now
 	if err := r.st.UpdateNode(ctx, node); err != nil {
-		return 0, fmt.Errorf("node: heartbeat update: %w", err)
+		return HeartbeatState{}, fmt.Errorf("node: heartbeat update: %w", err)
 	}
 
 	for _, id := range runningJobIDs {
@@ -267,11 +287,15 @@ func (r *NodeRegistry) Heartbeat(ctx context.Context, node *store.Node, capabili
 
 	r.publish(EventNodeUpdated, NewNodeDTO(node))
 
-	n, err := r.Concurrency(ctx)
-	if err != nil {
-		return 1, err
+	concurrency := node.Concurrency
+	if concurrency < store.ConcurrencyMin {
+		concurrency = store.ConcurrencyMin
 	}
-	return n, nil
+	return HeartbeatState{
+		Concurrency:    concurrency,
+		DesiredState:   node.DesiredState,
+		EffectiveState: EffectiveState(node),
+	}, nil
 }
 
 // Concurrency reads the worker_concurrency setting (default and minimum 1).

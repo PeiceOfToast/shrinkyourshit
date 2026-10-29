@@ -44,14 +44,17 @@ func workerCtx(r *http.Request) context.Context {
 }
 
 // heartbeatBody is the POST /api/v1/worker/heartbeat request (API.md):
-// the node's detected capabilities and the ids of its claimed/running jobs.
+// the node's detected capabilities, the ids of its claimed/running jobs
+// and — task 11 — the worker's own lifecycle state. A `stopped` report
+// while the node is draining completes the drain.
 type heartbeatBody struct {
 	Capabilities  json.RawMessage `json:"capabilities"`
 	RunningJobIDs []string        `json:"running_job_ids"`
+	State         string          `json:"state,omitempty"`
 }
 
-// workerHeartbeat records the node heartbeat and returns the concurrency
-// the claim loop should use (worker_concurrency from settings).
+// workerHeartbeat records the node heartbeat and returns the instruction
+// the claim loop honours: the node's desired_state and concurrency cap.
 func (a *API) workerHeartbeat(w http.ResponseWriter, r *http.Request, node *store.Node) {
 	body, err := decode[heartbeatBody](r)
 	if err != nil {
@@ -59,16 +62,23 @@ func (a *API) workerHeartbeat(w http.ResponseWriter, r *http.Request, node *stor
 		return
 	}
 	caps := strings.TrimSpace(string(body.Capabilities))
-	concurrency, err := a.svc.Nodes().Heartbeat(workerCtx(r), node, caps, body.RunningJobIDs)
+	state, err := a.svc.Nodes().Heartbeat(workerCtx(r), node, caps, body.State, body.RunningJobIDs)
 	if err != nil {
 		a.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"concurrency": concurrency})
+	writeJSON(w, http.StatusOK, state)
 }
 
-// workerClaim returns the next queued job for this node, or 204.
+// workerClaim returns the next queued job for this node, or 204. A claim
+// needs an approved, enabled, started node (API.md, task 11): nodeAuth
+// enforces approved and enabled, the desired_state check is here.
 func (a *API) workerClaim(w http.ResponseWriter, r *http.Request, node *store.Node) {
+	if node.DesiredState != store.NodeStateRunning {
+		writeError(w, http.StatusConflict, "node_not_running",
+			"node is not started; it claims jobs only while its desired_state is running")
+		return
+	}
 	job, err := a.svc.Queue().Claim(workerCtx(r), node.ID)
 	if errors.Is(err, store.ErrQueueEmpty) {
 		w.WriteHeader(http.StatusNoContent)

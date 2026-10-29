@@ -15,16 +15,20 @@ import (
 // approve, revoke, update, delete. The built-in node appears here too —
 // the admin can rename, disable or revoke it like any other node.
 
-// listNodes answers GET /nodes.
+// listNodes answers GET /nodes with the lifecycle fields (task 11) and
+// the id of each node's current (oldest claimed/running) job.
 func (a *API) listNodes(w http.ResponseWriter, r *http.Request) {
 	nodes, err := a.st.ListNodes(r.Context())
 	if err != nil {
 		a.internal(w, err)
 		return
 	}
+	current := a.svc.Nodes().CurrentJobIDs(r.Context())
 	items := make([]server.NodeDTO, 0, len(nodes))
 	for _, n := range nodes {
-		items = append(items, server.NewNodeDTO(n))
+		dto := server.NewNodeDTO(n)
+		dto.CurrentJobID = current[n.ID]
+		items = append(items, dto)
 	}
 	writeJSON(w, http.StatusOK, server.ListResponse[server.NodeDTO]{Items: items, Total: len(items)})
 }
@@ -101,17 +105,19 @@ func (a *API) revokeNode(w http.ResponseWriter, r *http.Request) {
 }
 
 // nodeBody is the PUT /nodes/{id} request. Pointers distinguish "not sent"
-// from a zero value.
+// from a zero value. desired_state is not here: lifecycle intent moves
+// through the start/stop/drain endpoints only (task 11).
 type nodeBody struct {
 	Name            *string `json:"name"`
 	Enabled         *bool   `json:"enabled"`
 	AccessMode      *string `json:"access_mode"`
 	PathMappings    *string `json:"path_mappings"`
 	ThroughputLimit *int64  `json:"throughput_limit_mbps"`
+	Concurrency     *int    `json:"concurrency"`
 }
 
 // updateNode answers PUT /nodes/{id}: rename, enable/disable, access mode,
-// path mappings and the transfer throughput limit.
+// path mappings, the transfer throughput limit and the concurrency cap.
 func (a *API) updateNode(w http.ResponseWriter, r *http.Request) {
 	body, err := decode[nodeBody](r)
 	if err != nil {
@@ -124,6 +130,7 @@ func (a *API) updateNode(w http.ResponseWriter, r *http.Request) {
 		AccessMode:      body.AccessMode,
 		PathMappings:    body.PathMappings,
 		ThroughputLimit: body.ThroughputLimit,
+		Concurrency:     body.Concurrency,
 	})
 	if errors.Is(err, server.ErrPairInput) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -134,6 +141,73 @@ func (a *API) updateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, server.NewNodeDTO(node))
+}
+
+// startNode answers POST /nodes/{id}/start: desired_state=running. Claims
+// resume on the node's next heartbeat.
+func (a *API) startNode(w http.ResponseWriter, r *http.Request) {
+	node, err := a.svc.Nodes().Start(r.Context(), r.PathValue("id"))
+	if err != nil {
+		a.nodeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, server.NewNodeDTO(node))
+}
+
+// stopBody is the POST /nodes/{id}/stop body. An absent body means
+// "stop now" (drain=false).
+type stopBody struct {
+	Drain bool `json:"drain"`
+}
+
+// stopNode answers POST /nodes/{id}/stop: with drain the in-flight jobs
+// finish before the node goes idle; without it the node stops claiming
+// immediately and the sweeper requeues its in-flight job.
+func (a *API) stopNode(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeLenient[stopBody](r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	node, err := a.svc.Nodes().Stop(r.Context(), r.PathValue("id"), body.Drain)
+	if err != nil {
+		a.nodeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, server.NewNodeDTO(node))
+}
+
+// drainNode answers POST /nodes/{id}/drain: finish what is held, claim
+// nothing new, report stopped once idle.
+func (a *API) drainNode(w http.ResponseWriter, r *http.Request) {
+	node, err := a.svc.Nodes().Stop(r.Context(), r.PathValue("id"), true)
+	if err != nil {
+		a.nodeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, server.NewNodeDTO(node))
+}
+
+// pauseAllNodes answers POST /nodes/pause-all: every node stops now, the
+// prior per-node intent is remembered once for resume-all.
+func (a *API) pauseAllNodes(w http.ResponseWriter, r *http.Request) {
+	stopped, err := a.svc.Nodes().PauseAll(r.Context())
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"paused": stopped})
+}
+
+// resumeAllNodes answers POST /nodes/resume-all: restores the intent
+// pause-all remembered (a no-op without a snapshot).
+func (a *API) resumeAllNodes(w http.ResponseWriter, r *http.Request) {
+	resumed, err := a.svc.Nodes().ResumeAll(r.Context())
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"resumed": resumed})
 }
 
 // deleteNode answers DELETE /nodes/{id} (the Reject action for a pending

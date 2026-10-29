@@ -31,6 +31,10 @@ type API struct {
 	// join records a setup "join" decision (task 08); main owns the
 	// persistence and the role switch. Nil → joining is refused with 500.
 	join func(serverURL, token string) error
+	// builtinNode is the built-in node's id (task 11): the setup wizard's
+	// explicit "start the built-in node now" choice acts on it. Empty →
+	// the wizard's start choice cannot be applied (nothing starts).
+	builtinNode string
 }
 
 // Option customizes New.
@@ -41,6 +45,12 @@ type Option func(*API)
 // token back to the process so it can switch to worker mode.
 func WithJoin(fn func(serverURL, token string) error) Option {
 	return func(a *API) { a.join = fn }
+}
+
+// WithBuiltinNode wires the built-in node's id (task 11) so the setup
+// wizard's explicit "start the built-in node now" choice can act on it.
+func WithBuiltinNode(nodeID string) Option {
+	return func(a *API) { a.builtinNode = nodeID }
 }
 
 // New builds the root HTTP handler. version is reported by /api/v1/health;
@@ -95,11 +105,19 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("GET /api/v1/fs/browse", a.requireAdmin(a.browse))
 		mux.HandleFunc("GET /api/v1/stats", a.requireAdmin(a.getStats))
 
-		// Node administration (task 08).
+		// Node administration (task 08) plus lifecycle controls (task 11).
+		// The lifecycle endpoints move desired_state only: start sets
+		// running, stop chooses stopped or draining, pause-all/resume-all
+		// do the same for every node at once.
 		mux.HandleFunc("GET /api/v1/nodes", a.requireAdmin(a.listNodes))
 		mux.HandleFunc("POST /api/v1/nodes/tokens", a.requireAdmin(a.createNodeToken))
 		mux.HandleFunc("POST /api/v1/nodes/{id}/approve", a.requireAdmin(a.approveNode))
 		mux.HandleFunc("POST /api/v1/nodes/{id}/revoke", a.requireAdmin(a.revokeNode))
+		mux.HandleFunc("POST /api/v1/nodes/{id}/start", a.requireAdmin(a.startNode))
+		mux.HandleFunc("POST /api/v1/nodes/{id}/stop", a.requireAdmin(a.stopNode))
+		mux.HandleFunc("POST /api/v1/nodes/{id}/drain", a.requireAdmin(a.drainNode))
+		mux.HandleFunc("POST /api/v1/nodes/pause-all", a.requireAdmin(a.pauseAllNodes))
+		mux.HandleFunc("POST /api/v1/nodes/resume-all", a.requireAdmin(a.resumeAllNodes))
 		mux.HandleFunc("PUT /api/v1/nodes/{id}", a.requireAdmin(a.updateNode))
 		mux.HandleFunc("DELETE /api/v1/nodes/{id}", a.requireAdmin(a.deleteNode))
 

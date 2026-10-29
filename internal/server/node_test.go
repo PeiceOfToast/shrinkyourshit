@@ -173,9 +173,11 @@ func TestHeartbeatRefreshesNodeAndJobs(t *testing.T) {
 		NodeID: "other-node", Status: store.JobStatusRunning, HeartbeatAt: time.Now().Add(-2 * time.Minute)}
 	require.NoError(t, h.st.CreateJob(ctx, other))
 
-	concurrency, err := h.reg.Heartbeat(ctx, node, `{"encoders":[]}`, []string{job.ID, other.ID, "ghost"})
+	concurrency, err := h.reg.Heartbeat(ctx, node, `{"encoders":[]}`, "", []string{job.ID, other.ID, "ghost"})
 	require.NoError(t, err)
-	require.Equal(t, 1, concurrency)
+	require.Equal(t, 1, concurrency.Concurrency)
+	require.Equal(t, store.NodeStateStopped, concurrency.DesiredState,
+		"a node the admin never started is stopped, even mid-heartbeat")
 
 	updated, err := h.st.GetJob(ctx, job.ID)
 	require.NoError(t, err)
