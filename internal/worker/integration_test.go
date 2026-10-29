@@ -78,7 +78,13 @@ func newStack(t *testing.T, cfg stackConfig) *stack {
 	svc := server.New(svcCfg)
 
 	ctx := context.Background()
-	key, _, err := svc.Nodes().EnsureBuiltinNode(ctx, dataDir, server.BuiltinNodeName("testhost"))
+	key, builtin, err := svc.Nodes().EnsureBuiltinNode(ctx, dataDir, server.BuiltinNodeName("testhost"))
+	require.NoError(t, err)
+
+	// The pipeline tests below exercise a started node (task 11: a fresh
+	// install starts stopped). The lifecycle tests control the state
+	// explicitly — stop or pair fresh nodes as needed.
+	_, err = svc.Nodes().Start(ctx, builtin.ID)
 	require.NoError(t, err)
 
 	svc.Start(ctx)
@@ -181,6 +187,35 @@ func (s *stack) waitForDesc(what string, cond func() bool, describe func() strin
 		s.t.Logf("state while waiting for %s: %s", what, describe())
 	}
 	s.t.Fatalf("timed out waiting for %s", what)
+}
+
+// startNode starts a node through the lifecycle endpoint (task 11), the
+// way the admin's Start click does.
+func (s *stack) startNode(nodeID string) {
+	s.t.Helper()
+	resp, err := http.Post(s.apiSrv.URL+"/api/v1/nodes/"+nodeID+"/start", "application/json", nil)
+	require.NoError(s.t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(s.t, http.StatusOK, resp.StatusCode, "start %s", nodeID)
+}
+
+// stopNode stops a node through the lifecycle endpoint with the given
+// drain flag.
+func (s *stack) stopNode(nodeID string, drain bool) {
+	s.t.Helper()
+	body := fmt.Sprintf(`{"drain": %t}`, drain)
+	resp, err := http.Post(s.apiSrv.URL+"/api/v1/nodes/"+nodeID+"/stop", "application/json", strings.NewReader(body))
+	require.NoError(s.t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(s.t, http.StatusOK, resp.StatusCode, "stop %s", nodeID)
+}
+
+// nodeRow returns the node row for an id.
+func (s *stack) nodeRow(nodeID string) *store.Node {
+	s.t.Helper()
+	node, err := s.st.GetNode(context.Background(), nodeID)
+	require.NoError(s.t, err)
+	return node
 }
 
 // jobFor returns the (single) job of the library.
@@ -695,6 +730,8 @@ func TestIntegrationTokenPairing(t *testing.T) {
 
 	nodeID, key := s.pairWithToken("tokened-worker")
 	require.NotEmpty(t, nodeID)
+	// The admin starts the node (task 11: pairing alone starts nothing).
+	s.startNode(nodeID)
 
 	// A second token pairs fine once, then is spent: the repeat is 401.
 	raw2, _, err := s.svc.Nodes().CreateToken(context.Background())
@@ -775,9 +812,11 @@ func TestIntegrationApprovalPairing(t *testing.T) {
 	_, err := NewClient(s.apiSrv.URL, "").Claim(context.Background())
 	require.True(t, isAPIStatus(err, http.StatusUnauthorized), "unpaired claim must be 401, got %v", err)
 
-	// The admin approves; EnsurePaired returns with the key.
+	// The admin approves, starts the node, and EnsurePaired returns with
+	// the key.
 	_, err = s.svc.Nodes().Approve(context.Background(), pendingID)
 	require.NoError(t, err)
+	s.startNode(pendingID)
 	require.NoError(t, <-paired)
 	require.Equal(t, s.apiSrv.URL, pairURL)
 	require.NotEmpty(t, pairKey)
@@ -804,6 +843,7 @@ func TestIntegrationRevokeRequeuesForBuiltinWorker(t *testing.T) {
 	// A remote node takes the job (the built-in worker only starts after
 	// the revoke, so the remote reliably gets it first).
 	nodeID, key := s.pairWithToken("doomed-worker")
+	s.startNode(nodeID)
 	ctxRemote, cancelRemote := context.WithCancel(context.Background())
 	defer cancelRemote()
 	s.runWorker(ctxRemote, s.workerConfig(func(c *Config) { c.Key = key }))
@@ -861,6 +901,7 @@ func TestIntegrationSharedModePathMapping(t *testing.T) {
 	require.NoError(t, os.Symlink(s.library, alias), "symlink must work on this platform")
 
 	nodeID, key := s.pairWithToken("mapped-worker")
+	s.startNode(nodeID)
 	mappings := fmt.Sprintf(`[{"server_path": %q, "node_path": %q}]`, s.library, alias)
 	_, err := s.svc.Nodes().Update(context.Background(), nodeID, server.NodeUpdateParams{
 		PathMappings: &mappings,
