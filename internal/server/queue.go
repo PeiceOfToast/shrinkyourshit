@@ -496,6 +496,70 @@ func (q *Queue) Retry(ctx context.Context, jobID string) (*store.Job, error) {
 	return job, nil
 }
 
+// RequeueNodeJobs returns every claimed/running job of nodeID to the queue
+// (attempt+1, claim fields cleared; at the attempt cap the job fails).
+// Used when a node is revoked or deleted (task 08). Returns the jobs that
+// transitioned. A report racing the revoke cannot resurrect its job:
+// UpdateJobIfActive only applies while the job is still claimed/running.
+func (q *Queue) RequeueNodeJobs(ctx context.Context, nodeID string) ([]*store.Job, error) {
+	jobs, err := q.st.ListJobs(ctx, store.JobFilter{NodeID: nodeID})
+	if err != nil {
+		return nil, fmt.Errorf("queue: list node jobs: %w", err)
+	}
+	var moved []*store.Job
+	for _, job := range jobs {
+		switch job.Status {
+		case store.JobStatusClaimed, store.JobStatusRunning:
+		default:
+			continue
+		}
+
+		now := time.Now().UTC()
+		attempt := job.Attempt + 1
+		if attempt >= q.attempt {
+			job.Status = store.JobStatusFailed
+			job.Attempt = attempt
+			job.Error = fmt.Sprintf("node revoked or removed after %d attempt(s)", attempt)
+			job.FinishedAt = now
+			job.HeartbeatAt = now
+		} else {
+			job.Status = store.JobStatusQueued
+			job.Attempt = attempt
+			job.NodeID = ""
+			job.ClaimedAt = time.Time{}
+			job.StartedAt = time.Time{}
+			job.HeartbeatAt = time.Time{}
+			job.Percent = 0
+			job.Speed = 0
+			job.ETASeconds = 0
+		}
+		applied, err := q.st.UpdateJobIfActive(ctx, job)
+		if err != nil {
+			q.log.Error("queue: requeue node job", "job", job.ID, "err", err)
+			continue
+		}
+		if !applied {
+			continue // finished or cancelled while we looked at it
+		}
+		moved = append(moved, job)
+		q.publish(EventJobUpdated, NewJobDTO(job))
+
+		if f, ferr := q.st.GetFile(ctx, job.FileID); ferr == nil && f.Status == store.FileStatusProcessing {
+			if job.Status == store.JobStatusQueued {
+				f.Status = store.FileStatusQueued
+			} else {
+				f.Status = store.FileStatusFailed
+			}
+			if uerr := q.st.UpdateFile(ctx, f); uerr != nil {
+				q.log.Error("queue: requeue node file update", "file", f.ID, "err", uerr)
+				continue
+			}
+			q.publish(EventFileUpdated, NewFileDTO(f))
+		}
+	}
+	return moved, nil
+}
+
 // Sweep returns stale claimed/running jobs (heartbeat older than timeout)
 // to the queue, failing jobs that have exhausted their attempts. Returns
 // the jobs that transitioned.

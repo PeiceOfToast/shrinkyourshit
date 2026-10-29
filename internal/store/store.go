@@ -118,6 +118,10 @@ type Node struct {
 	ID              string
 	Name            string
 	KeyHash         string
+	// KeyOnce holds the raw key between admin approval and the node's
+	// first retrieval (pairing flow, task 08). It is wiped on first
+	// retrieval, revoke and delete — afterwards only the hash remains.
+	KeyOnce         string
 	OS              string
 	Arch            string
 	Capabilities    string // JSON: {encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}

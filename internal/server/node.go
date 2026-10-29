@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -42,13 +43,16 @@ func HashKey(key string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// generateNodeKey returns a fresh 32-byte hex key.
+// generateNodeKey returns a fresh node key: 32 random bytes, base64url
+// (43 characters, no padding; task 08). The server stores only the SHA-256
+// of the key (HashKey): argon2id would add nothing for a high-entropy
+// random key, so the fast hash is the documented choice.
 func generateNodeKey() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("node: generate key: %w", err)
 	}
-	return hex.EncodeToString(b), nil
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // PathMapping is one entry of a node's path_mappings JSON: the node sees
@@ -107,11 +111,14 @@ func mappingPrefixLen(root, path string) int {
 }
 
 // NodeRegistry owns node authentication, the built-in node and worker
-// heartbeats. Task 08 extends it with pairing and the nodes API.
+// heartbeats, plus pairing (task 08): tokens, approve, revoke, update.
 type NodeRegistry struct {
 	st     store.Store
 	events *EventBus
 	log    *slog.Logger
+	// queue requeues a node's in-flight jobs on revoke/delete; wired by
+	// server.New after both services exist.
+	queue *Queue
 }
 
 // NewNodeRegistry builds the registry. events may be nil (no publishing).
@@ -121,6 +128,10 @@ func NewNodeRegistry(st store.Store, events *EventBus, log *slog.Logger) *NodeRe
 	}
 	return &NodeRegistry{st: st, events: events, log: log}
 }
+
+// SetQueue wires the queue used to requeue in-flight jobs when a node is
+// revoked or deleted. Nil is allowed (registry used without a queue).
+func (r *NodeRegistry) SetQueue(q *Queue) { r.queue = q }
 
 // Authenticate resolves a raw node key to an approved, enabled node.
 // Anything else is ErrUnauthorized (API.md: unpaired or revoked nodes
