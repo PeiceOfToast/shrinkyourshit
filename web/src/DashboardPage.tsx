@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Dashboard (task 07): total space saved, running jobs with live progress
- * (SSE invalidates the jobs query), queue count, recent history and a
- * per-node activity placeholder (task 08 fills it). With no libraries yet
- * it shows "Add your first folder" with the easy-mode form.
+ * Dashboard (task 10): read only, always. Space saved, files, queue,
+ * running jobs with live progress (SSE invalidates the jobs query), node
+ * activity, recent history and a warning surface driven by real state
+ * (every node stopped or disabled, heartbeat lost, recent failures).
+ * Creating a library happens only at /libraries/new, which the empty
+ * state links to.
  */
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   getJobs,
   getLibraries,
@@ -16,8 +18,12 @@ import {
   type Job,
   type Node,
 } from './api'
+import PageContainer from './PageContainer'
+import {
+  computeWarnings,
+  type DashboardWarning,
+} from './dashboardWarnings'
 import { formatBytes, formatEta, statusLabel } from './easyModel'
-import EasyLibraryForm from './EasyLibraryForm'
 
 function progressWidth(percent: number): string {
   return `${Math.max(0, Math.min(100, percent))}%`
@@ -118,13 +124,19 @@ function NodeActivity({ node, job }: { node: Node; job?: Job }) {
  * The Nodes card: every registered machine with its live progress. The
  * built-in node is listed like any other.
  */
-function NodeActivityList({ jobs }: { jobs: Job[] }) {
-  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
-  if (nodes.isPending) {
+function NodeActivityList({
+  nodes,
+  nodesPending,
+  jobs,
+}: {
+  nodes: Node[]
+  nodesPending: boolean
+  jobs: Job[]
+}) {
+  if (nodesPending) {
     return <p className="text-sm text-slate-400">Loading…</p>
   }
-  const items = nodes.data?.items ?? []
-  if (items.length === 0) {
+  if (nodes.length === 0) {
     return (
       <p className="text-sm text-slate-400" data-testid="nodes-empty">
         This machine is doing the work. Add other machines on the{' '}
@@ -143,7 +155,7 @@ function NodeActivityList({ jobs }: { jobs: Job[] }) {
   }
   return (
     <ul className="space-y-4" data-testid="nodes-activity">
-      {items.map((node) => (
+      {nodes.map((node) => (
         <NodeActivity
           key={node.id}
           node={node}
@@ -154,27 +166,51 @@ function NodeActivityList({ jobs }: { jobs: Job[] }) {
   )
 }
 
+function Warnings({ warnings }: { warnings: DashboardWarning[] }) {
+  if (warnings.length === 0) {
+    return null
+  }
+  return (
+    <div className="space-y-2" data-testid="dashboard-warnings">
+      {warnings.map((warning) => (
+        <div
+          key={warning.id}
+          className="rounded-2xl bg-amber-950/50 p-4 ring-1 ring-amber-800/60"
+          data-testid={`warning-${warning.id}`}
+        >
+          <p className="text-sm text-amber-200">{warning.message}</p>
+          <Link
+            to={warning.linkTo}
+            className="mt-2 inline-flex min-h-[36px] items-center rounded-lg bg-amber-800/60 px-3 text-sm font-semibold text-amber-100 hover:bg-amber-700/60"
+          >
+            {warning.linkLabel}
+          </Link>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
-  const navigate = useNavigate()
   const stats = useQuery({ queryKey: ['stats'], queryFn: getStats })
   const libraries = useQuery({ queryKey: ['libraries'], queryFn: getLibraries })
   const jobs = useQuery({
     queryKey: ['jobs'],
     queryFn: () => getJobs({ order: 'desc', limit: 50 }),
   })
+  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
 
   if (libraries.data && libraries.data.total === 0) {
     return (
-      <div className="max-w-2xl space-y-4" data-testid="empty-dashboard">
-        <h1 className="text-2xl font-bold">Add your first folder</h1>
+      <PageContainer data-testid="empty-dashboard">
         <p className="text-slate-400">
-          Pick a folder of videos. ShrinkYourShit makes copies that need less
-          space and swaps them in when they are smaller.
+          No libraries yet.{' '}
+          <Link to="/libraries/new" className="text-emerald-400 underline">
+            Add one
+          </Link>
+          .
         </p>
-        <EasyLibraryForm
-          onSaved={(lib) => void navigate(`/libraries/${lib.id}`)}
-        />
-      </div>
+      </PageContainer>
     )
   }
 
@@ -185,19 +221,18 @@ export default function DashboardPage() {
   const history = allJobs.filter(
     (j) => j.status === 'done' || j.status === 'failed',
   )
+  const warnings = computeWarnings({
+    nodes: nodes.data?.items ?? [],
+    jobs: allJobs,
+    stats: { queued: stats.data?.queued ?? 0 },
+    now: Date.now(),
+  })
 
   return (
-    <div className="space-y-6" data-testid="dashboard">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <Link
-          to="/libraries/new"
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-          data-testid="dashboard-add-library"
-        >
-          Add folder
-        </Link>
-      </div>
+    <PageContainer className="space-y-6" data-testid="dashboard">
+      <h1 className="text-2xl font-bold">Dashboard</h1>
+
+      <Warnings warnings={warnings} />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div
@@ -255,7 +290,11 @@ export default function DashboardPage() {
         <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
           <h2 className="font-semibold">Nodes</h2>
           <div className="mt-4">
-            <NodeActivityList jobs={active} />
+            <NodeActivityList
+              nodes={nodes.data?.items ?? []}
+              nodesPending={nodes.isPending}
+              jobs={active}
+            />
           </div>
         </section>
       </div>
@@ -303,6 +342,6 @@ export default function DashboardPage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageContainer>
   )
 }
