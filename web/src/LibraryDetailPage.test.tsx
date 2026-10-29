@@ -100,6 +100,60 @@ describe('LibraryDetailPage', () => {
     expect(screen.getByTestId('retry-failed')).toHaveTextContent('(1)')
   })
 
+  // Task 12: under `sm` the file list renders as stacked cards — the
+  // primary columns (name, status) stay visible and the secondary
+  // columns (why, size, saved) collapse into label/value pairs. Both
+  // render trees are always in the DOM; CSS picks the visible one, so
+  // the structural contract is what the unit test can assert.
+  it('renders the phone card list with label/value pairs', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: {
+          id: 'lib-1',
+          name: 'Movies',
+          path: '/media/movies',
+          target: {},
+          easy: null,
+          watch: true,
+          schedule: '',
+          result_policy: 'replace_if_smaller',
+          created_at: '',
+          updated_at: '',
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files$/,
+        body: {
+          items: [
+            file('f1', 'new', {
+              satisfied_reason: 'video is h264, target is hevc',
+            }),
+          ],
+          total: 1,
+        },
+      },
+    ])
+    renderPage()
+
+    const cards = await screen.findByTestId('file-cards')
+    expect(cards).toBeInTheDocument()
+    const card = screen.getByTestId('file-card-f1')
+    // Primary columns stay visible in the card: name and status.
+    expect(screen.getByTestId('file-card-status-f1')).toHaveTextContent('New')
+    // Secondary columns collapse into label and value pairs.
+    expect(screen.getByTestId('file-card-reason-f1')).toHaveTextContent(
+      'Why: video is h264, target is hevc',
+    )
+    expect(card).toHaveTextContent('Size:')
+    expect(card).toHaveTextContent('Saved:')
+    // The long path is deliberately wrapped or truncated, never forcing
+    // width: the name span carries break-words.
+    expect(card.querySelector('.break-words')).not.toBeNull()
+  })
+
   it('filters files by status', async () => {
     mock = installFetchMock([
       {

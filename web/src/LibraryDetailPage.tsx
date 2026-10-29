@@ -153,52 +153,111 @@ export default function LibraryDetailPage() {
           No files here yet. Wait for a scan or add files to the folder.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-800">
-          <table className="w-full text-left text-sm" data-testid="file-table">
-            <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">File</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Why</th>
-                <th className="px-4 py-3">Size</th>
-                <th className="px-4 py-3">Saved</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 bg-slate-900/50">
-              {files.data.items.map((f) => {
-                const name = f.path.split('/').pop() ?? f.path
-                return (
-                  <tr key={f.id} data-testid={`file-row-${f.id}`}>
-                    <td
-                      className="max-w-[16rem] truncate px-4 py-2 text-slate-200"
+        <>
+          {/* From `sm` up: the real table, scrollable so wide content
+              (long paths, long reasons) never forces the page wide. */}
+          <div className="hidden sm:block">
+            <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-800">
+              <table
+                className="w-full text-left text-sm"
+                data-testid="file-table"
+              >
+                <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">File</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Why</th>
+                    <th className="px-4 py-3">Size</th>
+                    <th className="px-4 py-3">Saved</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 bg-slate-900/50">
+                  {files.data.items.map((f) => {
+                    const name = f.path.split('/').pop() ?? f.path
+                    return (
+                      <tr key={f.id} data-testid={`file-row-${f.id}`}>
+                        <td
+                          className="max-w-[16rem] truncate px-4 py-2 text-slate-200"
+                          title={f.path}
+                        >
+                          {name}
+                        </td>
+                        <td
+                          className={`px-4 py-2 font-medium ${statusColor(f.status)}`}
+                          data-testid={`file-status-${f.id}`}
+                        >
+                          {statusLabel(f.status)}
+                        </td>
+                        <td
+                          className="break-words px-4 py-2 text-slate-500"
+                          data-testid={`file-reason-${f.id}`}
+                        >
+                          {f.satisfied_reason || '—'}
+                        </td>
+                        <td className="px-4 py-2 text-slate-400">
+                          {formatBytes(f.size)}
+                        </td>
+                        <td className="px-4 py-2 text-emerald-400">
+                          {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Under `sm`: the same list as stacked cards. File name and
+              status stay visible; the secondary columns become label/value
+              pairs so nothing is squeezed into a 300 px table. */}
+          <ul className="space-y-2 sm:hidden" data-testid="file-cards">
+            {files.data.items.map((f) => {
+              const name = f.path.split('/').pop() ?? f.path
+              return (
+                <li
+                  key={f.id}
+                  className="min-w-0 rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
+                  data-testid={`file-card-${f.id}`}
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span
+                      className="min-w-0 break-words font-medium text-slate-200"
                       title={f.path}
                     >
                       {name}
-                    </td>
-                    <td
-                      className={`px-4 py-2 font-medium ${statusColor(f.status)}`}
-                      data-testid={`file-status-${f.id}`}
+                    </span>
+                    <span
+                      className={`shrink-0 font-medium ${statusColor(f.status)}`}
+                      data-testid={`file-card-status-${f.id}`}
                     >
                       {statusLabel(f.status)}
-                    </td>
-                    <td
-                      className="px-4 py-2 text-slate-500"
-                      data-testid={`file-reason-${f.id}`}
+                    </span>
+                  </div>
+                  {f.satisfied_reason && (
+                    <p
+                      className="mt-2 break-words text-sm text-slate-500"
+                      data-testid={`file-card-reason-${f.id}`}
                     >
-                      {f.satisfied_reason || '—'}
-                    </td>
-                    <td className="px-4 py-2 text-slate-400">
+                      <span className="text-slate-600">Why: </span>
+                      {f.satisfied_reason}
+                    </p>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                    <span className="text-slate-400">
+                      <span className="text-slate-600">Size: </span>
                       {formatBytes(f.size)}
-                    </td>
-                    <td className="px-4 py-2 text-emerald-400">
+                    </span>
+                    <span className="text-emerald-400">
+                      <span className="text-slate-600">Saved: </span>
                       {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </>
       )}
     </PageContainer>
   )

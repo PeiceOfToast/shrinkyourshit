@@ -233,7 +233,7 @@ function EditNodeDialog({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="rounded-lg bg-slate-800 px-3 py-2"
+            className="w-full rounded-lg bg-slate-800 px-3 py-2"
             data-testid="edit-node-name"
           />
         </label>
@@ -251,7 +251,7 @@ function EditNodeDialog({
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            className="rounded-lg bg-slate-800 px-3 py-2"
+            className="w-full rounded-lg bg-slate-800 px-3 py-2"
             data-testid="edit-node-access-mode"
           >
             {Object.entries(accessModeLabels).map(([value, label]) => (
@@ -272,7 +272,7 @@ function EditNodeDialog({
             min={0}
             value={limit}
             onChange={(e) => setLimit(e.target.value)}
-            className="rounded-lg bg-slate-800 px-3 py-2"
+            className="w-full rounded-lg bg-slate-800 px-3 py-2"
             data-testid="edit-node-throughput"
           />
         </label>
@@ -406,7 +406,7 @@ function NodeRow({
       data-testid={`node-${node.id}`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">{node.name}</span>
+        <span className="min-w-0 break-words font-semibold">{node.name}</span>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusStyles[node.status] ?? 'bg-slate-700 text-slate-200'}`}
           data-testid={`node-status-${node.id}`}
