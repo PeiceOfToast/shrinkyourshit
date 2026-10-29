@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from './AppShell'
+import DashboardPage from './DashboardPage'
 import { RequireReady } from './guards'
-import HomePage from './HomePage'
+import LibrariesPage from './LibrariesPage'
+import LibraryDetailPage from './LibraryDetailPage'
+import LibraryEditPage from './LibraryEditPage'
 import LoginPage from './LoginPage'
+import NewLibraryPage from './NewLibraryPage'
 import PlaceholderPage from './PlaceholderPage'
 import SettingsPage from './SettingsPage'
 import SetupPage from './SetupPage'
@@ -16,22 +20,17 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireReady />}>
         <Route element={<AppShell />}>
-          <Route index element={<HomePage />} />
-          <Route
-            path="libraries"
-            element={
-              <PlaceholderPage
-                title="Libraries"
-                message="Libraries arrive with the next update."
-              />
-            }
-          />
+          <Route index element={<DashboardPage />} />
+          <Route path="libraries" element={<LibrariesPage />} />
+          <Route path="libraries/new" element={<NewLibraryPage />} />
+          <Route path="libraries/:id" element={<LibraryDetailPage />} />
+          <Route path="libraries/:id/edit" element={<LibraryEditPage />} />
           <Route
             path="nodes"
             element={
               <PlaceholderPage
                 title="Nodes"
-                message="Nodes arrive with the next update."
+                message="Other machines that help out arrive with the next update."
               />
             }
           />
