@@ -105,7 +105,8 @@ func (a *API) setupServers(w http.ResponseWriter, r *http.Request) {
 	type serversResponse struct {
 		Servers []server.DiscoveredServer `json:"servers"`
 	}
-	resp := serversResponse{}
+	// Always an array in the JSON, never null (API.md list conventions).
+	resp := serversResponse{Servers: []server.DiscoveredServer{}}
 	if !status.SetupComplete {
 		for _, info := range a.svc.Discovered(r.Context()) {
 			resp.Servers = append(resp.Servers, server.DiscoveredServer{

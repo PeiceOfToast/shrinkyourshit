@@ -22,10 +22,10 @@ API.md (task 08 endpoints), ARCHITECTURE.md (one binary three roles, Node model,
 File transfer, the install script endpoint, installer service setup (task 09).
 
 ## Acceptance
-- [ ] Integration test: two processes on one machine with separate data dirs; worker discovers the server via mDNS (or broadcast when mDNS is unavailable in CI; test both with the other disabled).
-- [ ] Token pairing: worker with a valid token is approved immediately and claims a job; a used or expired token is rejected with 401.
-- [ ] Approval pairing: worker without a token appears `pending`, cannot claim (401), receives the key after admin approval, then claims a job.
-- [ ] Revoke: node's next request gets 401; its running job returns to `queued` and is completed by the built-in worker.
-- [ ] Shared mode with a path mapping (`/media` on the server maps to a different temp dir on the "node") resolves the source path correctly and the job completes.
-- [ ] Node key is never returned after the first retrieval and never logged.
-- [ ] Nodes page shows the pending node, the approve action works, and the generated install command contains the real server URL and token.
+- [x] Integration test: two processes on one machine with separate data dirs; worker discovers the server via mDNS (or broadcast when mDNS is unavailable in CI; test both with the other disabled).
+- [x] Token pairing: worker with a valid token is approved immediately and claims a job; a used or expired token is rejected with 401.
+- [x] Approval pairing: worker without a token appears `pending`, cannot claim (401), receives the key after admin approval, then claims a job.
+- [x] Revoke: node's next request gets 401; its running job returns to `queued` and is completed by the built-in worker.
+- [x] Shared mode with a path mapping (`/media` on the server maps to a different temp dir on the "node") resolves the source path correctly and the job completes.
+- [x] Node key is never returned after the first retrieval and never logged.
+- [x] Nodes page shows the pending node, the approve action works, and the generated install command contains the real server URL and token.

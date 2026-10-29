@@ -114,7 +114,12 @@ func EnsurePaired(ctx context.Context, cfg PairConfig) (serverURL, key string, e
 		_ = os.Remove(filepath.Join(cfg.DataDir, pendingFile))
 	}
 
-	// Find the server when no URL was configured.
+	// Find the server when no URL was configured. Announcements are tried
+	// in order; a dead one (stale mDNS entry, powered-off machine) is
+	// skipped, a server that *answers* and refuses ends the attempt
+	// honestly — pairing must not scatter pending nodes across several
+	// servers.
+	var resp *server.PairResponse
 	if serverURL == "" {
 		if cfg.Discover == nil {
 			return "", "", errors.New("worker: no server configured and discovery unavailable: set SHRINK_SERVER")
@@ -124,20 +129,46 @@ func EnsurePaired(ctx context.Context, cfg PairConfig) (serverURL, key string, e
 		if len(found) == 0 {
 			return "", "", errors.New("worker: no server found on the network: set SHRINK_SERVER, e.g. http://192.168.1.10:8765")
 		}
-		serverURL = strings.TrimRight(found[0].URL, "/")
-		log.Info("worker: found server", "server", serverURL, "name", found[0].Name)
-	}
-
-	client := NewClient(serverURL, "")
-	resp, err := client.Pair(ctx, PairInput{
-		Token:        cfg.Token,
-		Name:         cfg.NodeName,
-		OS:           runtime.GOOS,
-		Arch:         runtime.GOARCH,
-		Capabilities: json.RawMessage(`{}`), // the first heartbeat refreshes this
-	})
-	if err != nil {
-		return "", "", err
+		pairIn := PairInput{
+			Token:        cfg.Token,
+			Name:         cfg.NodeName,
+			OS:           runtime.GOOS,
+			Arch:         runtime.GOARCH,
+			Capabilities: json.RawMessage(`{}`), // the first heartbeat refreshes this
+		}
+		var lastErr error
+		for _, info := range found {
+			candidate := strings.TrimRight(info.URL, "/")
+			r, err := NewClient(candidate, "").Pair(ctx, pairIn)
+			if err != nil {
+				var apiErr *APIError
+				if errors.As(err, &apiErr) {
+					return "", "", err // answered and refused: honest failure
+				}
+				lastErr = err
+				log.Warn("worker: server announcement unreachable", "server", candidate, "err", err)
+				continue
+			}
+			serverURL = candidate
+			resp = r
+			log.Info("worker: found server", "server", serverURL, "name", info.Name)
+			break
+		}
+		if serverURL == "" {
+			return "", "", fmt.Errorf("worker: none of the %d announced servers is reachable: %v", len(found), lastErr)
+		}
+	} else {
+		r, err := NewClient(serverURL, "").Pair(ctx, PairInput{
+			Token:        cfg.Token,
+			Name:         cfg.NodeName,
+			OS:           runtime.GOOS,
+			Arch:         runtime.GOARCH,
+			Capabilities: json.RawMessage(`{}`), // the first heartbeat refreshes this
+		})
+		if err != nil {
+			return "", "", err
+		}
+		resp = r
 	}
 
 	if resp.NodeKey != "" {

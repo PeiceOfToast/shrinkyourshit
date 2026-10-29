@@ -121,8 +121,63 @@ Order of work (small commits):
 
 ## Blocked / questions
 
-None so far.
+None. (One suspected environment flake, see Summary.)
 
 ## Summary (end of run)
 
-(to be written)
+- Built: `internal/discovery` (mDNS `_shrinkyourshit._tcp` with TXT
+  version/name/id + UDP broadcast responder on 8766 answering
+  `SYS-DISCOVER` with `{id,name,url,version}`; `Discover` probes both and
+  dedupes; per-transport toggles for CI); pairing service (one-time
+  24h tokens, token pairing → approved immediately, tokenless → pending,
+  approve generates a key that is delivered exactly once via
+  `nodes.key_once`, revoke/delete clear the hashes and requeue in-flight
+  jobs); admin nodes API + open pair API + `GET /setup/servers` +
+  `POST /setup mode:"join"` (writes role=worker into the data-dir
+  config.yaml through a main-owned callback, then the live process shuts
+  its HTTP server down and runs the pairing flow + worker loop; serve
+  with role worker runs the same flow, so a joined install survives
+  restarts from the same unit). Worker: `EnsurePaired` (existing key →
+  reuse; discover or use SHRINK_SERVER; token pair or pending; pending
+  node id persisted in `node.json` so restarts resume instead of stacking
+  duplicates; polls every 5s; unreachable announcements are skipped, a
+  server that *answers* and refuses ends the attempt). Web: NodesPage
+  (pending first, Approve/Reject, encoder chips, edit dialog with name/
+  enabled/access mode/path mappings, Add-node dialog with the three
+  copyable commands), Dashboard Nodes card live per node, wizard join
+  card with the discovered list. Docs: API.md task-08 section, Node
+  model gains `key_once`, discovery protocol documented, config rows.
+- Key format decision: 32 random bytes base64url, SHA-256 stored
+  (high-entropy → argon2id pointless); raw key exists only in the
+  delivering response, `key_once` until first retrieval, and the node's
+  key file; never logged (tests assert this with a capture logger).
+- Hidden-but-necessary fix: a mapped node reports its output path in its
+  own view; `ResolveServerPath` (API layer, workerComplete) maps it back
+  so the library row and output inspection stay library-side.
+- Skipped: file transfer mode, install.sh/install.ps1 endpoints,
+  installer service setup (task 09). No new dependencies beyond the
+  STACK.md-pinned `grandcat/zeroconf` (plus its transitive deps).
+- Next task should know: `GET /pair/{id}` returns the key once then
+  `{"status":"approved"}` without it (worker treats that as
+  "re-pair required"); `DELETE /nodes/{id}` exists for Reject; the
+  built-in node appears in the nodes list like any node; discovery
+  toggles are `SHRINK_DISCOVERY_MDNS/_BROADCAST/_PORT`; the shared-storage
+  access check (B7) and transfer endpoints from task 09 plug into
+  `effectiveAccessMode` (auto currently resolves to shared) and the
+  worker's `access mode not supported yet` guard.
+- Watch out: the react-query key `['jobs']` on the dashboard is
+  param-specific — the NodesPage uses `['jobs','running']`; the
+  broadcast reply format is JSON (not a bare URL); `go test ./...`
+  runs packages in parallel, so anything announcing on default ports in
+  tests must use a private one (freeUDPPort pattern).
+- One flake seen once under full-suite parallel load
+  (TestIntegrationRevokeRequeuesForBuiltinWorker, 4.7s in, most likely
+  the ffmpeg fixture generation under memory pressure); 6+ subsequent
+  full-suite runs green. If it recurs, rerun with -v and compare the
+  failing step.
+- Verified: `make test`, `make test-integration`, `make lint`, spdx,
+  `make web`+`make build`; live smoke: serve → nodes list → token with
+  correct install commands → `setup/servers` hides itself → real UI
+  served; two-process broadcast + mDNS join end to end (discovery →
+  token pairing → job completed by the remote node, hevc, smaller).
+

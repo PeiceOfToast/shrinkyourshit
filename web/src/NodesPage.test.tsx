@@ -187,7 +187,10 @@ describe('NodesPage', () => {
       {
         method: 'PUT',
         match: /\/api\/v1\/nodes\/node-1$/,
-        bodyFn: (ctx) => ({ ...nodeFixture(), ...ctx.body }),
+        bodyFn: (ctx) => ({
+          ...nodeFixture(),
+          ...(ctx.body as Record<string, unknown>),
+        }),
       },
     ])
 
