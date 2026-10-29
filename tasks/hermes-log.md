@@ -50,3 +50,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T06:47:00Z task 09: stuck OpenCode session ses_e79ce47ebfferOnWcXo00EGGy2 was polling CI for green; interrupted per the CI-closed standing exception
 - 2026-10-29T06:47:00Z task 09: PR #9 merged squash af119de, branch task/09-file-transfer-installer deleted, main pulled on the VM (aa322e0..af119de)
 - 2026-10-29T06:47:00Z task 09: milestone reached (tasks 05, 07 and 09 merged: encode pipeline, MVP UI and file transfer plus installers all in main); milestone message sent to Michael
+- 2026-10-29T08:32:00Z pm: MVP complete, all nine tasks done and merged (main 660af18), no todo tasks in tasks/STATUS.md, no open PRs, no live OpenCode sessions. Pruned 4 stale origin/task/* remote-tracking refs (remote heads had already been deleted). Nothing queued: post-MVP work needs Michael to pick from ROADMAP items 1-10.
