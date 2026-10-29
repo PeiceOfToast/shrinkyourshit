@@ -444,8 +444,10 @@ function NodeRow({
 export default function NodesPage() {
   const client = useQueryClient()
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
+  // Distinct key from the dashboard's jobs list (different params); the
+  // SSE invalidation of ['jobs'] still covers it (prefix match).
   const jobs = useQuery({
-    queryKey: ['jobs'],
+    queryKey: ['jobs', 'running'],
     queryFn: () => getJobs({ status: 'running', limit: 100 }),
   })
   const [adding, setAdding] = useState(false)
