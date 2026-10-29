@@ -117,6 +117,22 @@ Request/response details beyond the table:
 | GET | `/api/v1/settings` | admin | |
 | PUT | `/api/v1/settings` | admin | concurrency, scratch dir, result policy, login on/off, password change |
 
+Request/response details beyond the table:
+
+- `GET /api/v1/setup/status` — `{setup_complete, login_enabled, username?}`; `username` only present when login is enabled.
+- `POST /api/v1/setup` — `{mode: "server", login_enabled, username?, password?}`. `mode` other than `"server"` is 400 (joining arrives with task 08). Login enabled requires `username` and `password`. Response is the same shape as the status endpoint with `setup_complete: true`, status 201. After completion the endpoint answers `409 {"code":"setup_complete"}`.
+- `POST /api/v1/auth/login` — `{username, password}`. Success sets the `sys_session` cookie (HttpOnly, SameSite=Lax, Path=/, 30-day Max-Age) and returns `{setup_complete, login_enabled: true, username}`. Wrong credentials are `401 {"code":"invalid_credentials"}` (never says which part was wrong). The sixth failed attempt within one minute from one IP is `429 {"code":"too_many_attempts"}`; only failed attempts count.
+- `GET /api/v1/auth/me` — same shape as the status endpoint; 401 when login is enabled and the session is missing, unknown or expired. 200 with `login_enabled: false` when login is off.
+- `GET /api/v1/settings` —
+  `{"worker_concurrency": 1, "scratch_dir": "", "default_result_policy": "replace_if_smaller", "login_enabled": false, "admin_username": "", "preferred_languages": ["eng"], "default_video_codec": "hevc"}`. Never contains `admin_password_hash`.
+- `PUT /api/v1/settings` — any subset of the GET fields, plus `login_enabled` (`bool`),
+  `password` and `current_password`. Turning login on requires `password` in the
+  same request (and `admin_username` when none is stored). A password change
+  requires `current_password` to verify when login is enabled (`401
+  {"code":"invalid_credentials"}` otherwise). Invalid values (concurrency out
+  of range, unknown result policy or codec) are `400 {"code":"invalid_request"}`.
+  Response is the updated settings document.
+
 ### Task 07
 
 | Method | Path | Auth | Purpose |
