@@ -109,6 +109,21 @@ const (
 	NodeStatusRevoked  = "revoked"
 )
 
+// Node desired states (ARCHITECTURE.md worker lifecycle, task 11; do not
+// add values without updating it). desired_state is the operator intent;
+// the worker learns it from every heartbeat.
+const (
+	NodeStateStopped  = "stopped"
+	NodeStateRunning  = "running"
+	NodeStateDraining = "draining"
+)
+
+// ConcurrencyMin and ConcurrencyMax bound a node's parallel-job cap.
+const (
+	ConcurrencyMin = 1
+	ConcurrencyMax = 16
+)
+
 // Node access modes (ARCHITECTURE.md; do not add values without updating it).
 const (
 	NodeAccessAuto     = "auto"
@@ -133,8 +148,18 @@ type Node struct {
 	// ThroughputLimit caps this node's transfer speed in MB/s; 0 (and the
 	// zero value) means unlimited (task 09).
 	ThroughputLimit int64
-	Status          string // pending | approved | revoked
-	Enabled         bool
+	// DesiredState is the operator intent (task 11): stopped | running |
+	// draining. The hard off switch is Enabled, which gates node auth.
+	// Empty reads as stopped (columns default to stopped; defensive for
+	// rows written by other means).
+	DesiredState string
+	// Concurrency caps this node's parallel jobs (1 to 16).
+	Concurrency int
+	// StateError records the reason a lifecycle transition failed to
+	// apply; the UI shows it and the next successful transition clears it.
+	StateError string
+	Status     string // pending | approved | revoked
+	Enabled    bool
 	LastHeartbeatAt time.Time
 	CreatedAt       time.Time
 }
@@ -159,6 +184,9 @@ const (
 	// Task 06 additions: easy-mode defaults (task 07 reads these).
 	SettingPreferredLanguages = "preferred_languages"
 	SettingDefaultVideoCodec  = "default_video_codec"
+	// Task 11 additions: pause-all remembers the per-node prior
+	// desired_state here until resume-all restores it.
+	SettingPausedNodes = "paused_nodes"
 )
 
 // Result policies (ARCHITECTURE.md; do not add values without updating it).
@@ -191,4 +219,9 @@ func NodeStatusValues() []string {
 // NodeAccessModeValues lists the valid node access modes.
 func NodeAccessModeValues() []string {
 	return []string{NodeAccessAuto, NodeAccessShared, NodeAccessTransfer}
+}
+
+// NodeDesiredStateValues lists the valid node desired states.
+func NodeDesiredStateValues() []string {
+	return []string{NodeStateStopped, NodeStateRunning, NodeStateDraining}
 }

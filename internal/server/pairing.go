@@ -87,6 +87,7 @@ func (r *NodeRegistry) Pair(ctx context.Context, in PairInput) (*store.Node, str
 			PathMappings: "[]",
 			Status:       store.NodeStatusApproved,
 			Enabled:      true,
+			DesiredState: store.NodeStateStopped, // the admin starts it (task 11)
 		}
 		if err := r.st.CreateNode(ctx, node); err != nil {
 			return nil, "", fmt.Errorf("node: create paired: %w", err)
@@ -111,6 +112,7 @@ func (r *NodeRegistry) Pair(ctx context.Context, in PairInput) (*store.Node, str
 		PathMappings: "[]",
 		Status:       store.NodeStatusPending,
 		Enabled:      true,
+		DesiredState: store.NodeStateStopped, // the admin starts it (task 11)
 	}
 	if err := r.st.CreateNode(ctx, node); err != nil {
 		return nil, "", fmt.Errorf("node: create pending: %w", err)
@@ -230,10 +232,13 @@ type NodeUpdateParams struct {
 	AccessMode      *string
 	PathMappings    *string // raw JSON, validated by ValidatePathMappings
 	ThroughputLimit *int64  // MB/s, 0 = unlimited (task 09)
+	Concurrency     *int    // parallel-job cap, 1 to 16 (task 11)
 }
 
 // Update applies a partial node update. Unknown access modes, broken
-// path mappings and negative throughput limits are ErrPairInput (→ 400).
+// path mappings, negative throughput limits and out-of-range concurrency
+// are ErrPairInput (→ 400). desired_state is deliberately absent: lifecycle
+// intent moves only through the start/stop/drain endpoints.
 func (r *NodeRegistry) Update(ctx context.Context, id string, p NodeUpdateParams) (*store.Node, error) {
 	node, err := r.st.GetNode(ctx, id)
 	if err != nil {
@@ -268,6 +273,13 @@ func (r *NodeRegistry) Update(ctx context.Context, id string, p NodeUpdateParams
 			return nil, fmt.Errorf("%w: throughput_limit_mbps cannot be negative", ErrPairInput)
 		}
 		node.ThroughputLimit = *p.ThroughputLimit
+	}
+	if p.Concurrency != nil {
+		if *p.Concurrency < store.ConcurrencyMin || *p.Concurrency > store.ConcurrencyMax {
+			return nil, fmt.Errorf("%w: concurrency must be %d to %d",
+				ErrPairInput, store.ConcurrencyMin, store.ConcurrencyMax)
+		}
+		node.Concurrency = *p.Concurrency
 	}
 	if err := r.st.UpdateNode(ctx, node); err != nil {
 		return nil, fmt.Errorf("node: update: %w", err)

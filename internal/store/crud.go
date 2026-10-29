@@ -352,15 +352,18 @@ func (s *SQLite) DeleteJob(ctx context.Context, id string) error {
 }
 
 // nodeColumns is the column list shared by every node query.
-const nodeColumns = `id, name, key_hash, key_once, os, arch, capabilities, access_mode, path_mappings, throughput_limit_mbps, status, enabled, last_heartbeat_at, created_at`
+const nodeColumns = `id, name, key_hash, key_once, os, arch, capabilities, access_mode, path_mappings, throughput_limit_mbps, desired_state, concurrency, state_error, status, enabled, last_heartbeat_at, created_at`
 
 // scanNode reads one node row.
 func scanNode(rows *sql.Rows) (*Node, error) {
 	var n Node
 	var enabled string
 	var heartbeat, created sql.NullString
-	if err := rows.Scan(&n.ID, &n.Name, &n.KeyHash, &n.KeyOnce, &n.OS, &n.Arch, &n.Capabilities, &n.AccessMode, &n.PathMappings, &n.ThroughputLimit, &n.Status, &enabled, &heartbeat, &created); err != nil {
+	if err := rows.Scan(&n.ID, &n.Name, &n.KeyHash, &n.KeyOnce, &n.OS, &n.Arch, &n.Capabilities, &n.AccessMode, &n.PathMappings, &n.ThroughputLimit, &n.DesiredState, &n.Concurrency, &n.StateError, &n.Status, &enabled, &heartbeat, &created); err != nil {
 		return nil, err
+	}
+	if n.DesiredState == "" {
+		n.DesiredState = NodeStateStopped
 	}
 	n.Enabled = parseBool(enabled)
 	n.LastHeartbeatAt = parseTime(heartbeat.String)
@@ -368,12 +371,26 @@ func scanNode(rows *sql.Rows) (*Node, error) {
 	return &n, nil
 }
 
-// CreateNode inserts a node. ID and CreatedAt are filled when empty.
+// CreateNode inserts a node. ID and CreatedAt are filled when empty. New
+// nodes default to stopped and concurrency 1 (task 11): nothing encodes
+// until a human starts the node.
 func (s *SQLite) CreateNode(ctx context.Context, n *Node) error {
 	if err := validateNodeStatus(n.Status); err != nil {
 		return err
 	}
 	if err := validateNodeAccessMode(n.AccessMode); err != nil {
+		return err
+	}
+	if err := validateNodeDesiredState(n.DesiredState); err != nil {
+		return err
+	}
+	if n.DesiredState == "" {
+		n.DesiredState = NodeStateStopped
+	}
+	if n.Concurrency == 0 {
+		n.Concurrency = ConcurrencyMin
+	}
+	if err := validateNodeConcurrency(n.Concurrency); err != nil {
 		return err
 	}
 	if n.ID == "" {
@@ -382,8 +399,8 @@ func (s *SQLite) CreateNode(ctx context.Context, n *Node) error {
 	if n.CreatedAt.IsZero() {
 		n.CreatedAt = nowUTC()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.ID, n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.ThroughputLimit, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), fmtTime(n.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.ThroughputLimit, n.DesiredState, n.Concurrency, n.StateError, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), fmtTime(n.CreatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create node: %w", err)
 	}
@@ -438,8 +455,17 @@ func (s *SQLite) UpdateNode(ctx context.Context, n *Node) error {
 	if err := validateNodeAccessMode(n.AccessMode); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET name = ?, key_hash = ?, key_once = ?, os = ?, arch = ?, capabilities = ?, access_mode = ?, path_mappings = ?, throughput_limit_mbps = ?, status = ?, enabled = ?, last_heartbeat_at = ? WHERE id = ?`,
-		n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.ThroughputLimit, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), n.ID)
+	if err := validateNodeDesiredState(n.DesiredState); err != nil {
+		return err
+	}
+	if n.DesiredState == "" {
+		n.DesiredState = NodeStateStopped
+	}
+	if err := validateNodeConcurrency(n.Concurrency); err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET name = ?, key_hash = ?, key_once = ?, os = ?, arch = ?, capabilities = ?, access_mode = ?, path_mappings = ?, throughput_limit_mbps = ?, desired_state = ?, concurrency = ?, state_error = ?, status = ?, enabled = ?, last_heartbeat_at = ? WHERE id = ?`,
+		n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.ThroughputLimit, n.DesiredState, n.Concurrency, n.StateError, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), n.ID)
 	if err != nil {
 		return fmt.Errorf("store: update node: %w", err)
 	}

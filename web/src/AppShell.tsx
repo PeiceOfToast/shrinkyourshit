@@ -15,7 +15,15 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { getHealth, getJobs, logout, type Job } from './api'
+import {
+  getHealth,
+  getJobs,
+  getNodes,
+  logout,
+  pauseAllNodes,
+  resumeAllNodes,
+  type Job,
+} from './api'
 import { LiveEvents } from './events'
 import { meKey, useMe, useSetupStatus } from './queries'
 import { useMediaQuery } from './useMediaQuery'
@@ -156,6 +164,49 @@ const brand = (
   <span className="text-lg font-bold tracking-tight">ShrinkYourShit</span>
 )
 
+/**
+ * Global "Pause all encoding" switch (task 11): stops every node in one
+ * click and restores the previous per-node intent when turned off. ON
+ * means every node is stopped/draining; off means at least one is running.
+ */
+function PauseAllSwitch() {
+  const client = useQueryClient()
+  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
+  const items = nodes.data?.items ?? []
+  const paused =
+    items.length > 0 && items.every((n) => n.desired_state !== 'running')
+
+  const invalidate = () => {
+    void client.invalidateQueries({ queryKey: ['nodes'] })
+  }
+  const pause = useMutation({
+    mutationFn: pauseAllNodes,
+    onSuccess: invalidate,
+  })
+  const resume = useMutation({
+    mutationFn: resumeAllNodes,
+    onSuccess: invalidate,
+  })
+  const busy = pause.isPending || resume.isPending
+
+  return (
+    <label
+      className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-slate-300"
+      data-testid="pause-all-switch"
+    >
+      <input
+        type="checkbox"
+        checked={paused}
+        disabled={busy || items.length === 0}
+        onChange={() => (paused ? resume.mutate() : pause.mutate())}
+        className="h-4 w-4 rounded accent-amber-500"
+        data-testid="pause-all-checkbox"
+      />
+      Pause all encoding
+    </label>
+  )
+}
+
 export default function AppShell() {
   const health = useQuery({ queryKey: ['health'], queryFn: getHealth })
   const isDesktop = useMediaQuery('(min-width: 768px)')
@@ -239,6 +290,7 @@ export default function AppShell() {
             </span>
             <div className="flex items-center gap-3">
               <JobIndicator />
+              <PauseAllSwitch />
               <div className="w-auto">
                 <LogoutButton />
               </div>
@@ -257,7 +309,10 @@ export default function AppShell() {
               <Icon path={ICONS.menu} className="h-6 w-6" />
             </button>
             {brand}
-            <JobIndicator />
+            <div className="flex items-center gap-2">
+              <PauseAllSwitch />
+              <JobIndicator />
+            </div>
           </header>
         )}
 

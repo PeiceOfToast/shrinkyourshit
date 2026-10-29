@@ -118,7 +118,9 @@ func (a *API) setupServers(w http.ResponseWriter, r *http.Request) {
 }
 
 // setupBody is the POST /setup request. Join adds the target server and an
-// optional pairing token (task 08).
+// optional pairing token (task 08). start_node (task 11) is the wizard's
+// explicit "start the built-in node now" choice: it defaults to false, so
+// a completed wizard never begins encoding on its own.
 type setupBody struct {
 	Mode         string `json:"mode"`
 	LoginEnabled bool   `json:"login_enabled"`
@@ -126,6 +128,7 @@ type setupBody struct {
 	Password     string `json:"password"`
 	Server       string `json:"server"`
 	Token        string `json:"token"`
+	StartNode    bool   `json:"start_node"`
 }
 
 // completeSetup answers POST /setup. mode "server" is the task-06 flow;
@@ -160,6 +163,15 @@ func (a *API) completeSetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.internal(w, err)
 		return
+	}
+	// The wizard's explicit start choice (task 11). The default is
+	// stopped: finishing setup must never begin encoding on its own. A
+	// failed start is logged, not fatal — setup is complete and the node
+	// can be started from the Nodes page.
+	if body.StartNode && a.builtinNode != "" {
+		if _, err := a.svc.Nodes().Start(workerCtx(r), a.builtinNode); err != nil {
+			a.log.Error("setup: start the built-in node", "err", err)
+		}
 	}
 	status := server.Status{SetupComplete: true, LoginEnabled: body.LoginEnabled}
 	if body.LoginEnabled {

@@ -245,11 +245,14 @@ func runJoinScenario(t *testing.T, bin, ffmpeg, ffprobe string, toggles discover
 		"SHRINK_FFMPEG_PATH=" + ffmpeg,
 	}, toggles.env()...))
 
-	// The worker appears as an approved node (token pairing) and the job
-	// completes.
+	// The worker appears as an approved node (token pairing). Pairing
+	// alone starts nothing (task 11): the admin starts the node, and the
+	// running worker picks that up from its next heartbeat.
+	var startedNodeID string
 	waitFor(t, "worker-b approved", func() bool {
 		var nodes struct {
 			Items []struct {
+				ID     string `json:"id"`
 				Name   string `json:"name"`
 				Status string `json:"status"`
 			} `json:"items"`
@@ -257,11 +260,13 @@ func runJoinScenario(t *testing.T, bin, ffmpeg, ffprobe string, toggles discover
 		apiCall(t, http.MethodGet, base+"/api/v1/nodes", nil, &nodes)
 		for _, n := range nodes.Items {
 			if n.Name == "worker-b" && n.Status == "approved" {
+				startedNodeID = n.ID
 				return true
 			}
 		}
 		return false
 	}, 60*time.Second)
+	apiCall(t, http.MethodPost, base+"/api/v1/nodes/"+startedNodeID+"/start", nil, nil)
 
 	waitFor(t, "job done", func() bool {
 		var jobs struct {

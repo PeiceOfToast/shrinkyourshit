@@ -180,7 +180,10 @@ func TestPairApprovalFlowViaAPI(t *testing.T) {
 	require.Equal(t, "approved", resp.Status)
 	require.NotEmpty(t, resp.NodeKey)
 
-	// The key authenticates a claim (empty queue → 204).
+	// The key authenticates a claim once the admin starts the node
+	// (task 11: nodes are created stopped) — empty queue → 204.
+	rec = h.do(http.MethodPost, "/api/v1/nodes/"+resp.NodeID+"/start", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	rec = h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, resp.NodeKey)
 	require.Equal(t, http.StatusNoContent, rec.Code)
 
@@ -220,7 +223,10 @@ func TestRevokeViaAPI(t *testing.T) {
 	_, resp := pairAs(t, h, map[string]any{"token": tok.Token, "name": "worker-r"})
 	key := resp.NodeKey
 
-	// The node claims a job so there is something in flight.
+	// The node claims a job so there is something in flight. Starting it
+	// first is the admin's job now (task 11: nodes are created stopped).
+	rec = h.do(http.MethodPost, "/api/v1/nodes/"+resp.NodeID+"/start", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	_, f, job := h.queueOne(t)
 	rec = h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, key)
 	require.Equal(t, http.StatusOK, rec.Code)

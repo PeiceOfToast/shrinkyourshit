@@ -163,10 +163,13 @@ func TestClientClaimEmptyAndAuth(t *testing.T) {
 	require.ErrorAs(t, err, &apiErr)
 	require.Equal(t, http.StatusUnauthorized, apiErr.Status)
 
-	// Heartbeat parses concurrency and floors it at 1.
-	n, err := cl.Heartbeat(context.Background(), HeartbeatInput{})
+	// Heartbeat parses the new instruction shape and floors the
+	// concurrency at 1. A body without desired_state (a pre-task-11
+	// server) reads as running.
+	state, err := cl.Heartbeat(context.Background(), HeartbeatInput{})
 	require.NoError(t, err)
-	require.Equal(t, 1, n)
+	require.Equal(t, 1, state.Concurrency)
+	require.Equal(t, NodeStateRunning, state.DesiredState)
 }
 
 func TestClientServerDown(t *testing.T) {

@@ -177,7 +177,11 @@ func NewJobDTO(j *store.Job) JobDTO {
 
 // NodeDTO is the JSON shape of a node. Capabilities carries the stored
 // JSON verbatim (null when empty); KeyHash is never exposed. Task 08 adds
-// the nodes API around this shape; task 09 adds the throughput limit.
+// the nodes API around this shape; task 09 adds the throughput limit;
+// task 11 adds the lifecycle: desired_state (operator intent),
+// effective_state (desired, or error while a transition failed to apply),
+// the node's concurrency cap, the reason a transition failed and the id of
+// the job it currently holds (listing responses only; events omit it).
 type NodeDTO struct {
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
@@ -187,6 +191,11 @@ type NodeDTO struct {
 	AccessMode      string          `json:"access_mode"`
 	PathMappings    json.RawMessage `json:"path_mappings"`
 	ThroughputLimit int64           `json:"throughput_limit_mbps"`
+	DesiredState    string          `json:"desired_state"`
+	EffectiveState  string          `json:"effective_state"`
+	Concurrency     int             `json:"concurrency"`
+	StateError      string          `json:"state_error,omitempty"`
+	CurrentJobID    string          `json:"current_job_id,omitempty"`
 	Status          string          `json:"status"`
 	Enabled         bool            `json:"enabled"`
 	LastHeartbeatAt string          `json:"last_heartbeat_at,omitempty"`
@@ -195,6 +204,10 @@ type NodeDTO struct {
 
 // NewNodeDTO maps a stored node to its JSON shape.
 func NewNodeDTO(n *store.Node) NodeDTO {
+	concurrency := n.Concurrency
+	if concurrency < store.ConcurrencyMin {
+		concurrency = store.ConcurrencyMin
+	}
 	return NodeDTO{
 		ID:              n.ID,
 		Name:            n.Name,
@@ -204,6 +217,10 @@ func NewNodeDTO(n *store.Node) NodeDTO {
 		AccessMode:      n.AccessMode,
 		PathMappings:    rawOrEmpty(n.PathMappings),
 		ThroughputLimit: n.ThroughputLimit,
+		DesiredState:    n.DesiredState,
+		EffectiveState:  EffectiveState(n),
+		Concurrency:     concurrency,
+		StateError:      n.StateError,
 		Status:          n.Status,
 		Enabled:         n.Enabled,
 		LastHeartbeatAt: rfc3339(n.LastHeartbeatAt),

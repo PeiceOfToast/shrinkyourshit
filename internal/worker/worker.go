@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -25,6 +26,15 @@ const (
 	DefaultProgressInterval  = 2 * time.Second
 	DefaultClaimPollInterval = 2 * time.Second
 	DefaultMaxSlots          = 4
+)
+
+// Node lifecycle states as the server reports them (task 11). The worker
+// starts in the unknown state and claims nothing until the first
+// heartbeat answers.
+const (
+	NodeStateStopped  = "stopped"
+	NodeStateRunning  = "running"
+	NodeStateDraining = "draining"
 )
 
 // Config tunes a worker. Zero values select the defaults; the test seams
@@ -94,6 +104,13 @@ type capabilities struct {
 
 // Worker claims jobs through the worker API and runs them. The built-in
 // worker and remote workers are the same code (ARCHITECTURE.md).
+//
+// Lifecycle (task 11): the worker never claims anything until its first
+// heartbeat answers, and honours the desired_state the response carries —
+// stopped (heartbeat only), running (claim up to the node's concurrency),
+// draining (finish what is held, claim nothing, report stopped once idle).
+// A stop-now aborts in-flight encodes silently; the sweeper requeues those
+// jobs after the heartbeat timeout and the original files stay untouched.
 type Worker struct {
 	cfg    Config
 	log    *slog.Logger
@@ -102,9 +119,11 @@ type Worker struct {
 	sc     *scratch
 
 	mu         sync.Mutex
-	desired    int // concurrency from the last heartbeat
-	active     int // slots currently holding a token
+	desired    int    // concurrency cap from the last heartbeat
+	state      string // "" until the first heartbeat, then stopped|running|draining
+	active     int    // slots currently holding a token
 	activeJobs map[string]bool
+	cancels    map[string]context.CancelFunc // abort handles for in-flight jobs
 	caps       encoders.Capability
 	capsJSON   json.RawMessage
 }
@@ -139,6 +158,7 @@ func New(cfg Config) (*Worker, error) {
 		client:     client,
 		sc:         newScratch(cfg.ScratchDir),
 		activeJobs: map[string]bool{},
+		cancels:    map[string]context.CancelFunc{},
 	}
 	w.runner = &runner{
 		cfg:     cfg,
@@ -166,7 +186,8 @@ func Run(ctx context.Context, cfg Config) error {
 	return w.Run(ctx)
 }
 
-// Run starts the worker loops and blocks until ctx is done.
+// Run starts the worker loops and blocks until ctx is done. Nothing is
+// claimed until the first heartbeat answers and says running (task 11).
 func (w *Worker) Run(ctx context.Context) error {
 	w.detect(ctx)
 
@@ -174,7 +195,9 @@ func (w *Worker) Run(ctx context.Context) error {
 	// server requeues those through the heartbeat timeout.
 	w.sc.cleanupOrphans()
 
-	w.setDesired(1) // until the first heartbeat answers
+	w.mu.Lock()
+	w.desired = 1 // until the first heartbeat answers
+	w.mu.Unlock()
 
 	hbDone := make(chan struct{})
 	go func() {
@@ -238,13 +261,14 @@ func (w *Worker) capabilitiesPayload(caps encoders.Capability) json.RawMessage {
 }
 
 // heartbeatLoop sends a heartbeat immediately and then on the interval,
-// refreshing the node record, the active jobs' heartbeats and the desired
-// concurrency.
+// refreshing the node record, the active jobs' heartbeats and the
+// instruction this worker honours (desired_state, concurrency).
 func (w *Worker) heartbeatLoop(ctx context.Context) {
 	beat := func() {
 		in := HeartbeatInput{
 			Capabilities:  w.capsJSON,
 			RunningJobIDs: w.activeJobIDs(),
+			State:         w.reportState(),
 		}
 		n, err := w.client.Heartbeat(ctx, in)
 		if err != nil {
@@ -253,7 +277,7 @@ func (w *Worker) heartbeatLoop(ctx context.Context) {
 			}
 			return
 		}
-		w.setDesired(n)
+		w.applyHeartbeat(n)
 	}
 	beat()
 	ticker := time.NewTicker(w.cfg.heartbeatInterval())
@@ -268,8 +292,53 @@ func (w *Worker) heartbeatLoop(ctx context.Context) {
 	}
 }
 
+// applyHeartbeat adopts the server's instruction. Going to stopped aborts
+// every in-flight encode (stop-now): the runner exits without reporting,
+// the job's heartbeat goes stale and the sweeper requeues it.
+func (w *Worker) applyHeartbeat(n *HeartbeatState) {
+	w.mu.Lock()
+	prev := w.state
+	w.state = n.DesiredState
+	w.desired = n.Concurrency
+	ids := make([]string, 0, len(w.cancels))
+	for id := range w.cancels {
+		ids = append(ids, id)
+	}
+	w.mu.Unlock()
+
+	if prev != n.DesiredState {
+		w.log.Info("worker: node state", "desired_state", n.DesiredState,
+			"concurrency", n.Concurrency)
+	}
+	if n.DesiredState == NodeStateStopped && len(ids) > 0 {
+		w.log.Info("worker: node stopped, abandoning in-flight jobs (they return to the queue)",
+			"jobs", ids)
+		for _, id := range ids {
+			w.mu.Lock()
+			cancel := w.cancels[id]
+			w.mu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+		}
+	}
+}
+
+// reportState returns the state this heartbeat should report and resolves
+// a finished drain: a draining worker with nothing in flight is stopped,
+// and reporting that lets the server end the drain.
+func (w *Worker) reportState() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.state == NodeStateDraining && len(w.activeJobs) == 0 {
+		w.log.Info("worker: drain complete, reporting stopped")
+		w.state = NodeStateStopped
+	}
+	return w.state
+}
+
 // slotLoop claims and runs jobs, one at a time, while it holds a
-// concurrency token.
+// concurrency token and the node is started.
 func (w *Worker) slotLoop(ctx context.Context) {
 	for {
 		if !w.acquire(ctx) {
@@ -280,6 +349,15 @@ func (w *Worker) slotLoop(ctx context.Context) {
 			w.release()
 			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 				return
+			}
+			if isAPIStatus(err, http.StatusConflict) {
+				// The server refuses claims from a node that is not
+				// running; the heartbeat carries the instruction and the
+				// gate below reacts to it.
+				if !w.sleepCtx(ctx, w.cfg.claimPollInterval()) {
+					return
+				}
+				continue
 			}
 			w.log.Warn("worker: claim", "err", err)
 			if !w.sleepCtx(ctx, w.cfg.claimPollInterval()) {
@@ -294,12 +372,18 @@ func (w *Worker) slotLoop(ctx context.Context) {
 			}
 			continue
 		}
+		// Track the claim before anything else: a drain that goes idle
+		// must not race a just-claimed job.
+		w.addActiveJob(job.ID)
 		w.runJob(ctx, job.ID)
+		w.removeActiveJob(job.ID)
 		w.release()
 	}
 }
 
-// runJob fetches the spec and hands the job to the runner.
+// runJob fetches the spec and hands the job to the runner. The job context
+// is cancelable so a stop-now can abandon the encode; the runner exits
+// silently on cancel and the sweeper requeues the job.
 func (w *Worker) runJob(ctx context.Context, jobID string) {
 	log := w.log.With("job", jobID)
 	spec, err := w.client.JobSpec(ctx, jobID)
@@ -310,29 +394,34 @@ func (w *Worker) runJob(ctx context.Context, jobID string) {
 		return
 	}
 
-	w.addActiveJob(jobID)
-	defer w.removeActiveJob(jobID)
+	jobCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	w.registerCancel(jobID, cancel)
+	defer w.unregisterCancel(jobID)
 
 	cancelled := &atomic.Bool{}
-	if err := w.runner.run(ctx, spec, cancelled); err != nil {
+	if err := w.runner.run(jobCtx, spec, cancelled); err != nil {
 		log.Error("worker: job runner", "err", err)
 	}
 }
 
-// acquire blocks until a concurrency token is free, the desired count
-// rises, or the worker shuts down.
+// acquire blocks until the worker may claim — the lifecycle state is known
+// and running (task 11: stopped and draining nodes claim nothing) — and a
+// concurrency token is free, or the worker shuts down.
 func (w *Worker) acquire(ctx context.Context) bool {
 	for {
 		if ctx.Err() != nil {
 			return false
 		}
 		w.mu.Lock()
-		if w.active < w.desired {
+		may := w.state == NodeStateRunning && w.active < w.desired
+		if may {
 			w.active++
-			w.mu.Unlock()
-			return true
 		}
 		w.mu.Unlock()
+		if may {
+			return true
+		}
 		if !w.sleepCtx(ctx, 200*time.Millisecond) {
 			return false
 		}
@@ -347,12 +436,16 @@ func (w *Worker) release() {
 	w.mu.Unlock()
 }
 
-func (w *Worker) setDesired(n int) {
-	if n < 1 {
-		n = 1
-	}
+// registerCancel remembers how to abandon an in-flight job (stop-now).
+func (w *Worker) registerCancel(jobID string, cancel context.CancelFunc) {
 	w.mu.Lock()
-	w.desired = n
+	w.cancels[jobID] = cancel
+	w.mu.Unlock()
+}
+
+func (w *Worker) unregisterCancel(jobID string) {
+	w.mu.Lock()
+	delete(w.cancels, jobID)
 	w.mu.Unlock()
 }
 

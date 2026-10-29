@@ -24,9 +24,18 @@ export const HEARTBEAT_STALE_MS = 3 * 60 * 1000
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** A node can take work only when it is approved and enabled. */
+/**
+ * A node can take work only when it is approved, enabled, and started
+ * (task 11: desired_state is the operator's start/stop intent; enabled is
+ * the hard off switch). Draining still counts as running for warnings: it
+ * finishes its held job.
+ */
 export function canRun(node: Node): boolean {
-  return node.status === 'approved' && node.enabled
+  return (
+    node.status === 'approved' &&
+    node.enabled &&
+    node.desired_state === 'running'
+  )
 }
 
 function ageMinutes(from: string, now: number): number {

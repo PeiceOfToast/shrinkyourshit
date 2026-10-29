@@ -190,6 +190,7 @@ describe('SetupWizard', () => {
     expect(harness.onFinish).toHaveBeenCalledWith({
       mode: 'server',
       login_enabled: false,
+      start_node: false,
     })
   })
 
@@ -207,7 +208,23 @@ describe('SetupWizard', () => {
       login_enabled: true,
       username: 'admin',
       password: 'secret',
+      start_node: false,
     })
+  })
+
+  it('defaults to leaving the node stopped and can start it explicitly (task 11)', () => {
+    const harness = renderWizard({ step: 3, loginEnabled: false })
+    // The default choice is "leave it stopped".
+    expect(screen.getByTestId('leave-node-stopped')).toBeChecked()
+    expect(screen.getByTestId('start-node-now')).not.toBeChecked()
+
+    // The explicit start choice rides along on finish.
+    fireEvent.click(screen.getByTestId('start-node-now'))
+    harness.rerenderWith(harness.get()) // the harness applies setState manually
+    fireEvent.click(screen.getByTestId('wizard-finish'))
+    expect(harness.onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ start_node: true }),
+    )
   })
 })
 

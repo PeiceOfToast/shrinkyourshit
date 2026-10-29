@@ -15,7 +15,10 @@ import {
   getJobs,
   getNodes,
   revokeNode,
+  startNode,
+  stopNode,
   updateNode,
+  type Job,
   type Node,
   type PathMapping,
 } from './api'
@@ -31,6 +34,21 @@ const statusLabels: Record<string, string> = {
   pending: 'Waiting for approval',
   approved: 'Ready',
   revoked: 'Revoked',
+}
+
+/** Lifecycle pill (task 11): the state the operator drives. */
+const lifecycleStyles: Record<string, string> = {
+  running: 'bg-emerald-500/20 text-emerald-300',
+  stopped: 'bg-slate-700 text-slate-300',
+  draining: 'bg-amber-500/20 text-amber-300',
+  error: 'bg-red-500/20 text-red-300',
+}
+
+const lifecycleLabels: Record<string, string> = {
+  running: 'Running',
+  stopped: 'Stopped',
+  draining: 'Draining',
+  error: 'Error',
 }
 
 const accessModeLabels: Record<string, string> = {
@@ -352,10 +370,12 @@ function EditNodeDialog({
 function NodeRow({
   node,
   runningJobs,
+  currentJob,
   onEdit,
 }: {
   node: Node
   runningJobs: number
+  currentJob?: Job
   onEdit: (node: Node) => void
 }) {
   const client = useQueryClient()
@@ -365,7 +385,20 @@ function NodeRow({
   const approve = useMutation({ mutationFn: approveNode, onSuccess: refresh })
   const revoke = useMutation({ mutationFn: revokeNode, onSuccess: refresh })
   const reject = useMutation({ mutationFn: deleteNode, onSuccess: refresh })
+  const start = useMutation({ mutationFn: startNode, onSuccess: refresh })
+  const stop = useMutation({
+    mutationFn: (args: { id: string; drain: boolean }) =>
+      stopNode(args.id, args.drain),
+    onSuccess: refresh,
+  })
+  const setConcurrency = useMutation({
+    mutationFn: (args: { id: string; concurrency: number }) =>
+      updateNode(args.id, { concurrency: args.concurrency }),
+    onSuccess: refresh,
+  })
+  const [drain, setDrain] = useState(false)
   const encoders = node.capabilities?.encoders ?? []
+  const ffmpeg = node.capabilities?.ffmpeg_version
 
   return (
     <li
@@ -380,9 +413,20 @@ function NodeRow({
         >
           {statusLabels[node.status] ?? node.status}
         </span>
-        {!node.enabled && node.status === 'approved' && (
-          <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
-            paused
+        {node.status === 'approved' && (
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${lifecycleStyles[node.effective_state] ?? 'bg-slate-700 text-slate-200'}`}
+            data-testid={`node-lifecycle-${node.id}`}
+          >
+            {lifecycleLabels[node.effective_state] ?? node.effective_state}
+          </span>
+        )}
+        {node.state_error && (
+          <span
+            className="text-xs text-red-400"
+            data-testid={`node-state-error-${node.id}`}
+          >
+            {node.state_error}
           </span>
         )}
         {runningJobs > 0 && (
@@ -436,6 +480,96 @@ function NodeRow({
           )}
         </span>
       </div>
+
+      {node.status === 'approved' && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {node.desired_state === 'running' ? (
+            <>
+              <label className="flex items-center gap-2 text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={drain}
+                  onChange={(e) => setDrain(e.target.checked)}
+                  data-testid={`node-drain-${node.id}`}
+                />
+                Finish the current job first
+              </label>
+              <button
+                type="button"
+                onClick={() => stop.mutate({ id: node.id, drain })}
+                disabled={stop.isPending}
+                className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                data-testid={`node-stop-${node.id}`}
+              >
+                {stop.isPending ? 'Stopping…' : 'Stop'}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => start.mutate(node.id)}
+              disabled={start.isPending}
+              className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+              data-testid={`node-start-${node.id}`}
+            >
+              {start.isPending ? 'Starting…' : 'Start'}
+            </button>
+          )}
+
+          <span
+            className="flex items-center gap-1 text-xs text-slate-400"
+            data-testid={`node-concurrency-${node.id}`}
+          >
+            Parallel jobs
+            <button
+              type="button"
+              onClick={() =>
+                setConcurrency.mutate({
+                  id: node.id,
+                  concurrency: Math.max(1, node.concurrency - 1),
+                })
+              }
+              disabled={setConcurrency.isPending || node.concurrency <= 1}
+              className="rounded-md bg-slate-800 px-2 py-0.5 font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+              aria-label="Fewer parallel jobs"
+              data-testid={`node-concurrency-down-${node.id}`}
+            >
+              −
+            </button>
+            <span className="min-w-[1.5rem] text-center font-semibold text-slate-200">
+              {node.concurrency}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setConcurrency.mutate({
+                  id: node.id,
+                  concurrency: Math.min(16, node.concurrency + 1),
+                })
+              }
+              disabled={setConcurrency.isPending || node.concurrency >= 16}
+              className="rounded-md bg-slate-800 px-2 py-0.5 font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+              aria-label="More parallel jobs"
+              data-testid={`node-concurrency-up-${node.id}`}
+            >
+              +
+            </button>
+          </span>
+        </div>
+      )}
+
+      {currentJob && node.status === 'approved' && (
+        <p
+          className="mt-2 text-xs text-slate-400"
+          data-testid={`node-current-job-${node.id}`}
+        >
+          Current job: {Math.round(currentJob.percent)}% done
+          {currentJob.eta_seconds > 0
+            ? `, about ${Math.ceil(currentJob.eta_seconds / 60)} min left`
+            : ''}
+        </p>
+      )}
+
       <p className="mt-1 text-sm text-slate-500">
         {node.os || '?'}/{node.arch || '?'} · last check-in{' '}
         {timeAgo(node.last_heartbeat_at)}
@@ -443,7 +577,7 @@ function NodeRow({
       </p>
       {encoders.length > 0 && (
         <div
-          className="mt-2 flex flex-wrap gap-1"
+          className="mt-2 flex flex-wrap items-center gap-1"
           data-testid={`node-encoders-${node.id}`}
         >
           {encoders.map((e) => (
@@ -454,6 +588,7 @@ function NodeRow({
               {e.name}
             </span>
           ))}
+          {ffmpeg && <span className="text-xs text-slate-500">{ffmpeg}</span>}
         </div>
       )}
     </li>
@@ -521,14 +656,20 @@ export default function NodesPage() {
       )}
 
       <ul className="space-y-3" data-testid="nodes-list">
-        {sorted.map((node) => (
-          <NodeRow
-            key={node.id}
-            node={node}
-            runningJobs={runningByNode.get(node.id) ?? 0}
-            onEdit={setEditing}
-          />
-        ))}
+        {sorted.map((node) => {
+          const currentJob = jobs.data?.items.find(
+            (j) => j.id === node.current_job_id,
+          )
+          return (
+            <NodeRow
+              key={node.id}
+              node={node}
+              runningJobs={runningByNode.get(node.id) ?? 0}
+              currentJob={currentJob}
+              onEdit={setEditing}
+            />
+          )
+        })}
       </ul>
 
       {adding && <AddNodeDialog onClose={() => setAdding(false)} />}

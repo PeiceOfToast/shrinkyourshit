@@ -163,7 +163,7 @@ func serve(args []string, version string) error {
 		}
 		joined <- joinChoice{url: serverURL, token: token}
 		return nil
-	}))
+	}), api.WithBuiltinNode(builtin.ID))
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

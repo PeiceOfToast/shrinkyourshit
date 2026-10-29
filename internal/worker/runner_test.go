@@ -52,6 +52,8 @@ type fakeAPI struct {
 	fails        map[string]failReport
 	heartbeats   []HeartbeatInput
 	concurrency  int
+	desiredState string // what the heartbeat answers ("" → pre-task-11 server)
+	claims       int
 	authFailures int
 	// runningWaits holds channels closed once a heartbeat reports the job
 	// id as running; tests block the fake run on one to synchronize with
@@ -114,6 +116,7 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		f.mu.Lock()
 		f.heartbeats = append(f.heartbeats, in)
 		c := f.concurrency
+		desired := f.desiredState
 		// Release tests blocked on a job id this heartbeat reports as
 		// running. Delete before close so it can never close twice.
 		for _, id := range in.RunningJobIDs {
@@ -126,16 +129,30 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		if c < 1 {
 			c = 1
 		}
-		writeFakeJSON(w, http.StatusOK, map[string]int{"concurrency": c})
+		writeFakeJSON(w, http.StatusOK, map[string]any{"concurrency": c, "desired_state": desired})
 	}))
 	mux.HandleFunc("POST /api/v1/worker/claim", guard(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
+		f.claims++
+		// Same contract as the real server (internal/api/worker.go): a
+		// node whose desired_state is not running gets 409 node_not_running
+		// and no job is handed out — the queue is untouched. An empty
+		// desiredState is a pre-task-11 server and counts as running.
+		desired := f.desiredState
+		if desired == "" {
+			desired = NodeStateRunning
+		}
 		var id string
-		if len(f.queue) > 0 {
+		if desired == NodeStateRunning && len(f.queue) > 0 {
 			id = f.queue[0]
 			f.queue = f.queue[1:]
 		}
 		f.mu.Unlock()
+		if desired != NodeStateRunning {
+			writeFakeError(w, http.StatusConflict, "node_not_running",
+				"node is not started; it claims jobs only while its desired_state is running")
+			return
+		}
 		if id == "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -323,6 +340,42 @@ func (f *fakeAPI) heartbeatHadRunningJob(jobID string) bool {
 		}
 	}
 	return false
+}
+
+// heartbeatCount returns how many heartbeats arrived so far.
+func (f *fakeAPI) heartbeatCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.heartbeats)
+}
+
+// claimCount returns how many claim calls arrived so far.
+func (f *fakeAPI) claimCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claims
+}
+
+// queuedIDs snapshots the ids the claim endpoint still holds; a job leaves
+// the queue only when a claim hands it out.
+func (f *fakeAPI) queuedIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.queue...)
+}
+
+// heartbeatsWithState returns the recorded heartbeats that carried a
+// lifecycle state report.
+func (f *fakeAPI) heartbeatsWithState() []HeartbeatInput {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []HeartbeatInput
+	for _, hb := range f.heartbeats {
+		if hb.State != "" {
+			out = append(out, hb)
+		}
+	}
+	return out
 }
 
 // notifyWhenRunning returns a channel that is closed once a recorded

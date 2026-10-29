@@ -65,6 +65,7 @@ export default function SetupWizard({
     const request: SetupRequest = {
       mode: 'server',
       login_enabled: state.loginEnabled,
+      start_node: state.startNode,
     }
     if (state.loginEnabled) {
       request.username = state.username.trim()
@@ -282,6 +283,45 @@ export default function SetupWizard({
               ? `, and the account "${state.username.trim()}" will be required to log in.`
               : ', open for anyone on your network to use.'}
           </p>
+          <div className="mt-5 grid gap-2">
+            <p className="text-sm font-semibold text-slate-200">
+              When should the built-in node start working?
+            </p>
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-700 p-3 text-sm text-slate-300 hover:border-slate-500">
+              <input
+                type="radio"
+                name="start-node"
+                checked={!state.startNode}
+                onChange={() => setState({ ...state, startNode: false })}
+                data-testid="leave-node-stopped"
+              />
+              <span>
+                <span className="block font-medium text-slate-100">
+                  Leave it stopped
+                </span>
+                <span className="block text-xs text-slate-500">
+                  Nothing is encoded until you start it from the Nodes page.
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-700 p-3 text-sm text-slate-300 hover:border-slate-500">
+              <input
+                type="radio"
+                name="start-node"
+                checked={state.startNode}
+                onChange={() => setState({ ...state, startNode: true })}
+                data-testid="start-node-now"
+              />
+              <span>
+                <span className="block font-medium text-slate-100">
+                  Start the built-in node now
+                </span>
+                <span className="block text-xs text-slate-500">
+                  Queued files begin processing right away.
+                </span>
+              </span>
+            </label>
+          </div>
           {submitError && (
             <p className="mt-3 text-sm text-red-400" data-testid="submit-error">
               {submitError}

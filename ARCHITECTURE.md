@@ -67,8 +67,11 @@ Status enums are fixed strings; do not add values without updating this file.
 - `status`: `queued | claimed | running | done | failed | cancelled`
 - `access_mode`: how the node actually reached the source — `shared` or `transfer`. Empty until the node reports it (progress and complete, task 09).
 
-**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), throughput_limit_mbps, status, enabled, last_heartbeat_at, created_at`
+**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), throughput_limit_mbps, desired_state, concurrency, state_error, status, enabled, last_heartbeat_at, created_at`
 - `status`: `pending | approved | revoked`
+- `desired_state`: `stopped | running | draining` — the operator intent (task 11). New nodes are created `stopped`; a claim needs `status=approved`, `enabled=true` and `desired_state=running`.
+- `concurrency`: 1 to 16, the node's cap on parallel jobs (heartbeat reports it).
+- `state_error`: the reason a lifecycle transition failed to apply; `effective_state` is `error` while set, otherwise it mirrors `desired_state`. Cleared by the next successful transition.
 - `access_mode`: `auto | shared | transfer`
 - `throughput_limit_mbps`: cap on this node's transfer speed (MB/s, 0 = unlimited; task 09)
 - `capabilities`: `{encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}`
@@ -78,7 +81,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Session:** `token_hash (PK), created_at, expires_at`. Admin login sessions (task 06): random 32-byte token, only the SHA-256 hex hash is stored, 30-day expiry checked on lookup. Stored in the `sessions` table (migration 0002).
 
-**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec`.
+**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all).
 
 **Webhook:** `id, url, events (JSON list), enabled` (task post-MVP; schema can wait).
 
@@ -191,8 +194,8 @@ stopped --start--> running --stop(drain)--> draining --idle--> stopped
 ```
 
 - `desired_state` is `stopped`, `running` or `draining`; `concurrency` (1 to 16) caps parallel jobs.
-- The instruction reaches the worker on the heartbeat it already sends. No new port, no push channel, no long poll.
-- `stopped` makes no claim calls, only heartbeats, so a stopped node costs one small request per interval.
+- The instruction reaches the worker on the heartbeat it already sends. No new port, no push channel, no long poll. The worker reports its own state back on the same heartbeat: a `stopped` report while the node is `draining` completes the drain.
+- `stopped` makes no claim calls, only heartbeats, so a stopped node costs one small request per interval. A stop-now also abandons in-flight encodes (no report): the sweeper returns those jobs to `queued` after the heartbeat timeout, original files untouched.
 - `draining` claims nothing new and finishes what it holds, then reports `stopped`.
 - `enabled=false` remains the hard off switch enforced by node auth; `desired_state` is the day to day control. Both must be satisfied for a claim to succeed.
 - A fresh install and a completed setup wizard leave the built in node `stopped`. Encoding never starts because a wizard was finished.
