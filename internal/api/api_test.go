@@ -94,6 +94,14 @@ func TestNonGetRootIs405(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", nil))
 	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+	// Task 13: every 4xx/5xx path carries a stable code field, so the UI
+	// can show it instead of a generic sentence.
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	var body struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "method_not_allowed", body.Code)
 }
 
 func TestEmptyStaticServesIndexFallback(t *testing.T) {
