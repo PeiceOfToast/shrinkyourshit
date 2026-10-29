@@ -181,8 +181,55 @@ Request/response details beyond the table:
 | POST | `/api/v1/nodes/{id}/approve` | admin | |
 | POST | `/api/v1/nodes/{id}/revoke` | admin | |
 | PUT | `/api/v1/nodes/{id}` | admin | rename, enable/disable, path mappings |
+| DELETE | `/api/v1/nodes/{id}` | admin | remove a node (the Reject action); its in-flight jobs return to the queue |
 | POST | `/api/v1/pair` | none | `{token?, name, os, arch, capabilities}`; returns `{node_id, node_key}` on token match, or `{node_id, status:"pending"}` |
 | GET | `/api/v1/pair/{node_id}` | none | poll pending approval; returns node key once approved |
+| GET | `/api/v1/setup/servers` | none | servers discovered on the LAN for the wizard's join card; `{"servers":[]}` once setup is complete |
+
+Request/response details beyond the table:
+
+- Node keys and pairing tokens are 32 random bytes, base64url (43
+  characters). Only SHA-256 hashes are stored (nodes.key_hash,
+  pairing_tokens.token_hash): the keys are high-entropy, so argon2id
+  would add nothing. A node's raw key exists in exactly three places:
+  the response that delivered it, the `nodes.key_once` column until the
+  node retrieves it once, and the node's own key file. Neither the key
+  nor the token is ever logged or included in an event payload.
+- `POST /nodes/tokens` —
+  `{"token", "expires_at", "commands": {"docker", "shell", "powershell"}}`.
+  The token is single use and valid for 24h. The commands are built from
+  the request's own origin (`Host` header; scheme from
+  `X-Forwarded-Proto`, then TLS, then http) so a node reaches the server
+  the same way the admin's browser does.
+- `POST /nodes/{id}/approve` — pending → approved; a fresh key is
+  generated and waits in `key_once` for the node's first poll. Not
+  pending → `409 {"code":"not_pending"}`.
+- `POST /nodes/{id}/revoke` — status `revoked`, key hash and one-time key
+  deleted; the node's claimed/running jobs return to `queued`
+  (attempt+1, failed at the attempt cap). Idempotent.
+- `PUT /nodes/{id}` — any subset of `{name, enabled, access_mode,
+  path_mappings}`. Unknown access modes and malformed mappings are
+  `400 {"code":"invalid_request"}`. `path_mappings` is the JSON array
+  `[{"server_path", "node_path"}]` (both non-empty); `[]` clears it.
+- `POST /pair` — 201. A valid token creates the node approved and returns
+  `{node_id, status:"approved", node_key}`. No (or empty) token creates a
+  pending node and returns `{node_id, status:"pending"}`. A used, expired
+  or unknown non-empty token is `401 {"code":"invalid_token"}` — a wrong
+  token never silently downgrades to a pending request. `name` is
+  required (`400` when missing); `capabilities` is stored verbatim.
+- `GET /pair/{id}` — `{node_id, status}` where status is `pending`,
+  `approved` (with `node_key` on the first retrieval only, without it
+  afterwards) or `revoked`. Unknown id → 404.
+- `GET /setup/servers` — `{"servers": [{"id", "name", "url", "version"}]}`;
+  `id` is the server's built-in node id so the wizard can hide its own
+  announcement from the list.
+- `POST /setup` with `mode:"join"` — `{server, token?}`: records the
+  decision (role `worker` and the server URL in the data-dir config.yaml,
+  via the process) and marks setup complete; response
+  `{setup_complete: true, mode: "join", server}` with status 201. The
+  live process then switches to worker mode and runs the pairing flow.
+  Missing or unparsable server URL is `400`; after setup
+  `409 {"code":"setup_complete"}`.
 
 ### Task 09
 

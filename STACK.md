@@ -49,6 +49,9 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 | `SHRINK_NODE_NAME` | `--node-name` | hostname | Display name of this node |
 | `SHRINK_FFMPEG_PATH` | `--ffmpeg` | auto-detect | Path to ffmpeg; ffprobe assumed beside it |
 | `SHRINK_LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
+| `SHRINK_DISCOVERY_PORT` | `--discovery-port` | `8766` | UDP broadcast port for LAN discovery |
+| `SHRINK_DISCOVERY_MDNS` | `--discovery-mdns` | `true` | Use mDNS for LAN discovery |
+| `SHRINK_DISCOVERY_BROADCAST` | `--discovery-broadcast` | `true` | Use UDP broadcast for LAN discovery |
 | `PUID` / `PGID` | | `1000` | Docker only: run as this user/group |
 
 ## Docker
