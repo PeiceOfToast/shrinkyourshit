@@ -149,8 +149,7 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
           </button>
           {created.isError && (
             <p className="mt-2 text-sm text-red-400">
-              Could not create a code:{' '}
-              {(created.error as Error).message}
+              Could not create a code: {(created.error as Error).message}
             </p>
           )}
         </div>
