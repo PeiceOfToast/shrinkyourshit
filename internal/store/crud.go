@@ -309,6 +309,13 @@ func (s *SQLite) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
 		query += ` WHERE ` + join(conds, ` AND `)
 	}
 	query += ` ORDER BY created_at`
+	switch filter.Order {
+	case "":
+	case "desc":
+		query += ` DESC`
+	default:
+		return nil, fmt.Errorf("store: invalid job order %q: want empty or desc", filter.Order)
+	}
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(` LIMIT %d OFFSET %d`, filter.Limit, filter.Offset)
 	}

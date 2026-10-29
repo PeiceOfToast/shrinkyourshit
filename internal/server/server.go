@@ -91,6 +91,7 @@ type Server struct {
 	nodes     *NodeRegistry
 	auth      *Auth
 	settings  *Settings
+	stats     *StatsService
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -119,10 +120,11 @@ func New(cfg Config) *Server {
 	nodes := NewNodeRegistry(cfg.Store, events, cfg.Log)
 	auth := NewAuth(cfg.Store, cfg.Log)
 	settings := NewSettings(cfg.Store, cfg.Log)
+	stats := NewStats(cfg.Store)
 	queue.SetInspector(cfg.Inspect, cfg.FFprobePath)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
-		auth: auth, settings: settings}
+		auth: auth, settings: settings, stats: stats}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
@@ -148,6 +150,9 @@ func (s *Server) Auth() *Auth { return s.auth }
 
 // Settings exposes the settings service (GET/PUT /settings).
 func (s *Server) Settings() *Settings { return s.settings }
+
+// Stats exposes the stats service (GET /stats; task 07).
+func (s *Server) Stats() *StatsService { return s.stats }
 
 // Start launches the background loops: an initial scan per library, a
 // watcher for every watched library, the schedule loop and the stale-job

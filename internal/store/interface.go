@@ -8,12 +8,14 @@ import (
 	"time"
 )
 
-// JobFilter narrows ListJobs. Empty fields mean "no filter".
+// JobFilter narrows ListJobs. Empty fields mean "no filter". Order is ""
+// (oldest first) or "desc" (newest first); anything else is rejected.
 type JobFilter struct {
 	Status    string
 	FileID    string
 	LibraryID string
 	NodeID    string
+	Order     string
 	Limit     int // 0 = no limit
 	Offset    int
 }
