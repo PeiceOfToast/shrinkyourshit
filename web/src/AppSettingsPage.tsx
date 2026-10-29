@@ -1,31 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Settings page (task 06): worker concurrency, scratch dir, default result
- * policy, preferred languages, default video codec, the login toggle with
- * confirmation and password change.
+ * App settings (task 10): server-level settings — files processed at once,
+ * the scratch folder, and the login toggle with confirmation and password
+ * change. Split out of the old SettingsPage; the encode defaults live at
+ * /encode.
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings, updateSettings, type SettingsUpdate } from './api'
+import PageContainer from './PageContainer'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
 
-const policies = [
-  {
-    value: 'replace_if_smaller',
-    label: 'Replace the original if the copy is smaller',
-  },
-  { value: 'replace', label: 'Always replace the original' },
-  { value: 'keep_both', label: 'Keep both files' },
-]
-
-const codecs = [
-  { value: 'hevc', label: 'HEVC — plays almost everywhere (recommended)' },
-  { value: 'av1', label: 'AV1 — smallest files, newer devices only' },
-  { value: 'h264', label: 'H.264 — for very old devices' },
-]
-
-export default function SettingsPage() {
+export default function AppSettingsPage() {
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
   const client = useQueryClient()
   const [form, setForm] = useState<FormState | null>(null)
@@ -107,8 +94,8 @@ export default function SettingsPage() {
   const turningOff = query.data.login_enabled
 
   return (
-    <div className="max-w-2xl space-y-6" data-testid="settings-page">
-      <h1 className="text-2xl font-bold">Settings</h1>
+    <PageContainer className="space-y-6" data-testid="app-settings-page">
+      <h1 className="text-2xl font-bold">App settings</h1>
       {(notice || error) && (
         <p
           className={
@@ -120,40 +107,6 @@ export default function SettingsPage() {
           {error ?? notice}
         </p>
       )}
-
-      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="font-semibold">Library defaults</h2>
-        <label className="mt-4 grid gap-1">
-          <span className="text-sm text-slate-300">Keep my languages</span>
-          <input
-            type="text"
-            value={form.preferred_languages}
-            onChange={(e) => set({ preferred_languages: e.target.value })}
-            className="rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="preferred-languages"
-          />
-          <span className="text-xs text-slate-500">
-            Two-letter codes, comma separated (for example eng, deu).
-          </span>
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">
-            Video format for new libraries
-          </span>
-          <select
-            value={form.default_video_codec}
-            onChange={(e) => set({ default_video_codec: e.target.value })}
-            className="rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="default-video-codec"
-          >
-            {codecs.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
 
       <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
         <h2 className="font-semibold">Server</h2>
@@ -170,23 +123,6 @@ export default function SettingsPage() {
             className="rounded-lg bg-slate-800 px-3 py-2"
             data-testid="worker-concurrency"
           />
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">
-            What happens to the original file
-          </span>
-          <select
-            value={form.default_result_policy}
-            onChange={(e) => set({ default_result_policy: e.target.value })}
-            className="rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="default-result-policy"
-          >
-            {policies.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
         </label>
         <label className="mt-3 grid gap-1">
           <span className="text-sm text-slate-300">
@@ -355,6 +291,6 @@ export default function SettingsPage() {
       >
         {save.isPending ? 'Saving…' : 'Save settings'}
       </button>
-    </div>
+    </PageContainer>
   )
 }

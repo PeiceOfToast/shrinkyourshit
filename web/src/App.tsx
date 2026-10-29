@@ -10,7 +10,8 @@ import LibraryEditPage from './LibraryEditPage'
 import LoginPage from './LoginPage'
 import NewLibraryPage from './NewLibraryPage'
 import NodesPage from './NodesPage'
-import SettingsPage from './SettingsPage'
+import EncodeSettingsPage from './EncodeSettingsPage'
+import AppSettingsPage from './AppSettingsPage'
 import SetupPage from './SetupPage'
 
 export default function App() {
@@ -35,7 +36,10 @@ export default function App() {
           <Route path="libraries/:id" element={<LibraryDetailPage />} />
           <Route path="libraries/:id/edit" element={<LibraryEditPage />} />
           <Route path="nodes" element={<NodesPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route path="encode" element={<EncodeSettingsPage />} />
+          <Route path="app" element={<AppSettingsPage />} />
+          {/* Old bookmarks and links keep working: /settings is /app now. */}
+          <Route path="settings" element={<Navigate to="/app" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

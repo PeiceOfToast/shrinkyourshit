@@ -24,8 +24,9 @@ export function useMediaQuery(query: string): boolean {
     const mq = window.matchMedia(query)
     const onChange = (event: MediaQueryListEvent) => setMatches(event.matches)
     setMatches(mq.matches)
-    window.addEventListener('change', onChange)
-    return () => window.removeEventListener('change', onChange)
+    // The change event fires on the MediaQueryList, not on window.
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
   }, [query])
 
   return matches

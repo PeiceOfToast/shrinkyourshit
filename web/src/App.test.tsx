@@ -82,6 +82,7 @@ beforeEach(() => {
       },
     },
     { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
+    { method: 'GET', match: /\/api\/v1\/nodes$/, body: { items: [], total: 0 } },
   ])
 })
 
@@ -130,17 +131,60 @@ describe('route guard', () => {
         screen.getByRole('navigation', { name: 'Main' }),
       ).toBeInTheDocument()
     })
+    // Five entries (task 10): Dash, Library, Nodes, Encode settings,
+    // App settings.
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(nav).toHaveTextContent('Dashboard')
-    expect(nav).toHaveTextContent('Libraries')
-    expect(nav).toHaveTextContent('Nodes')
-    expect(nav).toHaveTextContent('Settings')
+    const links = nav.querySelectorAll('a')
+    expect(links).toHaveLength(5)
+    const labels = Array.from(links).map((a) => a.textContent)
+    expect(labels).toEqual([
+      'Dash',
+      'Library',
+      'Nodes',
+      'Encode settings',
+      'App settings',
+    ])
+  })
+
+  it('renders each of the five nav routes with its page', async () => {
+    const cases: Array<[string, string]> = [
+      ['/', 'dashboard'],
+      ['/libraries', 'libraries-page'],
+      ['/nodes', 'nodes-page'],
+      ['/encode', 'encode-settings-page'],
+      ['/app', 'app-settings-page'],
+    ]
+    for (const [path, testid] of cases) {
+      const { unmount } = renderAppAt(path)
+      await waitFor(() => {
+        expect(screen.getByTestId(testid)).toBeInTheDocument()
+      })
+      unmount()
+    }
+  })
+
+  it('redirects /settings to /app so old links keep working', async () => {
+    renderAppAt('/settings')
+    await waitFor(() => {
+      expect(screen.getByTestId('app-settings-page')).toBeInTheDocument()
+    })
+  })
+
+  it('paints the page background on html and body', async () => {
+    renderAppAt('/')
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard')).toBeInTheDocument()
+    })
+    expect(document.documentElement.classList.contains('bg-slate-950')).toBe(
+      true,
+    )
+    expect(document.body.classList.contains('bg-slate-950')).toBe(true)
   })
 
   it('shows the app without login when login is disabled', async () => {
-    renderAppAt('/settings')
+    renderAppAt('/app')
     await waitFor(() => {
-      expect(screen.getByTestId('settings-page')).toBeInTheDocument()
+      expect(screen.getByTestId('app-settings-page')).toBeInTheDocument()
     })
     // No session was ever requested.
     expect(
@@ -148,15 +192,22 @@ describe('route guard', () => {
     ).toHaveLength(0)
   })
 
-  it('lands on the dashboard empty state from /', async () => {
+  it('lands on the dashboard empty state from / with no form and no create button', async () => {
     renderAppAt('/')
     await waitFor(() => {
       expect(screen.getByTestId('empty-dashboard')).toBeInTheDocument()
     })
+    // Read only (task 10): one line and a link, nothing to fill in.
     expect(
-      screen.getByRole('heading', { name: 'Add your first folder' }),
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('easy-form')).toBeInTheDocument()
+      screen.getByRole('link', { name: 'Add one' }),
+    ).toHaveAttribute('href', '/libraries/new')
+    expect(screen.queryByTestId('easy-form')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('dashboard-add-library'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByTestId('empty-dashboard').querySelector('form'),
+    ).toBeNull()
   })
 
   it('sends the user back to / from the setup page once setup is done', async () => {
