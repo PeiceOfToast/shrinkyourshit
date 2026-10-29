@@ -19,12 +19,15 @@ interface ErrorBody {
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
+  /** The raw response body, shown behind the error surface's disclosure. */
+  readonly raw?: string
 
-  constructor(message: string, status: number, code: string) {
+  constructor(message: string, status: number, code: string, raw?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.raw = raw
   }
 }
 
@@ -34,11 +37,18 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorBody | null
+    const raw = await response.text().catch(() => '')
+    let body: ErrorBody | null = null
+    try {
+      body = raw ? (JSON.parse(raw) as ErrorBody) : null
+    } catch {
+      body = null
+    }
     throw new ApiError(
       body?.error ?? response.statusText,
       response.status,
       body?.code ?? 'unknown',
+      raw || undefined,
     )
   }
   if (response.status === 204) {

@@ -24,8 +24,10 @@ import {
   resumeAllNodes,
   type Job,
 } from './api'
+import ModalDialog from './dialog'
 import { LiveEvents } from './events'
 import { meKey, useMe, useSetupStatus } from './queries'
+import { useToast } from './toastContext'
 import { useMediaQuery } from './useMediaQuery'
 
 /** Nav links keep at least a 44 px touch target (task 10). */
@@ -104,14 +106,17 @@ function NavLinks({ showLabels }: { showLabels: boolean }) {
 function LogoutButton() {
   const navigate = useNavigate()
   const client = useQueryClient()
+  const toast = useToast()
   const status = useSetupStatus()
   const me = useMe(status.data?.login_enabled ?? false)
   const doLogout = useMutation({
     mutationFn: logout,
     onSuccess: () => {
+      toast.success('Logged out.')
       client.setQueryData(meKey, undefined)
       void navigate(status.data?.login_enabled ? '/login' : '/')
     },
+    onError: (err: unknown) => toast.failure('Logging out failed', err),
   })
 
   if (status.data && !status.data.login_enabled) {
@@ -171,6 +176,7 @@ const brand = (
  */
 function PauseAllSwitch() {
   const client = useQueryClient()
+  const toast = useToast()
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
   const items = nodes.data?.items ?? []
   const paused =
@@ -181,11 +187,27 @@ function PauseAllSwitch() {
   }
   const pause = useMutation({
     mutationFn: pauseAllNodes,
-    onSuccess: invalidate,
+    onSuccess: ({ paused: n }) => {
+      toast.success(
+        n > 0
+          ? `Encoding paused on ${n} node${n === 1 ? '' : 's'}.`
+          : 'Encoding paused.',
+      )
+      invalidate()
+    },
+    onError: (err: unknown) => toast.failure('Pausing all nodes failed', err),
   })
   const resume = useMutation({
     mutationFn: resumeAllNodes,
-    onSuccess: invalidate,
+    onSuccess: ({ resumed: n }) => {
+      toast.success(
+        n > 0
+          ? `Encoding resumed on ${n} node${n === 1 ? '' : 's'}.`
+          : 'Nothing to resume.',
+      )
+      invalidate()
+    },
+    onError: (err: unknown) => toast.failure('Resuming all nodes failed', err),
   })
   const busy = pause.isPending || resume.isPending
 
@@ -225,20 +247,6 @@ export default function AppShell() {
       setDrawerOpen(false)
     }
   }, [isDesktop])
-
-  // Escape closes the drawer while it is open.
-  useEffect(() => {
-    if (!drawerOpen) {
-      return
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setDrawerOpen(false)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [drawerOpen])
 
   return (
     <div
@@ -324,37 +332,33 @@ export default function AppShell() {
         </main>
       </div>
 
+      {/* The nav drawer is a native dialog: Escape, the backdrop click and
+          the focus trap/return come from ModalDialog (task 13). */}
       {!isDesktop && drawerOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/60"
-            onClick={() => setDrawerOpen(false)}
-            data-testid="drawer-overlay"
-          />
-          <div
-            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-slate-900 shadow-xl"
-            role="dialog"
-            aria-label="Navigation"
-            data-testid="nav-drawer"
-          >
-            <div className="flex items-center justify-between border-b border-slate-800 py-2 pl-4 pr-2">
-              {brand}
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(false)}
-                aria-label="Close menu"
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white"
-                data-testid="close-menu"
-              >
-                <Icon path={ICONS.close} className="h-6 w-6" />
-              </button>
-            </div>
-            <NavLinks showLabels />
-            <div className="mt-auto border-t border-slate-800 p-3">
-              <LogoutButton />
-            </div>
+        <ModalDialog
+          onClose={() => setDrawerOpen(false)}
+          label="Navigation"
+          testId="nav-drawer"
+          dismissOnBackdrop
+          className="m-0 flex h-dvh w-72 max-w-[85vw] flex-col rounded-r-2xl bg-slate-900 text-slate-100 shadow-xl"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 py-2 pl-4 pr-2">
+            {brand}
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="Close menu"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white"
+              data-testid="close-menu"
+            >
+              <Icon path={ICONS.close} className="h-6 w-6" />
+            </button>
           </div>
-        </>
+          <NavLinks showLabels />
+          <div className="mt-auto border-t border-slate-800 p-3">
+            <LogoutButton />
+          </div>
+        </ModalDialog>
       )}
     </div>
   )

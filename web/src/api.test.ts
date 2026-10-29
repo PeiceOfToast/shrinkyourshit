@@ -17,6 +17,7 @@ function jsonResponse(
     status,
     statusText,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   }
 }
 
@@ -67,11 +68,25 @@ describe('api client', () => {
         json: async () => {
           throw new Error('not json')
         },
+        text: async () => 'exploded in a non-JSON way',
       }),
     )
     const err = await api('/api/v1/boom').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect((err as ApiError).code).toBe('unknown')
     expect((err as ApiError).message).toBe('Internal')
+  })
+
+  it('keeps the raw body for the error surface disclosure (task 13)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: 'nope', code: 'invalid_request' }, false, 400),
+        ),
+    )
+    const err = (await api('/api/v1/nope').catch((e: unknown) => e)) as ApiError
+    expect(err.raw).toBe('{"error":"nope","code":"invalid_request"}')
   })
 })

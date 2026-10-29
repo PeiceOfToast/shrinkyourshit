@@ -11,6 +11,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
+import { ToastProvider } from './toast'
 import {
   FakeEventSource,
   installFetchMock,
@@ -24,9 +25,11 @@ function renderAppAt(path: string) {
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <App />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <App />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }

@@ -9,19 +9,21 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings, updateSettings, type SettingsUpdate } from './api'
+import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
+import { SkeletonRows } from './skeleton'
+import { useToast } from './toastContext'
 
 export default function AppSettingsPage() {
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
   const client = useQueryClient()
+  const toast = useToast()
   const [form, setForm] = useState<FormState | null>(null)
   const [confirmingOff, setConfirmingOff] = useState(false)
   const [enablingLogin, setEnablingLogin] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
-  const [notice, setNotice] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (query.data && form === null) {
@@ -38,57 +40,58 @@ export default function AppSettingsPage() {
       setCurrentPassword('')
       setEnablingLogin(false)
       setConfirmingOff(false)
-      setNotice('Settings saved.')
-      setError(null)
+      toast.success('Settings saved.')
     },
-    onError: (err: Error) => {
-      setError(err.message)
-      setNotice(null)
-    },
+    onError: (err: unknown) => toast.failure('Saving settings failed', err),
   })
 
-  if (query.isPending || form === null) {
-    return <p className="text-slate-400">Loading settings…</p>
+  if (query.isPending) {
+    return (
+      <PageContainer className="space-y-6" data-testid="app-settings-page">
+        <h1 className="text-2xl font-bold">App settings</h1>
+        <SkeletonRows rows={3} />
+      </PageContainer>
+    )
   }
   if (query.isError || !query.data) {
-    return <p className="text-red-400">Cannot load the settings.</p>
+    return (
+      <PageContainer className="space-y-6" data-testid="app-settings-page">
+        <h1 className="text-2xl font-bold">App settings</h1>
+        <ErrorBox title="Cannot load the settings." error={query.error} />
+      </PageContainer>
+    )
+  }
+  if (form === null) {
+    return (
+      <PageContainer className="space-y-6" data-testid="app-settings-page">
+        <h1 className="text-2xl font-bold">App settings</h1>
+        <SkeletonRows rows={3} />
+      </PageContainer>
+    )
   }
 
   const set = (patch: Partial<FormState>) => setForm({ ...form, ...patch })
 
-  const savePlain = () => {
-    setNotice(null)
-    setError(null)
-    save.mutate(buildUpdate(form, {}))
-  }
+  const savePlain = () => save.mutate(buildUpdate(form, {}))
 
-  const confirmLoginOff = () => {
-    setNotice(null)
-    setError(null)
+  const confirmLoginOff = () =>
     save.mutate(buildUpdate(form, { login_enabled: false }))
-  }
 
-  const confirmLoginOn = () => {
-    setNotice(null)
-    setError(null)
+  const confirmLoginOn = () =>
     save.mutate(
       buildUpdate(form, {
         login_enabled: true,
         password: newPassword,
       }),
     )
-  }
 
-  const changePassword = () => {
-    setNotice(null)
-    setError(null)
+  const changePassword = () =>
     save.mutate(
       buildUpdate(form, {
         password: newPassword,
         current_password: currentPassword,
       }),
     )
-  }
 
   const turningOn = !query.data.login_enabled
   const turningOff = query.data.login_enabled
@@ -96,16 +99,12 @@ export default function AppSettingsPage() {
   return (
     <PageContainer className="space-y-6" data-testid="app-settings-page">
       <h1 className="text-2xl font-bold">App settings</h1>
-      {(notice || error) && (
-        <p
-          className={
-            error ? 'text-sm text-red-400' : 'text-sm text-emerald-400'
-          }
-          role="status"
-          data-testid="settings-notice"
-        >
-          {error ?? notice}
-        </p>
+      {save.isError && (
+        <ErrorBox
+          title="Saving the settings failed."
+          error={save.error}
+          testId="settings-error"
+        />
       )}
 
       <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">

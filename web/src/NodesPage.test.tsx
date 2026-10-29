@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import NodesPage from './NodesPage'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
+import { ToastProvider } from './toast'
 
 function nodeFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,13 +47,15 @@ function pendingNode() {
 
 function renderNodes() {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <NodesPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <NodesPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -107,13 +110,23 @@ describe('NodesPage', () => {
     await waitFor(() => expect(status).toBe('approved'))
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument())
 
-    // Reject deletes the pending row.
+    // Reject deletes the pending row — but only after the confirmation
+    // names what happens (task 13).
     fireEvent.click(screen.getByTestId('node-reject-node-pending'))
+    expect(
+      screen.getByTestId('node-reject-dialog-node-pending'),
+    ).toHaveTextContent('jobs return to the queue')
+    expect(
+      mock.calls('DELETE', /\/api\/v1\/nodes\/node-pending$/),
+    ).toHaveLength(0)
+    fireEvent.click(screen.getByTestId('node-reject-confirm-node-pending'))
     await waitFor(() =>
       expect(
         mock.calls('DELETE', /\/api\/v1\/nodes\/node-pending$/).length,
       ).toBeGreaterThan(0),
     )
+    // Both actions announced themselves (task 13).
+    await screen.findAllByTestId('toast')
   })
 
   it('generates install commands that carry the server URL and token', async () => {
@@ -348,6 +361,9 @@ describe('NodesPage', () => {
         mock.calls('POST', /\/api\/v1\/nodes\/node-1\/start$/).length,
       ).toBeGreaterThan(0),
     )
+    // Task 13: the start is announced.
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('worker-a started.')
   })
 
   it('stops a running node, drain unchecked by default (task 11)', async () => {
@@ -379,13 +395,81 @@ describe('NodesPage', () => {
     )
     expect(screen.getByTestId('node-drain-node-1')).not.toBeChecked()
 
-    // Stop now: drain false goes in the body.
+    // Stop now asks first; with no job running the dialog says the node
+    // simply stops and nothing is deleted (task 13).
     fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    const dialog = screen.getByTestId('node-stop-dialog-node-1')
+    expect(dialog).toHaveTextContent('Stop worker-a?')
+    expect(dialog).toHaveTextContent('stops where it is')
+    expect(mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)).toHaveLength(
+      0,
+    )
+
+    // Confirming sends the stop with drain false in the body.
+    fireEvent.click(screen.getByTestId('node-stop-confirm-node-1'))
     await waitFor(() => {
       const calls = mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)
       expect(calls.length).toBeGreaterThan(0)
       expect(calls[0].body).toEqual({ drain: false })
     })
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('worker-a stopped.')
+  })
+
+  it('tells you what happens to the current file when stopping mid job (task 13)', async () => {
+    const runningJob = {
+      id: 'job-run-1',
+      file_id: 'f1',
+      library_id: 'lib-1',
+      node_id: 'node-1',
+      status: 'running',
+      priority: 0,
+      attempt: 1,
+      encoder_used: '',
+      fallback_reasons: [],
+      percent: 40,
+      speed: 0,
+      eta_seconds: 0,
+      bytes_before: 0,
+      bytes_after: 0,
+      log: '',
+      error: '',
+      created_at: '2026-10-29T00:00:00Z',
+    }
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [nodeFixture({ current_job_id: 'job-run-1' })],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [runningJob], total: 1 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/node-1\/stop$/,
+        body: nodeFixture({
+          desired_state: 'stopped',
+          effective_state: 'stopped',
+        }),
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() =>
+      expect(screen.getByTestId('node-current-job-node-1')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    const dialog = screen.getByTestId('node-stop-dialog-node-1')
+    expect(dialog).toHaveTextContent('stops mid-way')
+    expect(dialog).toHaveTextContent('temporary copy is thrown away')
+    expect(dialog).toHaveTextContent('original file is never touched')
+    expect(dialog).toHaveTextContent('returns to the queue')
   })
 
   it('sends drain: true when finishing the current job first is checked (task 11)', async () => {
@@ -414,6 +498,11 @@ describe('NodesPage', () => {
     await waitFor(() => screen.getByTestId('node-drain-node-1'))
     fireEvent.click(screen.getByTestId('node-drain-node-1'))
     fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    // With "finish the current job first" ticked the dialog says so.
+    expect(screen.getByTestId('node-stop-dialog-node-1')).toHaveTextContent(
+      'finishes the file it is working on first',
+    )
+    fireEvent.click(screen.getByTestId('node-stop-confirm-node-1'))
     await waitFor(() => {
       const calls = mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)
       expect(calls.length).toBeGreaterThan(0)

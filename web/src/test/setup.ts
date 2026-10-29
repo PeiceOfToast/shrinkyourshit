@@ -18,3 +18,33 @@ import { FakeEventSource } from './fetchMock'
  */
 const host = globalThis as unknown as { EventSource?: unknown }
 host.EventSource ??= FakeEventSource
+
+/*
+ * jsdom 25 has no dialog implementation at all (no showModal/show/close —
+ * verified), so the dialog components would be invisible in tests. Give
+ * the element a minimal version of the native contract: opening sets the
+ * `open` attribute, closing clears it. Real browsers use the real
+ * showModal; this only stands in for the test environment.
+ */
+if (typeof HTMLDialogElement !== 'undefined') {
+  const proto = HTMLDialogElement.prototype as unknown as Record<
+    string,
+    unknown
+  >
+  if (typeof proto.show !== 'function') {
+    proto.show = function mockShow(this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    }
+  }
+  if (typeof proto.showModal !== 'function') {
+    proto.showModal = function mockShowModal(this: HTMLDialogElement) {
+      this.setAttribute('open', '')
+    }
+  }
+  if (typeof proto.close !== 'function') {
+    proto.close = function mockClose(this: HTMLDialogElement) {
+      this.removeAttribute('open')
+      this.dispatchEvent(new Event('close'))
+    }
+  }
+}

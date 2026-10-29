@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppShell from './AppShell'
+import { ToastProvider } from './toast'
 import {
   installFetchMock,
   stubEventSource,
@@ -66,17 +67,19 @@ function renderShell(path = '/') {
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route
-              path="*"
-              element={<div data-testid="page-under-test">page</div>}
-            />
-            <Route path="/libraries" element={<LibrariesProbe />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route
+                path="*"
+                element={<div data-testid="page-under-test">page</div>}
+              />
+              <Route path="/libraries" element={<LibrariesProbe />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -173,6 +176,22 @@ describe('AppShell narrow (phone, min-width: 768px = false)', () => {
     expect(screen.getByTestId('nav-drawer')).toBeInTheDocument()
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByTestId('nav-drawer')).not.toBeInTheDocument()
+  })
+
+  it('returns focus to the menu button after the drawer closes (task 13)', async () => {
+    renderShell('/')
+    await waitFor(() =>
+      expect(screen.getByTestId('menu-button')).toBeInTheDocument(),
+    )
+    const menuButton = screen.getByTestId('menu-button')
+    menuButton.focus()
+    fireEvent.click(menuButton)
+    expect(screen.getByTestId('nav-drawer')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('close-menu'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('nav-drawer')).not.toBeInTheDocument(),
+    )
+    expect(menuButton).toHaveFocus()
   })
 
   it('closes the drawer when the route changes', async () => {

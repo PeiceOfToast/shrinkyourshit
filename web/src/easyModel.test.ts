@@ -10,6 +10,7 @@ import {
   parseEasy,
   qualityHint,
   qualityLabel,
+  truncateMiddle,
 } from './easyModel'
 
 describe('easy screen labels', () => {
@@ -79,5 +80,17 @@ describe('formatting helpers', () => {
     expect(formatEta(45)).toBe('45s')
     expect(formatEta(150)).toBe('2m 30s')
     expect(formatEta(3600)).toBe('1h 0m')
+  })
+
+  it('truncates long paths in the middle only (task 13)', () => {
+    expect(truncateMiddle('/media/movies', 48)).toBe('/media/movies')
+    const long = '/media/very-long-library-name/subfolder/deep/movies'
+    const short = truncateMiddle(long, 20)
+    expect(short.length).toBeLessThanOrEqual(20)
+    expect(short.startsWith('/media')).toBe(true)
+    expect(short.endsWith('movies')).toBe(true)
+    expect(short).toContain('…')
+    // Even a tiny budget keeps the first and last characters.
+    expect(truncateMiddle('/abcdef', 4)).toBe('/…f')
   })
 })

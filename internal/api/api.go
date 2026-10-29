@@ -196,7 +196,8 @@ func (a *API) serveInstaller(render func(serverURL, version string) string, cont
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed",
+				"method not allowed")
 			return
 		}
 		w.Header().Set("Content-Type", contentType)
@@ -212,7 +213,8 @@ func serveStatic(static fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed",
+				"method not allowed")
 			return
 		}
 		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")

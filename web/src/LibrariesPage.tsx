@@ -2,8 +2,10 @@
 
 /**
  * Libraries list (task 07): name, path, per-status counts, space saved,
- * scan-now, edit and a delete confirmation that makes clear the files on
- * disk are untouched.
+ * scan-now, and a delete confirmation that states plainly that only the
+ * library's records are removed and the files on disk are untouched
+ * (task 13 dialog). Every mutation toasts; load failures use ErrorBox and
+ * the list loads behind skeletons.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -16,61 +18,16 @@ import {
   type Library,
   type LibraryStats,
 } from './api'
+import ConfirmDialog from './ConfirmDialog'
 import { formatBytes } from './easyModel'
+import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
-
-function ConfirmDelete({
-  lib,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  lib: Library
-  busy: boolean
-  onConfirm: () => void
-  onCancel: () => void
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-label="Remove library"
-      data-testid="confirm-delete"
-    >
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="text-lg font-semibold">Remove “{lib.name}”?</h2>
-        <p className="mt-2 text-sm text-slate-400">
-          This removes the folder from ShrinkYourShit and forgets what it has
-          done there. The files in{' '}
-          <span className="text-slate-200">{lib.path}</span> are not touched —
-          nothing on disk is deleted or renamed.
-        </p>
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-            data-testid="confirm-delete-yes"
-          >
-            {busy ? 'Removing…' : 'Remove library'}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
-            data-testid="confirm-delete-cancel"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+import { SkeletonCard } from './skeleton'
+import { useToast } from './toastContext'
 
 export default function LibrariesPage() {
   const client = useQueryClient()
+  const toast = useToast()
   const libraries = useQuery({ queryKey: ['libraries'], queryFn: getLibraries })
   const stats = useQuery({ queryKey: ['stats'], queryFn: getStats })
   const [toDelete, setToDelete] = useState<Library | null>(null)
@@ -82,24 +39,42 @@ export default function LibrariesPage() {
 
   const scan = useMutation({
     mutationFn: scanLibrary,
-    onSuccess: refresh,
+    onSuccess: () => {
+      toast.success('Scan started.')
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Scan failed', err),
   })
   const del = useMutation({
     mutationFn: deleteLibrary,
     onSuccess: () => {
       setToDelete(null)
+      toast.success('Library removed. The files on disk are untouched.')
       refresh()
     },
+    onError: (err: unknown) =>
+      toast.failure('Removing the library failed', err),
   })
 
   const countsFor = (lib: Library): LibraryStats | undefined =>
     stats.data?.libraries.find((s) => s.library_id === lib.id)
 
   if (libraries.isPending) {
-    return <p className="text-slate-400">Loading libraries…</p>
+    return (
+      <PageContainer className="space-y-4" data-testid="libraries-page">
+        <h1 className="text-2xl font-bold">Libraries</h1>
+        <SkeletonCard className="h-20" />
+        <SkeletonCard className="h-20" />
+      </PageContainer>
+    )
   }
   if (libraries.isError) {
-    return <p className="text-red-400">Cannot load the libraries.</p>
+    return (
+      <PageContainer className="space-y-4" data-testid="libraries-page">
+        <h1 className="text-2xl font-bold">Libraries</h1>
+        <ErrorBox title="Cannot load the libraries." error={libraries.error} />
+      </PageContainer>
+    )
   }
 
   return (
@@ -152,7 +127,7 @@ export default function LibrariesPage() {
                     className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-50"
                     data-testid={`library-scan-${lib.id}`}
                   >
-                    Scan now
+                    {scan.isPending ? 'Scanning…' : 'Scan now'}
                   </button>
                   <Link
                     to={`/libraries/${lib.id}/edit`}
@@ -190,12 +165,23 @@ export default function LibrariesPage() {
       </ul>
 
       {toDelete && (
-        <ConfirmDelete
-          lib={toDelete}
+        <ConfirmDialog
+          title={`Remove “${toDelete.name}”?`}
+          confirmLabel="Remove library"
           busy={del.isPending}
           onConfirm={() => del.mutate(toDelete.id)}
-          onCancel={() => setToDelete(null)}
-        />
+          onClose={() => setToDelete(null)}
+          testId="confirm-delete"
+          confirmTestId="confirm-delete-yes"
+          cancelTestId="confirm-delete-cancel"
+        >
+          <p>
+            This removes the library and its job records from the database and
+            forgets what ShrinkYourShit did there. The files in{' '}
+            <span className="text-slate-100">{toDelete.path}</span> are not
+            touched — nothing on disk is deleted or renamed.
+          </p>
+        </ConfirmDialog>
       )}
     </PageContainer>
   )

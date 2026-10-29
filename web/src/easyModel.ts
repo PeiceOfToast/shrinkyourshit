@@ -187,3 +187,14 @@ export function formatEta(seconds: number): string {
   const h = Math.floor(m / 60)
   return `${h}h ${m % 60}m`
 }
+
+/**
+ * Shortens to `max` characters by cutting only the middle, so a long path
+ * still shows where it starts and ends: "/media/very/…/movies" (task 13,
+ * folder picker footer).
+ */
+export function truncateMiddle(text: string, max = 48): string {
+  if (text.length <= max) return text
+  const keep = Math.max(1, Math.floor((max - 1) / 2))
+  return `${text.slice(0, keep)}…${text.slice(text.length - keep)}`
+}
