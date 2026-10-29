@@ -42,3 +42,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T03:46:44Z task 07: milestone reached (tasks 01 to 07 done, MVP user interface complete); milestone message sent to Michael
 - 2026-10-29T03:46:44Z task 08: dependencies satisfied (07 done), will start on the next tick
 - 2026-10-29T04:02:16Z task 08: started OpenCode session ses_e7a2e6a11ffe8kQ14yFrfX8ezr (node discovery via mDNS/broadcast, token and approval pairing, revoke, path mappings, Nodes UI; dep 07 done)
+- 2026-10-29T05:31:53Z task 08: verified by PM: STATUS done, 7/7 acceptance boxes ticked, DECISIONS.md identical to origin/main, make lint exit 0 (golangci 0 issues, eslint/prettier clean), make test exit 0 (9 Go packages ok, vitest 52 tests in 11 files)
+- 2026-10-29T05:31:53Z task 08: PR #8 merged squash ed90c4a, remote branch task/08-node-pairing deleted, main fast-forwarded on the VM to ed90c4a, no open PRs left
+- 2026-10-29T05:31:53Z task 09: dependencies satisfied (08 done); will start on the next tick
