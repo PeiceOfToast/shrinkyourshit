@@ -52,6 +52,57 @@ Shared contract for all tasks. Add endpoints here when a task introduces them; d
 | POST | `/api/v1/worker/jobs/{id}/fail` | node | `{error, log_tail}` |
 | GET | `/api/v1/worker/jobs/{id}` | node | job spec, target, source path, access mode |
 
+Node auth: `Authorization: Bearer <node-key>`, SHA-256-hashed and looked up
+in the nodes table; the node must be `approved` and `enabled`. Anything
+else gets `401 {"code":"unauthorized"}`. A node touching a job another node
+owns gets `403 {"code":"not_job_owner"}`; a transition on a job that is no
+longer claimed/running gets `409 {"code":"job_not_active"}`.
+
+Request/response details beyond the table:
+
+- `POST /api/v1/worker/heartbeat` — response `{"concurrency": n}`
+  (`worker_concurrency` from settings, default 1). `capabilities` is the
+  node capabilities object `{encoders: [{name, codecs: []}], cpu_cores,
+  ffmpeg_version}`, stored verbatim; `running_job_ids` refreshes the
+  heartbeat of this node's claimed/running jobs so a long encode without
+  progress is not swept.
+- `POST /api/v1/worker/claim` — 200 with the JobDTO, or 204 when nothing is
+  queued. The job's file moves to `processing`.
+- `GET /api/v1/worker/jobs/{id}` — the job spec:
+
+  ```json
+  {
+    "id": "…", "file_id": "…", "library_id": "…", "attempt": 0,
+    "target": { …Target… },
+    "source_path": "/node/side/path.mkv",
+    "source_size": 123, "source_mtime": 1700000000,
+    "fingerprint": "123:1700000000:abc…",
+    "access_mode": "shared",
+    "result_policy": "replace_if_smaller",
+    "bytes_before": 123
+  }
+  ```
+
+  `source_path` is the node-side path: the server applies the node's path
+  mappings (`[{"server_path": "/media", "node_path": "/mnt/nas"}]`,
+  longest prefix wins, identity when empty). `access_mode` is the node's
+  effective mode; `auto` resolves to `shared` until the shared-storage
+  check arrives with task 09.
+- `POST /api/v1/worker/jobs/{id}/progress` — response
+  `{"status": "<job status>"}`; the worker polls it and treats `cancelled`
+  as the kill signal.
+- `POST /api/v1/worker/jobs/{id}/complete` — also accepts
+  `skipped_reason` (set when the result policy kept the original, e.g. the
+  output was not smaller) and `log_tail` (stored on the job, capped at
+  64KiB). `fallback_reasons` is a string array (`"nvenc: <error>"`),
+  matching the JobDTO shape. `output_path` is the final path of the
+  produced file in the library (the extension may have changed to the
+  target container). On complete the server records the output fingerprint
+  and probe, sets the file `satisfied` (`done` with `bytes_saved=0` for a
+  skip) and emits `job.updated` and `file.updated`.
+- `POST /api/v1/worker/jobs/{id}/fail` — the job becomes `failed`, the file
+  `failed`; `log_tail` is capped at 64KiB.
+
 ### Task 06
 
 | Method | Path | Auth | Purpose |

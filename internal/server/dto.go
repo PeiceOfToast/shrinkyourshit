@@ -199,3 +199,23 @@ type ListResponse[T any] struct {
 	Items []T `json:"items"`
 	Total int `json:"total"`
 }
+
+// JobSpec is the GET /api/v1/worker/jobs/{id} response (API.md, task 05):
+// everything a worker needs to run one job. source_path is the node-side
+// path (path mappings applied; identity for the built-in node).
+// access_mode is the node's effective mode: auto resolves to shared until
+// the shared-storage check arrives with task 09.
+type JobSpec struct {
+	ID           string      `json:"id"`
+	FileID       string      `json:"file_id"`
+	LibraryID    string      `json:"library_id"`
+	Attempt      int         `json:"attempt"`
+	Target       flow.Target `json:"target"`
+	SourcePath   string      `json:"source_path"`
+	SourceSize   int64       `json:"source_size"`
+	SourceMtime  int64       `json:"source_mtime"`
+	Fingerprint  string      `json:"fingerprint"`
+	AccessMode   string      `json:"access_mode"`
+	ResultPolicy string      `json:"result_policy"`
+	BytesBefore  int64       `json:"bytes_before"`
+}
