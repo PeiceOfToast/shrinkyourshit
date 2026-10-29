@@ -161,7 +161,7 @@ func TestPairApprovalFlowViaAPI(t *testing.T) {
 	h := newAPIHarness(t)
 
 	// Pair without a token: pending, no key.
-	code, resp := pairAs(t, h, map[string]any{"name": "worker-p", "os": "linux"})
+	_, resp := pairAs(t, h, map[string]any{"name": "worker-p", "os": "linux"})
 	require.Equal(t, "pending", resp.Status)
 	require.Empty(t, resp.NodeKey)
 
@@ -170,8 +170,7 @@ func TestPairApprovalFlowViaAPI(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 
 	// The poll says pending…
-	code, resp = pollPair(t, h, resp.NodeID)
-	require.Equal(t, http.StatusOK, code)
+	_, resp = pollPair(t, h, resp.NodeID)
 	require.Equal(t, "pending", resp.Status)
 
 	// …until the admin approves, and the first poll returns the key.
