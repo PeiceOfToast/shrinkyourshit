@@ -26,3 +26,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-28T23:31:50Z task 04: PR #4 merged with squash 19aa0de, branch task/04-encoder-detection-fallback deleted on the remote, main pulled on the VM fast forward 6ec5db0..19aa0de
 - 2026-10-28T23:32:10Z task 04: session ses_e7b331cffffeG9772BenZseatR was still polling CI after the merge; interrupted (work was already complete and merged, CI can never pass in the billing block)
 - 2026-10-28T23:46:08Z task 05: started OpenCode session ses_e7b17eb98ffe0h16xPLzYJOXU7 (worker job runner: scratch, encode, verify, replace; deps 03 and 04 done)
+- 2026-10-29T01:47:11Z task 05: PM verification on the VM passed (STATUS done, 8/8 acceptance boxes ticked, DECISIONS.md unchanged vs origin/main, make lint 0 issues plus prettier clean, make test green incl. vitest 5 tests, go test -tags=integration -run TestIntegration ./internal/worker 6/6 PASS with real ffmpeg fixtures)
+- 2026-10-29T01:47:11Z task 05: PR #5 merged with squash cdd2113, branch task/05-worker-job-runner deleted on the remote, main pulled on the VM fast forward 5696d03..cdd2113
+- 2026-10-29T01:47:11Z ci: daily check gh run list still shows failure in 5s (GitHub billing block); CI requirement stays suspended per Michael's standing exception of 2026-10-28
