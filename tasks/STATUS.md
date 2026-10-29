@@ -15,7 +15,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 09 | 09-file-transfer-and-installer.md | done | PR #9 https://github.com/PeiceOfToast/shrinkyourshit/pull/9 |
 | 10 | 10-ui-shell-and-navigation.md | done | PR #11 https://github.com/PeiceOfToast/shrinkyourshit/pull/11 |
 | 11 | 11-node-lifecycle-controls.md | done | PR #12 https://github.com/PeiceOfToast/shrinkyourshit/pull/12 |
-| 12 | 12-responsive-and-playwright.md | todo | v1.1 |
+| 12 | 12-responsive-and-playwright.md | in_progress | |
 | 13 | 13-feedback-and-safety.md | todo | v1.1 |
 | 14 | 14-flow-schema-and-step-stack.md | todo | v1.2 |
 | 15 | 15-visual-flow-editor.md | todo | v1.2 |
