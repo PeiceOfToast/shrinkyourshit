@@ -205,6 +205,15 @@ func NewNodeDTO(n *store.Node) NodeDTO {
 	}
 }
 
+// DiscoveredServer is one server found on the LAN (GET /setup/servers,
+// task 08). The id lets the wizard hide this server's own announcement.
+type DiscoveredServer struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Version string `json:"version"`
+}
+
 // rfc3339 formats a time for JSON output; zero times become empty strings
 // (omitted by omitempty where it matters).
 func rfc3339(t time.Time) string {

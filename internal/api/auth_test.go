@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/discovery"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/stretchr/testify/assert"
@@ -343,8 +345,86 @@ func TestSettingsPasswordChangeRequiresCurrent(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
-func TestSetupModeJoinRejected(t *testing.T) {
+func TestSetupModeJoin(t *testing.T) {
 	h := newAPIHarness(t)
+
+	// Joining needs a server URL.
 	rec := h.do(http.MethodPost, "/api/v1/setup", map[string]any{"mode": "join"})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+	rec = h.do(http.MethodPost, "/api/v1/setup", map[string]any{"mode": "join", "server": "not a url"})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	// Without a wired callback (e.g. an embedded build that did not opt
+	// in) joining is a 500, not a silent half-join.
+	rec = h.do(http.MethodPost, "/api/v1/setup", map[string]any{"mode": "join", "server": "http://10.0.0.5:8765"})
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+
+	// With the callback wired the join records the decision and completes
+	// setup (task 08).
+	var joined []string
+	joinMux := New("v0.0.0", testStatic(), h.svc, WithJoin(func(serverURL string) error {
+		joined = append(joined, serverURL)
+		return nil
+	}))
+	do := func(method, path string, body any) *httptest.ResponseRecorder {
+		raw, err := json.Marshal(body)
+		require.NoError(t, err)
+		req := httptest.NewRequest(method, path, bytes.NewReader(raw))
+		rec := httptest.NewRecorder()
+		joinMux.ServeHTTP(rec, req)
+		return rec
+	}
+	rec = do(http.MethodPost, "/api/v1/setup", map[string]any{"mode": "join", "server": "http://10.0.0.5:8765"})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Equal(t, []string{"http://10.0.0.5:8765"}, joined)
+	var status server.Status
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &status))
+	require.True(t, status.SetupComplete)
+	require.Equal(t, server.SetupModeJoin, status.Mode)
+	require.Equal(t, "http://10.0.0.5:8765", status.Server)
+
+	// Setup is complete now: a second join (or a server-mode setup) is 409.
+	rec = do(http.MethodPost, "/api/v1/setup", map[string]any{"mode": "join", "server": "http://10.0.0.5:8765"})
+	require.Equal(t, http.StatusConflict, rec.Code)
+}
+
+// setupServersWith wires a fake Discover so the endpoint is testable
+// without a real LAN.
+func setupServersWith(t *testing.T, found []discovery.ServerInfo) (http.Handler, *bool) {
+	h := newAPIHarness(t)
+	called := false
+	mux := New("v0.0.0", testStatic(), h.svc)
+	h.svc.SetDiscover(func(ctx context.Context, timeout time.Duration) []discovery.ServerInfo {
+		called = true
+		return found
+	}, "self-node-id")
+	return mux, &called
+}
+
+func TestSetupServersListsDiscoveredUntilSetupComplete(t *testing.T) {
+	found := []discovery.ServerInfo{
+		{ID: "self-node-id", Name: "me", URL: "http://127.0.0.1:8765"},
+		{ID: "other", Name: "media-box", URL: "http://10.0.0.5:8765"},
+	}
+	mux, called := setupServersWith(t, found)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/setup/servers", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, *called)
+	var resp struct {
+		Servers []server.DiscoveredServer `json:"servers"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	// The server's own announcement is hidden from the list.
+	require.Len(t, resp.Servers, 1)
+	require.Equal(t, "media-box", resp.Servers[0].Name)
+	require.Equal(t, "http://10.0.0.5:8765", resp.Servers[0].URL)
+
+	// After setup the wizard no longer scans.
+	h2 := newAPIHarness(t)
+	require.NoError(t, h2.svc.Auth().CompleteSetup(context.Background(), server.SetupParams{Mode: server.SetupModeServer}))
+	rec = h2.do(http.MethodGet, "/api/v1/setup/servers", nil)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Empty(t, resp.Servers)
 }

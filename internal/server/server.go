@@ -145,6 +145,15 @@ func New(cfg Config) *Server {
 // Events exposes the event bus (the SSE endpoint subscribes here).
 func (s *Server) Events() *EventBus { return s.events }
 
+// SetDiscover wires the LAN discovery hook after construction (main sets
+// it from config; tests inject fakes). discover is called with the scan
+// timeout; selfID hides the server's own announcement.
+func (s *Server) SetDiscover(discover func(ctx context.Context, timeout time.Duration) []discovery.ServerInfo, selfID string) {
+	s.cfg.Discover = discover
+	s.cfg.SelfID = selfID
+	s.discCache, s.discAt = nil, time.Time{} // drop any cached scan
+}
+
 // Nodes exposes the node registry (worker auth, heartbeat, task 08 pairing).
 func (s *Server) Nodes() *NodeRegistry { return s.nodes }
 

@@ -57,11 +57,14 @@ func badRequest(format string, args ...any) error {
 // SessionTTL is how long a login session stays valid (task 06: 30 days).
 const SessionTTL = 30 * 24 * time.Hour
 
-// Status is the GET /setup/status body.
+// Status is the GET /setup/status body. Mode and Server are only set in
+// the POST /setup response for a join (task 08).
 type Status struct {
 	SetupComplete bool   `json:"setup_complete"`
 	LoginEnabled  bool   `json:"login_enabled"`
 	Username      string `json:"username,omitempty"`
+	Mode          string `json:"mode,omitempty"`
+	Server        string `json:"server,omitempty"`
 }
 
 // SetupParams is the POST /setup body.
@@ -70,11 +73,16 @@ type SetupParams struct {
 	LoginEnabled bool   `json:"login_enabled"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
+	// Server is the join target (mode join only).
+	Server string `json:"server"`
 }
 
-// SetupModeServer is the only accepted setup mode until task 08 adds
-// "join an existing server".
+// SetupModeServer is the setup mode "run as server" (task 06).
 const SetupModeServer = "server"
+
+// SetupModeJoin is the setup mode "join an existing server" (task 08):
+// the process becomes a worker of Server.
+const SetupModeJoin = "join"
 
 // setupComplete reads the setup_complete flag.
 func (a *Auth) setupComplete(ctx context.Context) (bool, error) {
@@ -114,8 +122,10 @@ func (a *Auth) credentials(ctx context.Context) (loginEnabled bool, username, pa
 }
 
 // CompleteSetup finishes first-run setup. It is refused once setup_complete
-// is set. With login enabled it creates the admin account; with login
-// disabled the API stays open (DECISIONS.md 16).
+// is set. Mode server: with login enabled it creates the admin account,
+// with login disabled the API stays open (DECISIONS.md 16). Mode join
+// (task 08): no local account is created; the caller has already recorded
+// the role=worker decision.
 func (a *Auth) CompleteSetup(ctx context.Context, params SetupParams) error {
 	complete, err := a.setupComplete(ctx)
 	if err != nil {
@@ -124,8 +134,20 @@ func (a *Auth) CompleteSetup(ctx context.Context, params SetupParams) error {
 	if complete {
 		return ErrSetupComplete
 	}
-	if params.Mode != SetupModeServer {
-		return badRequest("mode must be %q (joining a server arrives with node pairing)", SetupModeServer)
+	switch params.Mode {
+	case SetupModeServer:
+		// fall through to the account flow below
+	case SetupModeJoin:
+		if strings.TrimSpace(params.Server) == "" {
+			return badRequest("server URL is required to join")
+		}
+		if err := a.st.SetSetting(ctx, store.SettingSetupComplete, "true"); err != nil {
+			return fmt.Errorf("auth: setup setting setup_complete: %w", err)
+		}
+		a.log.Info("setup: joined an existing server", "server", params.Server)
+		return nil
+	default:
+		return badRequest("mode must be %q or %q", SetupModeServer, SetupModeJoin)
 	}
 	sets := []struct{ key, value string }{
 		{store.SettingSetupComplete, "true"},
