@@ -31,12 +31,12 @@ UI review at `docs/ui-review-2026-10-29.md` section 6. API.md (task 05 and 09 no
 Scheduling policy beyond FIFO, node priority, per node schedules, remote start of the host process itself.
 
 ## Acceptance
-- [ ] A fresh install with a library and queued files claims nothing until the node is started. (Go test: worker with `desired_state=stopped` makes zero claim calls, heartbeat only)
-- [ ] `POST /api/v1/nodes/{id}/start` results in claims on the next heartbeat, without restarting the process. (`TestNodeStartTakesEffectOnHeartbeat`)
-- [ ] `POST /api/v1/nodes/{id}/stop` with `drain: true` finishes the in flight job, claims nothing new, and ends in `stopped`. (`TestNodeDrainFinishesCurrentJob`)
-- [ ] `stop` with `drain: false` stops claiming immediately and the in flight job returns to `queued` after the heartbeat timeout, with the original file untouched. (`TestNodeStopRequeuesJob`)
-- [ ] `pause-all` stops every node in one call, `resume-all` restores the previous per node intent. (`TestPauseAllRestoresIntent`)
-- [ ] `concurrency` above 16 returns `400 invalid_request`. (`TestNodeConcurrencyValidation`)
-- [ ] The setup wizard defaults to stopped and a completed wizard with no start choice leaves `desired_state=stopped`. (`SetupWizard.test.tsx`, `TestSetupLeavesNodeStopped`)
-- [ ] The Nodes page renders the state pill, the toggle and the concurrency stepper, and calls the right endpoint for each. (`NodesPage.test.tsx`)
-- [ ] API.md documents every new endpoint and the enabled versus desired_state distinction.
+- [x] A fresh install with a library and queued files claims nothing until the node is started. (Go test: worker with `desired_state=stopped` makes zero claim calls, heartbeat only)
+- [x] `POST /api/v1/nodes/{id}/start` results in claims on the next heartbeat, without restarting the process. (`TestNodeStartTakesEffectOnHeartbeat`)
+- [x] `POST /api/v1/nodes/{id}/stop` with `drain: true` finishes the in flight job, claims nothing new, and ends in `stopped`. (`TestNodeDrainFinishesCurrentJob`)
+- [x] `stop` with `drain: false` stops claiming immediately and the in flight job returns to `queued` after the heartbeat timeout, with the original file untouched. (`TestNodeStopRequeuesJob`)
+- [x] `pause-all` stops every node in one call, `resume-all` restores the previous per node intent. (`TestPauseAllRestoresIntent`)
+- [x] `concurrency` above 16 returns `400 invalid_request`. (`TestNodeConcurrencyValidation`)
+- [x] The setup wizard defaults to stopped and a completed wizard with no start choice leaves `desired_state=stopped`. (`SetupWizard.test.tsx`, `TestSetupStartNodeChoice`)
+- [x] The Nodes page renders the state pill, the toggle and the concurrency stepper, and calls the right endpoint for each. (`NodesPage.test.tsx`)
+- [x] API.md documents every new endpoint and the enabled versus desired_state distinction.
