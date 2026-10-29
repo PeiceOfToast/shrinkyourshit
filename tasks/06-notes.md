@@ -56,12 +56,24 @@ None so far.
 
 ## Summary (end of run)
 
-- Built: setup wizard endpoints + argon2id auth + session store + rate
-  limiting + settings API; web route guard, wizard, login, settings, shell.
-- Skipped: dashboard/libraries content (task 07), join-existing-server mode
-  (task 08), nodes page (task 08).
-- Next task should know: `internal/server.Auth` + `Settings` services exist;
-  `requireAdmin` is real now — admin endpoints 401 without a session when
-  login is enabled; `sys_session` cookie; settings keys
-  `preferred_languages`/`default_video_codec` ready for task 07 easy mode.
-- Watch out: web tests mock `./api`; the guard fetches setup status + /me.
+- Built: sessions table + store methods; argon2id password hashing; Auth and
+  Settings services; setup/auth/settings endpoints with real requireAdmin
+  middleware, 30-day session cookie and per-IP login rate limit; web route
+  guard, 3-step setup wizard, login page, settings page (with confirmed
+  login toggle and password change), app shell with left nav and version.
+- Skipped: dashboard/libraries content (task 07), "join an existing server"
+  mode and nodes page (task 08). Both are stubbed in the UI.
+- Next task should know: `internal/server.Auth` + `Settings` exist (use
+  `svc.Auth()` / `svc.Settings()`); admin endpoints 401 without a session
+  once login is enabled; cookie name `sys_session`; settings keys
+  `preferred_languages` and `default_video_codec` default to `eng`/`hevc`
+  and are ready for the task 07 easy screen; api.ts has typed helpers for
+  all of it; query keys `setup-status`/`me`/`settings` shared via
+  `queries.ts`.
+- Watch out: web tests mock the whole `./api` module (list every function a
+  component uses); `go.mod` must stay at go 1.23.0 — x/crypto is pinned to
+  v0.36.0 for that reason, do not `go get` a newer one without bumping CI's
+  Go version first.
+- Verified: `make test`, `make lint`, `make test-integration` (ffmpeg) all
+  green; live smoke test of the full setup → login → logout flow against
+  the built binary.
