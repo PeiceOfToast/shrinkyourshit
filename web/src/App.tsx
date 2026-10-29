@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from './AppShell'
 import DashboardPage from './DashboardPage'
@@ -13,6 +14,14 @@ import SettingsPage from './SettingsPage'
 import SetupPage from './SetupPage'
 
 export default function App() {
+  // Mirrors the index.css rule for html/body so the dark background is
+  // guaranteed at runtime for every route (shell, setup, login) and is
+  // assertable in tests without a stylesheet engine.
+  useEffect(() => {
+    document.documentElement.classList.add('bg-slate-950')
+    document.body.classList.add('bg-slate-950')
+  }, [])
+
   return (
     <Routes>
       {/* Setup and login live outside the shell. */}

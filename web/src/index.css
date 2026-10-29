@@ -2,3 +2,19 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * The page background is painted on the root elements, not only on the
+ * shell box (task 10): anything outside the shell — overscroll, short
+ * pages, the iOS rubber band — must never render the browser default
+ * white. App also mirrors the class onto documentElement/body at runtime
+ * so the guarantee is observable (and tested) outside of a stylesheet.
+ */
+html,
+body {
+  @apply bg-slate-950;
+}
+
+html {
+  color-scheme: dark;
+}
