@@ -103,6 +103,12 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/progress", a.nodeAuth(a.workerProgress))
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/complete", a.nodeAuth(a.workerComplete))
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/fail", a.nodeAuth(a.workerFail))
+
+		// Transfer mode (task 09): shared-storage access check, resumable
+		// source stream, chunked result upload.
+		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/access-check", a.nodeAuth(a.workerAccessCheck))
+		mux.HandleFunc("GET /api/v1/worker/jobs/{id}/source", a.nodeAuth(a.workerSource))
+		mux.HandleFunc("PUT /api/v1/worker/jobs/{id}/result", a.nodeAuth(a.workerResult))
 	}
 
 	mux.Handle("/api/", apiNotFound())

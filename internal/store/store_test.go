@@ -250,11 +250,13 @@ func TestJobCRUDAndFilter(t *testing.T) {
 	got.NodeID = "node-1"
 	got.EncoderUsed = "nvenc"
 	got.FallbackReasons = `["no gpu"]`
+	got.AccessMode = NodeAccessTransfer
 	require.NoError(t, s.UpdateJob(ctx, got))
 	updated, err := s.GetJob(ctx, j.ID)
 	require.NoError(t, err)
 	assert.Equal(t, JobStatusRunning, updated.Status)
 	assert.Equal(t, `["no gpu"]`, updated.FallbackReasons)
+	assert.Equal(t, NodeAccessTransfer, updated.AccessMode, "job access mode round-trips")
 
 	// Filters.
 	done := &Job{FileID: f.ID, LibraryID: lib.ID, Status: JobStatusDone}
@@ -302,11 +304,13 @@ func TestNodeCRUD(t *testing.T) {
 
 	got.Status = NodeStatusApproved
 	got.Name = "renamed"
+	got.ThroughputLimit = 25 // MB/s
 	require.NoError(t, s.UpdateNode(ctx, got))
 	updated, err := s.GetNode(ctx, n.ID)
 	require.NoError(t, err)
 	assert.Equal(t, NodeStatusApproved, updated.Status)
 	assert.Equal(t, "renamed", updated.Name)
+	assert.Equal(t, int64(25), updated.ThroughputLimit, "node throughput limit round-trips")
 
 	require.NoError(t, s.CreateNode(ctx, &Node{Name: "worker-2", AccessMode: NodeAccessTransfer, Status: NodeStatusPending}))
 	nodes, err := s.ListNodes(ctx)

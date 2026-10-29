@@ -137,6 +137,9 @@ type ProgressParams struct {
 	Speed      float64
 	ETASeconds int64
 	Encoder    string
+	// AccessMode is the mode the node resolved for this job (shared or
+	// transfer, task 09). Empty leaves the recorded mode unchanged.
+	AccessMode string
 }
 
 // Progress records a running worker's progress. The first report moves the
@@ -156,6 +159,9 @@ func (q *Queue) Progress(ctx context.Context, jobID, nodeID string, p ProgressPa
 	job.ETASeconds = max(p.ETASeconds, 0)
 	if p.Encoder != "" {
 		job.EncoderUsed = p.Encoder
+	}
+	if p.AccessMode != "" {
+		job.AccessMode = p.AccessMode
 	}
 	now := time.Now().UTC()
 	job.HeartbeatAt = now
@@ -187,7 +193,10 @@ func (q *Queue) refreshed(ctx context.Context, job *store.Job) (*store.Job, erro
 // CompleteParams are the fields a worker reports on success. OutputPath is
 // the final path of the produced file in the library (empty with a
 // SkippedReason when the result policy kept the original). SkippedReason
-// lands on the file's satisfied_reason for the UI.
+// lands on the file's satisfied_reason for the UI. AccessMode (task 09) is
+// stored on the job when non-empty — the API layer resolves transfer-mode
+// disk work before calling Complete, so this only records what already
+// happened.
 type CompleteParams struct {
 	OutputPath      string
 	BytesAfter      int64
@@ -195,6 +204,7 @@ type CompleteParams struct {
 	FallbackReasons []string
 	SkippedReason   string
 	LogTail         string
+	AccessMode      string
 }
 
 // Complete finishes a claimed/running job owned by nodeID: the job becomes
@@ -219,6 +229,9 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	job.Status = store.JobStatusDone
 	job.BytesAfter = p.BytesAfter
 	job.EncoderUsed = p.Encoder
+	if p.AccessMode != "" {
+		job.AccessMode = p.AccessMode
+	}
 	if raw, err := json.Marshal(p.FallbackReasons); err == nil {
 		job.FallbackReasons = string(raw)
 	}

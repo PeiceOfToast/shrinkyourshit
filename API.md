@@ -86,8 +86,8 @@ Request/response details beyond the table:
   `source_path` is the node-side path: the server applies the node's path
   mappings (`[{"server_path": "/media", "node_path": "/mnt/nas"}]`,
   longest prefix wins, identity when empty). `access_mode` is the node's
-  effective mode; `auto` resolves to `shared` until the shared-storage
-  check arrives with task 09.
+  configured mode; in task 09 `auto` is passed through and the worker
+  resolves it with the shared-storage access check.
 - `POST /api/v1/worker/jobs/{id}/progress` — response
   `{"status": "<job status>"}`; the worker polls it and stops the encode
   when the status is terminal (`cancelled`, `failed`, `done`). A job that
@@ -238,3 +238,54 @@ Request/response details beyond the table:
 | POST | `/api/v1/worker/jobs/{id}/access-check` | node | `{library_id}` returns `{path, size, sample_offset, sample_sha256}` for the shared-storage check |
 | GET | `/api/v1/worker/jobs/{id}/source` | node | streams the source file, supports `Range` |
 | PUT | `/api/v1/worker/jobs/{id}/result` | node | upload result; supports resumable chunks via `Content-Range`; final request includes `X-Checksum-SHA256` |
+| GET | `/install.sh` | none | the POSIX installer script, templated with this server's URL and version |
+| GET | `/install.ps1` | none | the PowerShell installer script, same templating |
+
+Request/response details beyond the table:
+
+- `POST /api/v1/worker/jobs/{id}/access-check` — the job must be claimed by
+  this node (`409`/`403` otherwise, like every job endpoint). The optional
+  body's `library_id` must match the job's library when present
+  (`400 invalid_request` otherwise). The response's `path` is the node-side
+  path (the node's path mappings are applied server-side, exactly like the
+  job spec's `source_path`); `size` is the source size; `sample_offset` is a
+  random offset and `sample_sha256` the SHA-256 of the 1 MiB starting there
+  (short tail of the file at the end). The node reads the same bytes through
+  its mapping, compares, and caches the outcome per library for 10 minutes.
+  In `auto` mode match means shared, anything else transfer; the node
+  reports the mode it chose in the progress payload and the server stores it
+  on the job.
+- `GET /api/v1/worker/jobs/{id}/source` — `http.ServeContent` semantics:
+  `Range`/`If-Range` supported (interrupted downloads resume), `ETag` is
+  the quoted file fingerprint, `Last-Modified` the file mtime.
+- `PUT /api/v1/worker/jobs/{id}/result` — one chunk per request. Headers:
+  `Content-Range: bytes <start>-<end>/<total>` (strict, no wildcards; chunk
+  bodies beyond 64 MiB are `400`) and, on the final chunk only,
+  `X-Checksum-SHA256` over the whole result. The server writes chunks at
+  their offset into `<server-scratch>/uploads/job-<id>/output.<ext>.part`:
+  repeats of already-received ranges overwrite their region, a chunk past
+  the received prefix is `409 {"code":"upload_gap"}` (the node restarts from
+  byte 0). On the final chunk the server verifies size and checksum;
+  `422 {"code":"checksum_mismatch"}` discards the upload and the original is
+  untouched. Success answers `204` per chunk and `200 {"received": total}`
+  for the final one, after which the verified output waits at
+  `output.<ext>` for the completion call. The extension follows the
+  library's target container.
+- `POST /api/v1/worker/jobs/{id}/complete` gains `access_mode`
+  (`shared` or `transfer`). In transfer mode the server applies the result
+  policy itself from the verified upload (reusing the shared result-policy
+  code) before recording, so the worker never touches the library.
+- `POST /api/v1/worker/jobs/{id}/progress` gains `access_mode` (the mode
+  the node resolved for this job); the server stores it on the job.
+- `GET /api/v1/worker/jobs/{id}` (job spec) — `access_mode` is the node's
+  configured mode; `auto` is passed through and resolved by the worker with
+  the access check. The spec also carries `throughput_limit_mbps` (the
+  node's transfer cap; 0 = unlimited).
+- `PUT /api/v1/nodes/{id}` gains `throughput_limit_mbps` (non-negative
+  integer; anything else is `400 {"code":"invalid_request"}`). It appears in
+  `GET /api/v1/nodes` responses as `throughput_limit_mbps`.
+- `GET /install.sh` / `GET /install.ps1` — the installer sources
+  (`scripts/installer.sh`, `scripts/installer.ps1`) with the request's
+  server URL (`X-Forwarded-Proto` aware, same as the pairing commands) and
+  the server's version substituted, so a node downloads the release binary
+  matching the server it joins.

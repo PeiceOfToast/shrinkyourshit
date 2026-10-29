@@ -134,6 +134,7 @@ func serve(args []string, version string) error {
 		Store:       st,
 		Log:         logger,
 		FFprobePath: cfg.FFprobePath(),
+		ScratchDir:  cfg.ScratchDir,
 	})
 
 	// First serve start creates the built-in node and its key file; later

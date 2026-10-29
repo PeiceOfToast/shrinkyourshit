@@ -85,6 +85,7 @@ func newAPIHarness(t *testing.T) *apiHarness {
 		SweepInterval:     time.Hour,
 		HeartbeatTimeout:  time.Hour,
 		WatchPollInterval: time.Hour,
+		ScratchDir:        filepath.Join(t.TempDir(), "scratch"),
 	})
 	h.svc.Libraries().SetScanHook(func(string) {})
 	h.svc.Start(context.Background())

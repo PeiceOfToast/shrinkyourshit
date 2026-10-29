@@ -69,11 +69,14 @@ type JobDTO struct {
 	BytesAfter      int64    `json:"bytes_after"`
 	Log             string   `json:"log"`
 	Error           string   `json:"error"`
-	ClaimedAt       string   `json:"claimed_at,omitempty"`
-	StartedAt       string   `json:"started_at,omitempty"`
-	FinishedAt      string   `json:"finished_at,omitempty"`
-	HeartbeatAt     string   `json:"heartbeat_at,omitempty"`
-	CreatedAt       string   `json:"created_at"`
+	// AccessMode is how the node reached the source (shared or transfer);
+	// empty until the node reported it (task 09).
+	AccessMode  string `json:"access_mode,omitempty"`
+	ClaimedAt   string `json:"claimed_at,omitempty"`
+	StartedAt   string `json:"started_at,omitempty"`
+	FinishedAt  string `json:"finished_at,omitempty"`
+	HeartbeatAt string `json:"heartbeat_at,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // NewLibraryDTO maps a stored library to its JSON shape. An unparseable
@@ -163,6 +166,7 @@ func NewJobDTO(j *store.Job) JobDTO {
 		BytesAfter:      j.BytesAfter,
 		Log:             j.Log,
 		Error:           j.Error,
+		AccessMode:      j.AccessMode,
 		ClaimedAt:       rfc3339(j.ClaimedAt),
 		StartedAt:       rfc3339(j.StartedAt),
 		FinishedAt:      rfc3339(j.FinishedAt),
@@ -173,7 +177,7 @@ func NewJobDTO(j *store.Job) JobDTO {
 
 // NodeDTO is the JSON shape of a node. Capabilities carries the stored
 // JSON verbatim (null when empty); KeyHash is never exposed. Task 08 adds
-// the nodes API around this shape.
+// the nodes API around this shape; task 09 adds the throughput limit.
 type NodeDTO struct {
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
@@ -182,6 +186,7 @@ type NodeDTO struct {
 	Capabilities    json.RawMessage `json:"capabilities"`
 	AccessMode      string          `json:"access_mode"`
 	PathMappings    json.RawMessage `json:"path_mappings"`
+	ThroughputLimit int64           `json:"throughput_limit_mbps"`
 	Status          string          `json:"status"`
 	Enabled         bool            `json:"enabled"`
 	LastHeartbeatAt string          `json:"last_heartbeat_at,omitempty"`
@@ -198,6 +203,7 @@ func NewNodeDTO(n *store.Node) NodeDTO {
 		Capabilities:    rawOrEmpty(n.Capabilities),
 		AccessMode:      n.AccessMode,
 		PathMappings:    rawOrEmpty(n.PathMappings),
+		ThroughputLimit: n.ThroughputLimit,
 		Status:          n.Status,
 		Enabled:         n.Enabled,
 		LastHeartbeatAt: rfc3339(n.LastHeartbeatAt),
@@ -248,20 +254,22 @@ type ListResponse[T any] struct {
 
 // JobSpec is the GET /api/v1/worker/jobs/{id} response (API.md, task 05):
 // everything a worker needs to run one job. source_path is the node-side
-// path (path mappings applied; identity for the built-in node).
-// access_mode is the node's effective mode: auto resolves to shared until
-// the shared-storage check arrives with task 09.
+// path (path mappings applied; identity for the built-in node). access_mode
+// is the node's configured mode; for auto the worker resolves it with the
+// shared-storage check and reports the choice (task 09). ThroughputLimitMBs
+// caps transfer speed in MB/s (0 = unlimited).
 type JobSpec struct {
-	ID           string      `json:"id"`
-	FileID       string      `json:"file_id"`
-	LibraryID    string      `json:"library_id"`
-	Attempt      int         `json:"attempt"`
-	Target       flow.Target `json:"target"`
-	SourcePath   string      `json:"source_path"`
-	SourceSize   int64       `json:"source_size"`
-	SourceMtime  int64       `json:"source_mtime"`
-	Fingerprint  string      `json:"fingerprint"`
-	AccessMode   string      `json:"access_mode"`
-	ResultPolicy string      `json:"result_policy"`
-	BytesBefore  int64       `json:"bytes_before"`
+	ID                string      `json:"id"`
+	FileID            string      `json:"file_id"`
+	LibraryID         string      `json:"library_id"`
+	Attempt           int         `json:"attempt"`
+	Target            flow.Target `json:"target"`
+	SourcePath        string      `json:"source_path"`
+	SourceSize        int64       `json:"source_size"`
+	SourceMtime       int64       `json:"source_mtime"`
+	Fingerprint       string      `json:"fingerprint"`
+	AccessMode        string      `json:"access_mode"`
+	ResultPolicy      string      `json:"result_policy"`
+	BytesBefore       int64       `json:"bytes_before"`
+	ThroughputLimitMBs int64      `json:"throughput_limit_mbps"`
 }

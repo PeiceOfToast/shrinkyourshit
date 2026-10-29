@@ -103,14 +103,15 @@ func (a *API) revokeNode(w http.ResponseWriter, r *http.Request) {
 // nodeBody is the PUT /nodes/{id} request. Pointers distinguish "not sent"
 // from a zero value.
 type nodeBody struct {
-	Name         *string `json:"name"`
-	Enabled      *bool   `json:"enabled"`
-	AccessMode   *string `json:"access_mode"`
-	PathMappings *string `json:"path_mappings"`
+	Name            *string `json:"name"`
+	Enabled         *bool   `json:"enabled"`
+	AccessMode      *string `json:"access_mode"`
+	PathMappings    *string `json:"path_mappings"`
+	ThroughputLimit *int64  `json:"throughput_limit_mbps"`
 }
 
-// updateNode answers PUT /nodes/{id}: rename, enable/disable, access mode
-// and path mappings.
+// updateNode answers PUT /nodes/{id}: rename, enable/disable, access mode,
+// path mappings and the transfer throughput limit.
 func (a *API) updateNode(w http.ResponseWriter, r *http.Request) {
 	body, err := decode[nodeBody](r)
 	if err != nil {
@@ -118,10 +119,11 @@ func (a *API) updateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	node, err := a.svc.Nodes().Update(r.Context(), r.PathValue("id"), server.NodeUpdateParams{
-		Name:         body.Name,
-		Enabled:      body.Enabled,
-		AccessMode:   body.AccessMode,
-		PathMappings: body.PathMappings,
+		Name:            body.Name,
+		Enabled:         body.Enabled,
+		AccessMode:      body.AccessMode,
+		PathMappings:    body.PathMappings,
+		ThroughputLimit: body.ThroughputLimit,
 	})
 	if errors.Is(err, server.ErrPairInput) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())

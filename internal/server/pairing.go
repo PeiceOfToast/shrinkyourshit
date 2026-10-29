@@ -225,14 +225,15 @@ func (r *NodeRegistry) Delete(ctx context.Context, id string) error {
 // NodeUpdateParams is the PUT /nodes/{id} body. Pointers distinguish "not
 // sent" from a zero value (API.md).
 type NodeUpdateParams struct {
-	Name         *string
-	Enabled      *bool
-	AccessMode   *string
-	PathMappings *string // raw JSON, validated by ValidatePathMappings
+	Name            *string
+	Enabled         *bool
+	AccessMode      *string
+	PathMappings    *string // raw JSON, validated by ValidatePathMappings
+	ThroughputLimit *int64  // MB/s, 0 = unlimited (task 09)
 }
 
-// Update applies a partial node update. Unknown access modes and broken
-// path mappings are ErrPairInput (→ 400).
+// Update applies a partial node update. Unknown access modes, broken
+// path mappings and negative throughput limits are ErrPairInput (→ 400).
 func (r *NodeRegistry) Update(ctx context.Context, id string, p NodeUpdateParams) (*store.Node, error) {
 	node, err := r.st.GetNode(ctx, id)
 	if err != nil {
@@ -261,6 +262,12 @@ func (r *NodeRegistry) Update(ctx context.Context, id string, p NodeUpdateParams
 			return nil, err
 		}
 		node.PathMappings = *p.PathMappings
+	}
+	if p.ThroughputLimit != nil {
+		if *p.ThroughputLimit < 0 {
+			return nil, fmt.Errorf("%w: throughput_limit_mbps cannot be negative", ErrPairInput)
+		}
+		node.ThroughputLimit = *p.ThroughputLimit
 	}
 	if err := r.st.UpdateNode(ctx, node); err != nil {
 		return nil, fmt.Errorf("node: update: %w", err)

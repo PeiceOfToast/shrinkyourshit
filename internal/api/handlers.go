@@ -219,7 +219,8 @@ func (a *API) getJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
 }
 
-// cancelJob stops an active job.
+// cancelJob stops an active job. A transfer-mode upload (task 09) is
+// discarded with it: a cancelled job's partial upload is dead weight.
 func (a *API) cancelJob(w http.ResponseWriter, r *http.Request) {
 	_, err := a.svc.Queue().Cancel(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
@@ -234,6 +235,7 @@ func (a *API) cancelJob(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
+	a.svc.Transfer().Discard(r.PathValue("id"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
