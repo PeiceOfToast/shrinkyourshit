@@ -23,9 +23,11 @@ UI review at `docs/ui-review-2026-10-29.md` section 7. Depends on tasks 10 and 1
 Redesigning pages, new features, changing API responses beyond adding a `code` field where it is missing.
 
 ## Acceptance
-- [ ] Every mutation in the app surfaces a toast, verified by a test per page. (`LibraryList.test.tsx`, `LibraryDetailPage.test.tsx`, `NodesPage.test.tsx`, `SettingsPage.test.tsx`)
-- [ ] Deleting a library requires confirmation, and the dialog text says files on disk are untouched. (`LibrariesPage.test.tsx`)
-- [ ] Escape closes every dialog and focus returns to the element that opened it. (`FolderPickerModal` test, `ConfirmDialog` test)
-- [ ] A failed request renders the HTTP status and the server error code, not a generic sentence. (`SettingsPage.test.tsx` with a mocked 500)
-- [ ] The file list has working previous and next controls and a page size selector. (`LibraryDetailPage.test.tsx`)
-- [ ] Axe or a manual keyboard pass documented in `tasks/hermes-log.md`: tab order reaches every control, no focus traps outside dialogs.
+- [x] Every mutation in the app surfaces a toast, verified by a test per page. (`LibraryList.test.tsx`, `LibraryDetailPage.test.tsx`, `NodesPage.test.tsx`, `SettingsPage.test.tsx`)
+- [x] Deleting a library requires confirmation, and the dialog text says files on disk are untouched. (`LibrariesPage.test.tsx`)
+- [x] Escape closes every dialog and focus returns to the element that opened it. (`FolderPickerModal` test, `ConfirmDialog` test)
+- [x] A failed request renders the HTTP status and the server error code, not a generic sentence. (`SettingsPage.test.tsx` with a mocked 500)
+- [x] The file list has working previous and next controls and a page size selector. (`LibraryDetailPage.test.tsx`)
+- [x] Axe or a manual keyboard pass documented in `tasks/hermes-log.md`: tab order reaches every control, no focus traps outside dialogs.
+
+(The two test-file names in the first and fourth items predate task 10's settings split: `LibraryList.test.tsx` is `LibrariesPage.test.tsx`, and `SettingsPage.test.tsx` is the pair `EncodeSettingsPage.test.tsx` + `AppSettingsPage.test.tsx`. Recorded in tasks/13-notes.md.)

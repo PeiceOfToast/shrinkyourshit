@@ -68,7 +68,14 @@ no axe-core dependency (manual keyboard pass documented in tasks/hermes-log.md i
   showModal/show/close; Escape is driven via keydown (the component keeps a keydown
   listener for exactly this). Acceptance file names `LibraryList.test.tsx` /
   `SettingsPage.test.tsx` map to `LibrariesPage.test.tsx` and the two settings page tests.
+- Environment: Playwright e2e cannot launch on this VM (chromium system libs missing —
+  the same limitation tasks 10 and 12 recorded), so the layout suite runs in CI only;
+  the keyboard pass is structural + unit-tested, recorded in tasks/hermes-log.md.
 - Next task should know: `useToast()` requires `<ToastProvider>` (main.tsx mounts it once,
   above the router); test render helpers must wrap it too. `ModalDialog` in
   `web/src/dialog.tsx` is the one wrapper to reuse for any future dialog (task 14/15), and
   `truncateMiddle` lives in easyModel.ts.
+
+## Status
+
+Done. PR #14: https://github.com/PeiceOfToast/shrinkyourshit/pull/14
