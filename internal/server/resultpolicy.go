@@ -49,7 +49,7 @@ func ApplyResultPolicy(ctx context.Context, policy, output, original string, out
 		if outSize >= originalSize {
 			return ApplyResult{SkipReason: fmt.Sprintf(
 				"output (%s) is not smaller than the original (%s); original kept",
-				humanBytes(outSize), humanBytes(originalSize))}, nil
+				HumanBytes(outSize), HumanBytes(originalSize))}, nil
 		}
 		return replace(ctx, output, original, dir, origBase, ext, extracts)
 	case store.ResultPolicyReplace:
@@ -161,8 +161,9 @@ func copyFile(ctx context.Context, src, dst string) error {
 	return nil
 }
 
-// humanBytes formats a byte count for skip reasons and logs.
-func humanBytes(n int64) string {
+// HumanBytes formats a byte count for skip reasons and logs. Exported so
+// the worker's transfer skip message matches the server's exactly.
+func HumanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%d B", n)

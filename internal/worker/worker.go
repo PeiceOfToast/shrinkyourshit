@@ -147,6 +147,7 @@ func New(cfg Config) (*Worker, error) {
 		prober:  prober,
 		runFn:   cfg.Run,
 		sc:      w.sc,
+		access:  newAccessCache(),
 		log:     cfg.Log,
 		tracker: &encoderTracker{},
 	}

@@ -5,11 +5,16 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,15 +45,20 @@ type Client struct {
 	base string
 	key  string
 	http *http.Client
+	// stream runs the long-lived transfer calls (source download, chunked
+	// result upload): no client-wide timeout, context-driven instead — a
+	// multi-gigabyte transfer must not die at 60 seconds.
+	stream *http.Client
 }
 
 // NewClient builds a client for a server base URL (e.g.
 // http://192.168.1.10:8765) and a node key.
 func NewClient(base, key string) *Client {
 	return &Client{
-		base: strings.TrimRight(base, "/"),
-		key:  key,
-		http: &http.Client{Timeout: 60 * time.Second},
+		base:   strings.TrimRight(base, "/"),
+		key:    key,
+		http:   &http.Client{Timeout: 60 * time.Second},
+		stream: &http.Client{},
 	}
 }
 
@@ -159,12 +169,14 @@ func (c *Client) JobSpec(ctx context.Context, jobID string) (*server.JobSpec, er
 }
 
 // ProgressInput is the progress request body (API.md). The response's
-// status lets the runner detect a cancelled job.
+// status lets the runner detect a cancelled job. AccessMode (task 09) is
+// the mode the node resolved for the job; the server stores it.
 type ProgressInput struct {
 	Percent    float64 `json:"percent"`
 	Speed      float64 `json:"speed"`
 	ETASeconds int64   `json:"eta_seconds"`
 	Encoder    string  `json:"encoder"`
+	AccessMode string  `json:"access_mode"`
 }
 
 // Progress reports progress and returns the job's current status.
@@ -180,7 +192,8 @@ func (c *Client) Progress(ctx context.Context, jobID string, in ProgressInput) (
 
 // CompleteInput is the complete request body (API.md). OutputPath is the
 // final path of the produced file in the library; SkippedReason is set when
-// the result policy kept the original.
+// the result policy kept the original. AccessMode (task 09) is "transfer"
+// when the node uploaded the result instead of replacing the file itself.
 type CompleteInput struct {
 	OutputPath      string   `json:"output_path"`
 	BytesAfter      int64    `json:"bytes_after"`
@@ -188,6 +201,7 @@ type CompleteInput struct {
 	FallbackReasons []string `json:"fallback_reasons"`
 	SkippedReason   string   `json:"skipped_reason"`
 	LogTail         string   `json:"log_tail"`
+	AccessMode      string   `json:"access_mode"`
 }
 
 // Complete reports a successful job.
@@ -242,4 +256,150 @@ func (c *Client) PairPoll(ctx context.Context, nodeID string) (*server.PairRespo
 		return nil, err
 	}
 	return &out, nil
+}
+
+// AccessChallenge is the shared-storage check payload (API.md, task 09):
+// hash the same 1 MiB sample from the same offset of the file the node sees
+// at Path and the library is shared; anything else means transfer.
+type AccessChallenge struct {
+	Path         string `json:"path"`
+	Size         int64  `json:"size"`
+	SampleOffset int64  `json:"sample_offset"`
+	SampleSHA256 string `json:"sample_sha256"`
+}
+
+// AccessCheck asks for the shared-storage sample of a claimed job.
+func (c *Client) AccessCheck(ctx context.Context, jobID, libraryID string) (*AccessChallenge, error) {
+	var out AccessChallenge
+	body := struct {
+		LibraryID string `json:"library_id"`
+	}{LibraryID: libraryID}
+	if err := c.do(ctx, http.MethodPost, "/api/v1/worker/jobs/"+jobID+"/access-check", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SourceStream opens the job's source stream (API.md task 09). rangeStart
+// resumes from a partial download (0 = full download); etag, when set, is
+// sent as If-Range so the server restarts the response if the file changed.
+// The caller must close the response body.
+func (c *Client) SourceStream(ctx context.Context, jobID, etag string, rangeStart int64) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1/worker/jobs/"+jobID+"/source", nil)
+	if err != nil {
+		return nil, fmt.Errorf("worker: build source request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	if rangeStart > 0 {
+		req.Header.Set("Range", "bytes="+strconv.FormatInt(rangeStart, 10)+"-")
+		if etag != "" {
+			req.Header.Set("If-Range", etag)
+		}
+	}
+	resp, err := c.stream.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("worker: source stream: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		defer func() { _ = resp.Body.Close() }()
+		return nil, parseAPIError(resp)
+	}
+	return resp, nil
+}
+
+// UploadResult sends the verified output to the server (API.md task 09) in
+// uploadChunkSize chunks: sequential PUTs with Content-Range, the final
+// one carrying X-Checksum-SHA256 over the whole file. A chunk that times
+// out or is rejected as a gap is retried (gaps restart the upload); a
+// checksum mismatch (422) is fatal — the server kept the original.
+func (c *Client) UploadResult(ctx context.Context, jobID, path string, limitMBs int64, log *slog.Logger) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("worker: stat result: %w", err)
+	}
+	total := st.Size()
+	checksum, err := fileSHA256(path)
+	if err != nil {
+		return err
+	}
+
+	chunk := int64(uploadChunkSize)
+	restarts := 0
+	for start := int64(0); start < total; {
+		end := min(start+chunk-1, total-1)
+		uploaded, err := c.putChunk(ctx, jobID, path, start, end, total, checksum, limitMBs)
+		if err != nil {
+			var apiErr *APIError
+			if errors.As(err, &apiErr) && apiErr.Status == http.StatusConflict {
+				// The server lost the partial upload (restart): begin again
+				// from byte 0 — twice at most, then give up honestly.
+				restarts++
+				if restarts > 2 {
+					return err
+				}
+				log.Warn("worker: result upload restart from zero", "job", jobID, "err", err)
+				start = 0
+				continue
+			}
+			return err
+		}
+		start = uploaded
+	}
+	return nil
+}
+
+// putChunk sends one range and returns the offset the next chunk starts at.
+func (c *Client) putChunk(ctx context.Context, jobID, path string, start, end, total int64, checksum string, limitMBs int64) (int64, error) {
+	length := end - start + 1
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, fmt.Errorf("worker: open result: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return 0, fmt.Errorf("worker: seek result: %w", err)
+	}
+	var body io.Reader = io.LimitReader(f, length)
+	if limitMBs > 0 {
+		body = &pacedReader{r: body, bytesPerSec: limitMBs * 1_000_000, ctx: ctx}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		c.base+"/api/v1/worker/jobs/"+jobID+"/result", body)
+	if err != nil {
+		return 0, fmt.Errorf("worker: build result request: %w", err)
+	}
+	req.ContentLength = length
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, total))
+	if end+1 >= total {
+		req.Header.Set("X-Checksum-SHA256", checksum)
+	}
+	resp, err := c.stream.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("worker: result chunk %d: %w", start, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		return 0, parseAPIError(resp)
+	}
+	return end + 1, nil
+}
+
+// uploadChunkSize is the result upload granularity (task 09: 8 MiB).
+const uploadChunkSize = 8 << 20
+
+// fileSHA256 hashes a whole file streaming.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("worker: open %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("worker: hash %s: %w", path, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
