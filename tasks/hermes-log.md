@@ -52,3 +52,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T06:47:00Z task 09: milestone reached (tasks 05, 07 and 09 merged: encode pipeline, MVP UI and file transfer plus installers all in main); milestone message sent to Michael
 - 2026-10-29T08:32:00Z pm: MVP complete, all nine tasks done and merged (main 660af18), no todo tasks in tasks/STATUS.md, no open PRs, no live OpenCode sessions. Pruned 4 stale origin/task/* remote-tracking refs (remote heads had already been deleted). Nothing queued: post-MVP work needs Michael to pick from ROADMAP items 1-10.
 - 2026-10-29T09:46:16Z ci: daily state line, latest run completed conclusion failure (workflow ci, 2026-10-29T08:31:26Z); CI closed per Michael 2026-10-28, no action taken
+- 2026-10-29T12:28:25Z repo: made public on the owner's instruction (Option A), which restores free GitHub Actions for the project
+- 2026-10-29T12:28:25Z repo: enabled branch protection on main (pull requests required, force pushes and deletions blocked, admins exempt so the PM can still push the log)
+- 2026-10-29T12:28:25Z ci: first real run after going public (run 40852249672) - web, installer, installer-powershell and report passed; go and docker failed on real defects, not billing
