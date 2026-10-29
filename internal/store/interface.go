@@ -152,3 +152,26 @@ func validateNodeAccessMode(v string) error {
 	}
 	return fmt.Errorf("store: invalid node access_mode %q: want one of %v", v, NodeAccessModeValues())
 }
+
+// validateNodeDesiredState rejects unknown desired states on write. An
+// empty value is stopped: the column default for rows created before the
+// field existed.
+func validateNodeDesiredState(v string) error {
+	if v == "" {
+		return nil
+	}
+	for _, ok := range NodeDesiredStateValues() {
+		if v == ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("store: invalid node desired_state %q: want one of %v", v, NodeDesiredStateValues())
+}
+
+// validateNodeConcurrency bounds the parallel-job cap (task 11: 1 to 16).
+func validateNodeConcurrency(n int) error {
+	if n < ConcurrencyMin || n > ConcurrencyMax {
+		return fmt.Errorf("store: invalid node concurrency %d: want %d to %d", n, ConcurrencyMin, ConcurrencyMax)
+	}
+	return nil
+}

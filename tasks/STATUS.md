@@ -14,7 +14,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 08 | 08-node-pairing.md | done | PR https://github.com/PeiceOfToast/shrinkyourshit/pull/8 |
 | 09 | 09-file-transfer-and-installer.md | done | PR #9 https://github.com/PeiceOfToast/shrinkyourshit/pull/9 |
 | 10 | 10-ui-shell-and-navigation.md | done | PR #11 https://github.com/PeiceOfToast/shrinkyourshit/pull/11 |
-| 11 | 11-node-lifecycle-controls.md | todo | v1.1 |
+| 11 | 11-node-lifecycle-controls.md | in_progress | branch task/11-node-lifecycle-controls |
 | 12 | 12-responsive-and-playwright.md | todo | v1.1 |
 | 13 | 13-feedback-and-safety.md | todo | v1.1 |
 | 14 | 14-flow-schema-and-step-stack.md | todo | v1.2 |
