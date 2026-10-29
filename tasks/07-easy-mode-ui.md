@@ -21,9 +21,9 @@ ARCHITECTURE.md (easy-mode mapping, Target schema), API.md (task 03 and task 07 
 Step-stack editor, visual flow editor, node management UI, webhooks.
 
 ## Acceptance
-- [ ] Unit tests: `CompileEasyMode` produces the exact Target for every slider and checkbox combination in the mapping table; `DescribeTarget` round-trips them and returns `ok=false` for a hand-edited Target.
-- [ ] Browser test (Playwright or Vitest with MSW): choose a folder, slider at 3, remove subs, audio 2, Start creates a library whose stored Target matches the expected JSON.
-- [ ] Dashboard shows a running job's progress updating from SSE events (test with a fake event stream).
-- [ ] `GET /stats` totals match the sum of library counts in an integration test with two libraries.
-- [ ] The easy-mode page source contains no occurrences of "hevc", "h265", "h264", "av1", "crf", or "ffmpeg" (test greps the built page component).
-- [ ] Deleting a library from the UI leaves the fixture files on disk.
+- [x] Unit tests: `CompileEasyMode` produces the exact Target for every slider and checkbox combination in the mapping table; `DescribeTarget` round-trips them and returns `ok=false` for a hand-edited Target.
+- [x] Browser test (Playwright or Vitest with MSW): choose a folder, slider at 3, remove subs, audio 2, Start creates a library whose stored Target matches the expected JSON.
+- [x] Dashboard shows a running job's progress updating from SSE events (test with a fake event stream).
+- [x] `GET /stats` totals match the sum of library counts in an integration test with two libraries.
+- [x] The easy-mode page source contains no occurrences of "hevc", "h265", "h264", "av1", "crf", or "ffmpeg" (test greps the built page component).
+- [x] Deleting a library from the UI leaves the fixture files on disk.
