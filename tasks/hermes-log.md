@@ -81,3 +81,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T22:26:00Z task 11: re-prompted OpenCode (session ses_e76511532ffewO6cbegh8fMMMP, "fix-ci 12") to mirror the server's 409 in the fake and assert job2 is never claimed instead of a racy attempt count; test-only diff, worker suite green at count=20
 - 2026-10-29T22:26:05Z task 11: PM verified PR #12 at head 4868a7c — STATUS row done, all 9 acceptance boxes ticked, DECISIONS.md unchanged vs origin/main, make test and make lint exit 0 on the VM, CI run 40965117677 green on all six jobs
 - 2026-10-29T22:26:10Z task 11: PR #12 merged squash b95812e, branch task/11-node-lifecycle-controls deleted, main pulled on the VM to b95812e
+- 2026-10-29T22:31:22Z task 12: started build session ses_e763604daffe6crN11MAa7gsPs (responsive tables and Playwright layout tests; dependency task 10 is done, no session was running)
