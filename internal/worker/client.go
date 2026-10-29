@@ -22,6 +22,10 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 )
 
+// serverNodeRunning is what an empty desired_state means (a server built
+// before task 11): the old always-running behaviour.
+const serverNodeRunning = "running"
+
 // APIError is a non-2xx worker API response with its parsed error body.
 type APIError struct {
 	Status  int
@@ -120,25 +124,39 @@ func parseAPIError(resp *http.Response) error {
 	return &APIError{Status: resp.StatusCode, Code: body.Code, Message: body.Error}
 }
 
-// HeartbeatInput is the heartbeat request body (API.md).
+// HeartbeatInput is the heartbeat request body (API.md). State (task 11)
+// is the worker's own lifecycle state; a `stopped` report while the node
+// is draining completes the drain.
 type HeartbeatInput struct {
 	Capabilities  json.RawMessage `json:"capabilities"`
 	RunningJobIDs []string        `json:"running_job_ids"`
+	State         string          `json:"state,omitempty"`
 }
 
-// Heartbeat sends the node heartbeat and returns the concurrency the server
-// wants this worker to run.
-func (c *Client) Heartbeat(ctx context.Context, in HeartbeatInput) (int, error) {
-	var out struct {
-		Concurrency int `json:"concurrency"`
-	}
+// HeartbeatState is the heartbeat response (API.md, task 11): the
+// instruction the worker honours until the next beat.
+type HeartbeatState struct {
+	Concurrency    int    `json:"concurrency"`
+	DesiredState   string `json:"desired_state"`
+	EffectiveState string `json:"effective_state"`
+}
+
+// Heartbeat sends the node heartbeat and returns the instruction: the
+// desired state and the concurrency cap this worker may run.
+func (c *Client) Heartbeat(ctx context.Context, in HeartbeatInput) (*HeartbeatState, error) {
+	var out HeartbeatState
 	if err := c.do(ctx, http.MethodPost, "/api/v1/worker/heartbeat", in, &out); err != nil {
-		return 0, err
+		return nil, err
+	}
+	if out.DesiredState == "" {
+		// A server built before task 11 sends no desired_state: keep the
+		// old always-running behaviour.
+		out.DesiredState = serverNodeRunning
 	}
 	if out.Concurrency < 1 {
-		return 1, nil
+		out.Concurrency = 1
 	}
-	return out.Concurrency, nil
+	return &out, nil
 }
 
 // ClaimedJob is what claim returns: enough to fetch the full spec.

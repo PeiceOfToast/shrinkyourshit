@@ -52,6 +52,8 @@ type fakeAPI struct {
 	fails        map[string]failReport
 	heartbeats   []HeartbeatInput
 	concurrency  int
+	desiredState string // what the heartbeat answers ("" → pre-task-11 server)
+	claims       int
 	authFailures int
 	// runningWaits holds channels closed once a heartbeat reports the job
 	// id as running; tests block the fake run on one to synchronize with
@@ -114,6 +116,7 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		f.mu.Lock()
 		f.heartbeats = append(f.heartbeats, in)
 		c := f.concurrency
+		desired := f.desiredState
 		// Release tests blocked on a job id this heartbeat reports as
 		// running. Delete before close so it can never close twice.
 		for _, id := range in.RunningJobIDs {
@@ -126,10 +129,11 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		if c < 1 {
 			c = 1
 		}
-		writeFakeJSON(w, http.StatusOK, map[string]int{"concurrency": c})
+		writeFakeJSON(w, http.StatusOK, map[string]any{"concurrency": c, "desired_state": desired})
 	}))
 	mux.HandleFunc("POST /api/v1/worker/claim", guard(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
+		f.claims++
 		var id string
 		if len(f.queue) > 0 {
 			id = f.queue[0]
@@ -323,6 +327,34 @@ func (f *fakeAPI) heartbeatHadRunningJob(jobID string) bool {
 		}
 	}
 	return false
+}
+
+// heartbeatCount returns how many heartbeats arrived so far.
+func (f *fakeAPI) heartbeatCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.heartbeats)
+}
+
+// claimCount returns how many claim calls arrived so far.
+func (f *fakeAPI) claimCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claims
+}
+
+// heartbeatsWithState returns the recorded heartbeats that carried a
+// lifecycle state report.
+func (f *fakeAPI) heartbeatsWithState() []HeartbeatInput {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []HeartbeatInput
+	for _, hb := range f.heartbeats {
+		if hb.State != "" {
+			out = append(out, hb)
+		}
+	}
+	return out
 }
 
 // notifyWhenRunning returns a channel that is closed once a recorded

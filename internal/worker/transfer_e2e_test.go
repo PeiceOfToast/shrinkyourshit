@@ -238,7 +238,8 @@ func newE2E(t *testing.T, accessMode, mappings string) *e2eEnv {
 	env.key = "e2e-node-key"
 	env.node = &store.Node{ID: "e2e-node", Name: "remote", KeyHash: server.HashKey(env.key),
 		AccessMode: accessMode, PathMappings: mappings,
-		Status: store.NodeStatusApproved, Enabled: true}
+		Status: store.NodeStatusApproved, Enabled: true,
+		DesiredState: store.NodeStateRunning}
 	require.NoError(t, st.CreateNode(ctx, env.node))
 
 	static := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html></html>")}}
