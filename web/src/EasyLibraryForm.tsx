@@ -45,7 +45,7 @@ export default function EasyLibraryForm({
   })
 
   return (
-    <div className="max-w-2xl space-y-6" data-testid="easy-form">
+    <div className="space-y-6" data-testid="easy-form">
       <section className="grid gap-3 rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
         <span className="text-sm font-medium text-slate-300">Folder</span>
         {value.path ? (

@@ -202,9 +202,10 @@ describe('DashboardPage', () => {
     )
     const empty = screen.getByTestId('empty-dashboard')
     expect(empty).toHaveTextContent('No libraries yet.')
-    expect(
-      screen.getByRole('link', { name: 'Add one' }),
-    ).toHaveAttribute('href', '/libraries/new')
+    expect(screen.getByRole('link', { name: 'Add one' })).toHaveAttribute(
+      'href',
+      '/libraries/new',
+    )
     // Read only (task 10): nothing to fill in, nothing to create here.
     expect(empty.querySelector('form')).toBeNull()
     expect(screen.queryByTestId('easy-form')).not.toBeInTheDocument()
@@ -307,7 +308,11 @@ describe('DashboardPage', () => {
         match: /\/api\/v1\/nodes$/,
         body: { items: [nodeFixture({ enabled: false })], total: 1 },
       },
-      { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderDashboard()
@@ -320,9 +325,10 @@ describe('DashboardPage', () => {
     )
     expect(warning).toHaveTextContent('3 files are waiting')
     // ...and links to the fix.
-    expect(
-      screen.getByRole('link', { name: 'Go to Nodes' }),
-    ).toHaveAttribute('href', '/nodes')
+    expect(screen.getByRole('link', { name: 'Go to Nodes' })).toHaveAttribute(
+      'href',
+      '/nodes',
+    )
   })
 
   it('does not warn about a stopped queue while a job is still running', async () => {
@@ -369,7 +375,11 @@ describe('DashboardPage', () => {
           total: 1,
         },
       },
-      { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderDashboard()
@@ -377,9 +387,10 @@ describe('DashboardPage', () => {
       screen.getByTestId('warning-node-heartbeat-node-1'),
     )
     expect(warning).toHaveTextContent('media-box (built-in) has not checked in')
-    expect(
-      screen.getByRole('link', { name: 'Go to Nodes' }),
-    ).toHaveAttribute('href', '/nodes')
+    expect(screen.getByRole('link', { name: 'Go to Nodes' })).toHaveAttribute(
+      'href',
+      '/nodes',
+    )
   })
 
   it('warns about jobs that failed in the last 24 hours', async () => {
@@ -429,13 +440,21 @@ describe('DashboardPage', () => {
         match: /\/api\/v1\/libraries$/,
         body: { items: [library], total: 1 },
       },
-      { method: 'GET', match: /\/api\/v1\/stats$/, body: { ...zeros, queued: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: { ...zeros, queued: 0 },
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/nodes$/,
         body: { items: [nodeFixture()], total: 1 },
       },
-      { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderDashboard()

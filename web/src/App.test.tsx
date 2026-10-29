@@ -82,7 +82,11 @@ beforeEach(() => {
       },
     },
     { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
-    { method: 'GET', match: /\/api\/v1\/nodes$/, body: { items: [], total: 0 } },
+    {
+      method: 'GET',
+      match: /\/api\/v1\/nodes$/,
+      body: { items: [], total: 0 },
+    },
   ])
 })
 
@@ -198,9 +202,10 @@ describe('route guard', () => {
       expect(screen.getByTestId('empty-dashboard')).toBeInTheDocument()
     })
     // Read only (task 10): one line and a link, nothing to fill in.
-    expect(
-      screen.getByRole('link', { name: 'Add one' }),
-    ).toHaveAttribute('href', '/libraries/new')
+    expect(screen.getByRole('link', { name: 'Add one' })).toHaveAttribute(
+      'href',
+      '/libraries/new',
+    )
     expect(screen.queryByTestId('easy-form')).not.toBeInTheDocument()
     expect(
       screen.queryByTestId('dashboard-add-library'),

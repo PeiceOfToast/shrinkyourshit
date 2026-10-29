@@ -219,7 +219,9 @@ export default function AppShell() {
             <button
               type="button"
               onClick={() => setRailCollapsed((c) => !c)}
-              aria-label={railCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              aria-label={
+                railCollapsed ? 'Expand navigation' : 'Collapse navigation'
+              }
               className="flex min-h-[44px] w-full items-center justify-center rounded-lg px-3 text-slate-400 hover:bg-slate-800 hover:text-white"
               data-testid="nav-toggle"
             >

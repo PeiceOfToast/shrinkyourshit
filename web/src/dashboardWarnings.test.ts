@@ -6,10 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Job, Node } from './api'
-import {
-  computeWarnings,
-  HEARTBEAT_STALE_MS,
-} from './dashboardWarnings'
+import { computeWarnings, HEARTBEAT_STALE_MS } from './dashboardWarnings'
 
 const NOW = Date.parse('2026-10-29T12:00:00Z')
 
@@ -54,7 +51,12 @@ function job(overrides: Partial<Job> = {}): Job {
   }
 }
 
-const base = { nodes: [] as Node[], jobs: [] as Job[], stats: { queued: 0 }, now: NOW }
+const base = {
+  nodes: [] as Node[],
+  jobs: [] as Job[],
+  stats: { queued: 0 },
+  now: NOW,
+}
 
 describe('computeWarnings', () => {
   it('warns when every node is stopped or disabled, files wait, nothing runs', () => {
@@ -147,7 +149,10 @@ describe('computeWarnings', () => {
     const warnings = computeWarnings({
       ...base,
       jobs: [
-        job({ status: 'failed', created_at: new Date(NOW - 3600_000).toISOString() }),
+        job({
+          status: 'failed',
+          created_at: new Date(NOW - 3600_000).toISOString(),
+        }),
         job({
           id: 'job-2',
           status: 'failed',

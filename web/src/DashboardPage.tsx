@@ -19,10 +19,7 @@ import {
   type Node,
 } from './api'
 import PageContainer from './PageContainer'
-import {
-  computeWarnings,
-  type DashboardWarning,
-} from './dashboardWarnings'
+import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
 import { formatBytes, formatEta, statusLabel } from './easyModel'
 
 function progressWidth(percent: number): string {

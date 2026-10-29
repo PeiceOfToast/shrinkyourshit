@@ -6,11 +6,12 @@
  */
 import { useNavigate } from 'react-router-dom'
 import EasyLibraryForm from './EasyLibraryForm'
+import PageContainer from './PageContainer'
 
 export default function NewLibraryPage() {
   const navigate = useNavigate()
   return (
-    <div className="max-w-2xl space-y-4" data-testid="new-library-page">
+    <PageContainer className="space-y-4" data-testid="new-library-page">
       <h1 className="text-2xl font-bold">Add a folder</h1>
       <p className="text-slate-400">
         Pick a folder of videos. ShrinkYourShit makes copies that need less
@@ -19,6 +20,6 @@ export default function NewLibraryPage() {
       <EasyLibraryForm
         onSaved={(lib) => void navigate(`/libraries/${lib.id}`)}
       />
-    </div>
+    </PageContainer>
   )
 }

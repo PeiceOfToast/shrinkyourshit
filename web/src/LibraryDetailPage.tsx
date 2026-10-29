@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { getFiles, getLibrary, retryJob } from './api'
 import { formatBytes, statusLabel } from './easyModel'
+import PageContainer from './PageContainer'
 
 const FILE_STATUSES = [
   'new',
@@ -88,7 +89,7 @@ export default function LibraryDetailPage() {
   )
 
   return (
-    <div className="space-y-4" data-testid="library-detail">
+    <PageContainer className="space-y-4" data-testid="library-detail">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">{lib.name}</h1>
@@ -199,6 +200,6 @@ export default function LibraryDetailPage() {
           </table>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }
