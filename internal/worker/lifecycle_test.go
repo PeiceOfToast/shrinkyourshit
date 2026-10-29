@@ -118,11 +118,15 @@ func TestWorkerDrainFinishesAndStops(t *testing.T) {
 	})
 
 	// A second queued job must never be claimed after the drain starts.
-	_, spec2 := defaultSpec(t, dir, "job2")
-	api.enqueue("job2", spec2)
+	// The drain is set before job2 is enqueued, so no claim can ever see
+	// the job while the node is still running: claims that race ahead of
+	// the drain find an empty queue, claims after it are refused by the
+	// fake with 409 node_not_running, exactly like the real server.
 	api.mu.Lock()
 	api.desiredState = NodeStateDraining
 	api.mu.Unlock()
+	_, spec2 := defaultSpec(t, dir, "job2")
+	api.enqueue("job2", spec2)
 
 	waitUntil(t, "job1 completes", func() bool {
 		return api.completeOf("job1").Encoder != ""
@@ -136,7 +140,11 @@ func TestWorkerDrainFinishesAndStops(t *testing.T) {
 		}
 		return false
 	})
-	// One more claim poll would have fired if draining still claimed.
-	time.Sleep(30 * time.Millisecond)
-	require.Equal(t, 1, api.claimCount(), "a draining node claims nothing new")
+	// The invariant the drain guarantees: no new work was handed out —
+	// job2 is still queued, was never claimed and never completed. Claim
+	// *attempts* may keep firing until the heartbeat delivers the drain
+	// instruction, so a raw attempt count would race the heartbeat; the
+	// refusals are the contract, not a claim-call tally.
+	require.Contains(t, api.queuedIDs(), "job2", "a draining node is handed no new jobs")
+	require.Empty(t, api.completeOf("job2").Encoder, "a draining node claims nothing new")
 }

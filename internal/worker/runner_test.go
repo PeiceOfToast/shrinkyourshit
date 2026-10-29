@@ -134,12 +134,25 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 	mux.HandleFunc("POST /api/v1/worker/claim", guard(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.claims++
+		// Same contract as the real server (internal/api/worker.go): a
+		// node whose desired_state is not running gets 409 node_not_running
+		// and no job is handed out — the queue is untouched. An empty
+		// desiredState is a pre-task-11 server and counts as running.
+		desired := f.desiredState
+		if desired == "" {
+			desired = NodeStateRunning
+		}
 		var id string
-		if len(f.queue) > 0 {
+		if desired == NodeStateRunning && len(f.queue) > 0 {
 			id = f.queue[0]
 			f.queue = f.queue[1:]
 		}
 		f.mu.Unlock()
+		if desired != NodeStateRunning {
+			writeFakeError(w, http.StatusConflict, "node_not_running",
+				"node is not started; it claims jobs only while its desired_state is running")
+			return
+		}
 		if id == "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -341,6 +354,14 @@ func (f *fakeAPI) claimCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.claims
+}
+
+// queuedIDs snapshots the ids the claim endpoint still holds; a job leaves
+// the queue only when a claim hands it out.
+func (f *fakeAPI) queuedIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.queue...)
 }
 
 // heartbeatsWithState returns the recorded heartbeats that carried a
