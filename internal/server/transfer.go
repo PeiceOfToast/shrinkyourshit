@@ -123,6 +123,12 @@ func (t *Transfer) jobUploadDir(jobID string) string {
 	return filepath.Join(t.scratch, "job-"+jobID)
 }
 
+// UploadDir exposes the upload scratch path of a job (observability and
+// tests); it mirrors jobUploadDir.
+func (t *Transfer) UploadDir(jobID string) string {
+	return t.jobUploadDir(jobID)
+}
+
 // verifiedOutputPath is where a fully verified upload is parked (renamed
 // out of the .part name so an unfinished upload can never be mistaken for
 // a verified result).

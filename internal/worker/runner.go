@@ -188,6 +188,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		Encoder:         res.EncoderUsed,
 		FallbackReasons: fallbackStrings(res),
 		LogTail:         tail.Tail(),
+		AccessMode:      mode,
 	}
 	if applied.SkipReason != "" {
 		in.SkippedReason = applied.SkipReason
