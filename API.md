@@ -139,6 +139,39 @@ Request/response details beyond the table:
 |--------|------|------|---------|
 | GET | `/api/v1/stats` | admin | totals: files, satisfied, queued, bytes saved, per-library breakdown |
 
+Request/response details beyond the table:
+
+- `POST /api/v1/libraries` and `PUT /api/v1/libraries/{id}` (task 03
+  endpoints) accept either a full `target` or an `easy` object
+  `{quality: 1..5, remove_subtitles: bool, audio: 1..4}`; sending both is
+  `400 {"code":"invalid_request"}`. The server compiles `easy` with the
+  current settings (`default_video_codec`, `preferred_languages`) and stores
+  both the compiled Target and the raw easy input (a JSON column on the
+  library). An update that carries only `target` clears the stored easy
+  input. Out-of-range slider values are `400 {"code":"invalid_request"}`.
+  On create an empty `name` defaults to the library path's base name (the
+  easy screen has no name field).
+- `LibraryDTO` gains `easy`: the stored easy input when the library was
+  saved from the easy screen, the described input when the Target is
+  easy-shaped, otherwise `null`.
+- `GET /api/v1/stats` returns totals plus a per-library breakdown; every
+  total equals the sum of the breakdown:
+
+  ```json
+  {
+    "files": 6, "new": 1, "satisfied": 2, "queued": 1, "processing": 0,
+    "done": 1, "failed": 1, "missing": 0, "bytes_saved": 550,
+    "libraries": [
+      {"library_id": "…", "name": "Movies", "files": 4, "new": 0,
+       "satisfied": 2, "queued": 1, "processing": 0, "done": 1, "failed": 0,
+       "missing": 0, "bytes_saved": 500}
+    ]
+  }
+  ```
+
+- `GET /api/v1/jobs` accepts `?order=desc` (newest first; default oldest
+  first) for the dashboard's recent history.
+
 ### Task 08
 
 | Method | Path | Auth | Purpose |
