@@ -44,7 +44,7 @@ Workers, local or remote            (internal/worker)
 
 Status enums are fixed strings; do not add values without updating this file.
 
-**Library:** `id, name, path, target (JSON), watch bool, schedule (cron string or empty), result_policy, created_at, updated_at`
+**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), watch bool, schedule (cron string or empty), result_policy, created_at, updated_at`
 
 **File:** `id, library_id, path (absolute), size, mtime, fingerprint, probe (JSON), status, satisfied_reason, last_job_id, bytes_saved, created_at, updated_at`
 - `status`: `new | satisfied | queued | processing | done | failed | missing`

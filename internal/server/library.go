@@ -17,11 +17,14 @@ import (
 
 // LibraryParams are the editable fields of a library, used by both create
 // and update. TargetJSON may be nil on create (the default Target applies);
-// on update it must be present (PUT semantics).
+// on update it must be present (PUT semantics). EasyJSON is the easy-screen
+// input that compiled to TargetJSON (task 07); empty means the library was
+// not saved from the easy screen.
 type LibraryParams struct {
 	Name         string
 	Path         string
 	TargetJSON   []byte // raw Target JSON
+	EasyJSON     []byte // raw EasyModeInput JSON, empty to clear
 	Watch        bool
 	Schedule     string
 	ResultPolicy string
@@ -183,6 +186,7 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		Name:         p.Name,
 		Path:         filepath.Clean(p.Path),
 		TargetJSON:   string(canonical),
+		EasyJSON:     string(p.EasyJSON),
 		Watch:        p.Watch,
 		Schedule:     p.Schedule,
 		ResultPolicy: policy,

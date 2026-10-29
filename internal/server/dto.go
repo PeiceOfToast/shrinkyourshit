@@ -17,16 +17,20 @@ import (
 
 // LibraryDTO is the JSON shape of a library. Target is the parsed Target
 // object (validated when the library was written), so UIs never re-parse it.
+// Easy is the easy-screen state: the stored easy input when the library was
+// saved from the easy screen, the described state when the Target is
+// easy-shaped, or null when the library has no easy-mode representation.
 type LibraryDTO struct {
-	ID           string      `json:"id"`
-	Name         string      `json:"name"`
-	Path         string      `json:"path"`
-	Target       flow.Target `json:"target"`
-	Watch        bool        `json:"watch"`
-	Schedule     string      `json:"schedule"`
-	ResultPolicy string      `json:"result_policy"`
-	CreatedAt    string      `json:"created_at"`
-	UpdatedAt    string      `json:"updated_at"`
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Path         string          `json:"path"`
+	Target       flow.Target     `json:"target"`
+	Easy         json.RawMessage `json:"easy"`
+	Watch        bool            `json:"watch"`
+	Schedule     string          `json:"schedule"`
+	ResultPolicy string          `json:"result_policy"`
+	CreatedAt    string          `json:"created_at"`
+	UpdatedAt    string          `json:"updated_at"`
 }
 
 // FileDTO is the JSON shape of a file. Probe carries the stored probe
@@ -85,12 +89,36 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		Name:         l.Name,
 		Path:         l.Path,
 		Target:       target,
+		Easy:         easyFromLibrary(l, target),
 		Watch:        l.Watch,
 		Schedule:     l.Schedule,
 		ResultPolicy: l.ResultPolicy,
 		CreatedAt:    rfc3339(l.CreatedAt),
 		UpdatedAt:    rfc3339(l.UpdatedAt),
 	}
+}
+
+// easyFromLibrary picks the easy-screen state of a library (task 07): the
+// stored easy input when the library was saved from the easy screen, the
+// described state when the Target itself is easy-shaped (libraries created
+// with a full target can still reopen in easy mode), else null.
+func easyFromLibrary(l *store.Library, target flow.Target) json.RawMessage {
+	if s := strings.TrimSpace(l.EasyJSON); s != "" {
+		var in flow.EasyModeInput
+		if err := json.Unmarshal([]byte(s), &in); err == nil {
+			if raw, err := json.Marshal(in); err == nil {
+				return raw
+			}
+		}
+		// A corrupt stored value falls through to the describe; it must
+		// not poison the whole response.
+	}
+	if in, ok := flow.DescribeTarget(target); ok {
+		if raw, err := json.Marshal(in); err == nil {
+			return raw
+		}
+	}
+	return json.RawMessage("null")
 }
 
 // NewFileDTO maps a stored file to its JSON shape.

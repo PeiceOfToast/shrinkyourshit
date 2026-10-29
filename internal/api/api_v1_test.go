@@ -195,8 +195,18 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 	rec = h.do(http.MethodGet, "/api/v1/libraries/"+created.ID, nil)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 
-	// Error shapes follow API.md conventions.
-	rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{"name": "", "path": h.root})
+	// Error shapes follow API.md conventions. An empty name is no longer
+	// an error (it defaults to the folder's base name for the easy
+	// screen); an invalid target is still a 400.
+	rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
+		"name": "", "path": h.root,
+		"target": flow.Target{
+			Video:     flow.VideoTarget{Codec: "nope", Quality: 3},
+			Audio:     flow.AudioTarget{Mode: flow.AudioKeepAll},
+			Subtitles: flow.SubtitleTarget{Mode: flow.SubsKeepAll},
+			Container: flow.ContainerMKV,
+		},
+	})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	var errBody struct {
 		Error string `json:"error"`

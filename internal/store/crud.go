@@ -9,7 +9,7 @@ import (
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, watch, schedule, result_policy, created_at, updated_at`
+const libraryColumns = `id, name, path, target, easy, watch, schedule, result_policy, created_at, updated_at`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
@@ -19,7 +19,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 		created string
 		updated string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
@@ -30,7 +30,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 
 // libraryDest builds the scan destination for a single library row.
 func libraryDest(l *Library, watch *string, created, updated *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, watch, &l.Schedule, &l.ResultPolicy, created, updated}
+	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, watch, &l.Schedule, &l.ResultPolicy, created, updated}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled
@@ -47,8 +47,8 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 		l.CreatedAt = now
 	}
 	l.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.Name, l.Path, l.TargetJSON, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create library: %w", err)
 	}
@@ -81,8 +81,8 @@ func (s *SQLite) UpdateLibrary(ctx context.Context, l *Library) error {
 		return err
 	}
 	l.UpdatedAt = nowUTC()
-	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ? WHERE id = ?`,
-		l.Name, l.Path, l.TargetJSON, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, easy = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ? WHERE id = ?`,
+		l.Name, l.Path, l.TargetJSON, l.EasyJSON, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.ID)
 	if err != nil {
 		return fmt.Errorf("store: update library: %w", err)
 	}
@@ -309,6 +309,13 @@ func (s *SQLite) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
 		query += ` WHERE ` + join(conds, ` AND `)
 	}
 	query += ` ORDER BY created_at`
+	switch filter.Order {
+	case "":
+	case "desc":
+		query += ` DESC`
+	default:
+		return nil, fmt.Errorf("store: invalid job order %q: want empty or desc", filter.Order)
+	}
 	if filter.Limit > 0 {
 		query += fmt.Sprintf(` LIMIT %d OFFSET %d`, filter.Limit, filter.Offset)
 	}

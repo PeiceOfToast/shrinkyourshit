@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -17,14 +18,17 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
-// libraryBody is the create/update request body (API.md).
+// libraryBody is the create/update request body (API.md). Exactly one of
+// Target and Easy may be present: Easy is the easy-screen input the server
+// compiles into a Target (and stores verbatim for round-tripping).
 type libraryBody struct {
-	Name         string       `json:"name"`
-	Path         string       `json:"path"`
-	Target       *flow.Target `json:"target"`
-	Watch        bool         `json:"watch"`
-	Schedule     string       `json:"schedule"`
-	ResultPolicy string       `json:"result_policy"`
+	Name         string             `json:"name"`
+	Path         string             `json:"path"`
+	Target       *flow.Target       `json:"target"`
+	Easy         *flow.EasyModeInput `json:"easy"`
+	Watch        bool               `json:"watch"`
+	Schedule     string             `json:"schedule"`
+	ResultPolicy string             `json:"result_policy"`
 }
 
 // listLibraries returns every library.
@@ -41,15 +45,23 @@ func (a *API) listLibraries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, server.ListResponse[server.LibraryDTO]{Items: items, Total: len(items)})
 }
 
-// createLibrary adds a library and kicks off its first scan.
+// createLibrary adds a library and kicks off its first scan. An empty name
+// defaults to the folder's base name (the easy screen has no name field).
 func (a *API) createLibrary(w http.ResponseWriter, r *http.Request) {
 	body, err := decode[libraryBody](r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	params, err := a.libraryParams(body, false)
+	if body.Name == "" && body.Path != "" {
+		body.Name = filepath.Base(filepath.Clean(body.Path))
+	}
+	params, err := a.libraryParams(r.Context(), body, false)
 	if err != nil {
+		if errors.Is(err, errSettingsRead) {
+			a.internal(w, err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -78,8 +90,12 @@ func (a *API) updateLibrary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	params, err := a.libraryParams(body, true)
+	params, err := a.libraryParams(r.Context(), body, true)
 	if err != nil {
+		if errors.Is(err, errSettingsRead) {
+			a.internal(w, err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
@@ -173,6 +189,14 @@ func (a *API) listJobs(w http.ResponseWriter, r *http.Request) {
 		}
 		filter.Status = status
 	}
+	switch order := r.URL.Query().Get("order"); order {
+	case "":
+	case "desc":
+		filter.Order = order
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "order must be desc")
+		return
+	}
 	jobs, err := a.st.ListJobs(r.Context(), filter)
 	if err != nil {
 		a.internal(w, err)
@@ -233,6 +257,17 @@ func (a *API) retryJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+}
+
+// getStats answers GET /stats: totals plus the per-library breakdown
+// (API.md, task 07).
+func (a *API) getStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := a.svc.Stats().Get(r.Context())
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // browse is the server-side folder picker: directory listing only, never
@@ -350,10 +385,17 @@ func (a *API) library(w http.ResponseWriter, r *http.Request) (*store.Library, b
 	return lib, true
 }
 
-// libraryParams converts the request body to manager params. On create a
-// missing target falls back to the default; on update it is required (PUT
-// semantics).
-func (a *API) libraryParams(body libraryBody, update bool) (server.LibraryParams, error) {
+// errSettingsRead marks a settings read failure inside libraryParams; the
+// handlers answer it with 500 instead of the request-shaped 400.
+var errSettingsRead = errors.New("api: read settings for easy compile")
+
+// libraryParams converts the request body to manager params. Exactly one
+// of target and easy may be sent (API.md, task 07): easy is compiled with
+// the current settings into a Target and stored beside its raw input; a
+// target-only save clears the stored easy input. On create a missing
+// target falls back to the default; on update one of the two is required
+// (PUT semantics).
+func (a *API) libraryParams(ctx context.Context, body libraryBody, update bool) (server.LibraryParams, error) {
 	params := server.LibraryParams{
 		Name:         body.Name,
 		Path:         body.Path,
@@ -361,14 +403,42 @@ func (a *API) libraryParams(body libraryBody, update bool) (server.LibraryParams
 		Schedule:     body.Schedule,
 		ResultPolicy: body.ResultPolicy,
 	}
-	if body.Target != nil {
+	if body.Target != nil && body.Easy != nil {
+		return params, errors.New("provide either target or easy, not both")
+	}
+	switch {
+	case body.Easy != nil:
+		settings, err := a.svc.Settings().Get(ctx)
+		if err != nil {
+			return params, errors.Join(errSettingsRead, err)
+		}
+		target, err := flow.CompileEasyMode(*body.Easy, flow.EasySettings{
+			Codec:              settings.DefaultVideoCodec,
+			PreferredLanguages: settings.PreferredLanguages,
+		})
+		if err != nil {
+			return params, err
+		}
+		raw, err := json.Marshal(target)
+		if err != nil {
+			return params, err
+		}
+		params.TargetJSON = raw
+		rawEasy, err := json.Marshal(*body.Easy)
+		if err != nil {
+			return params, err
+		}
+		params.EasyJSON = rawEasy
+	case body.Target != nil:
 		raw, err := json.Marshal(*body.Target)
 		if err != nil {
 			return params, err
 		}
 		params.TargetJSON = raw
-	} else if update {
-		return params, errors.New("target is required on update")
+	default:
+		if update {
+			return params, errors.New("target is required on update")
+		}
 	}
 	return params, nil
 }

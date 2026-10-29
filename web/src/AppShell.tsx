@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getHealth, logout } from './api'
+import { LiveEvents } from './events'
 import { meKey, useMe, useSetupStatus } from './queries'
 
 const navItem =
@@ -72,6 +73,7 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-full bg-slate-950 text-slate-100">
+      <LiveEvents />
       <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
         <div className="px-4 py-5">
           <span className="text-lg font-bold tracking-tight">
