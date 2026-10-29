@@ -92,3 +92,26 @@ Branch `task/10-ui-shell-navigation` from `main`. Commits, in order:
   start/stop (task 11), encoding behaviour changes (task file).
 - Mobile bottom tab bar (review's option, drawer chosen per task).
 - Breadcrumbs on detail pages (review section 5 detail; not in task Do list).
+
+## Summary (written at the end of the run)
+
+- Built: responsive shell (drawer under md with job indicator + Escape/route
+  close, collapsible icon rail at md+, min-h-dvh, 44 px targets), html/body
+  background paint, shared PageContainer on all pages, five-page nav with
+  /encode and /app split (/settings redirects), read-only dashboard with a
+  pure-rule warning surface (all nodes off while queued, heartbeat lost
+  >3 min, failed jobs 24 h).
+- Skipped: Playwright (task 12 — the manual 390/1280 check ran as mocked
+  matchMedia structural tests; no browser on the VM), quality/container/
+  audio defaults on /encode (no settings keys exist for them; API.md says
+  the endpoints stay the same), rail-collapse persistence.
+- A real bug found by the new tests: useMediaQuery originally listened for
+  'change' on window — it must listen on the MediaQueryList; fixed.
+- Next task should know: the shell consults matchMedia via
+  `useMediaQuery('(min-width: 768px)')` in web/src/useMediaQuery.ts (jsdom
+  defaults to desktop); dashboard warnings live in web/src/dashboardWarnings.ts
+  and need `last_heartbeat_at` on nodes (present since task 08); task 11's
+  node start/stop can extend the warnings module instead of the component.
+- Full suite green: 78 vitest tests in 13 files, go test ./... ok, make lint
+  0 issues, npm run build clean.
+
