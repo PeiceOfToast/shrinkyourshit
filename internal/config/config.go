@@ -47,6 +47,13 @@ type Config struct {
 	FFmpegPath string
 	// LogLevel is one of debug, info, warn, error.
 	LogLevel string
+	// DiscoveryPort is the UDP broadcast port for LAN discovery.
+	DiscoveryPort int
+	// DiscoveryMDNS toggles the mDNS transport (announce on a server,
+	// browse on a worker).
+	DiscoveryMDNS bool
+	// DiscoveryBroadcast toggles the UDP broadcast transport.
+	DiscoveryBroadcast bool
 }
 
 // Options controls where Load reads its inputs from. The zero value uses the
@@ -64,15 +71,18 @@ type Options struct {
 // fileConfig mirrors the config.yaml keys. Pointers distinguish "not set"
 // from a zero value.
 type fileConfig struct {
-	Role       *string `yaml:"role"`
-	Port       *int    `yaml:"port"`
-	DataDir    *string `yaml:"data_dir"`
-	ScratchDir *string `yaml:"scratch_dir"`
-	Server     *string `yaml:"server"`
-	Token      *string `yaml:"token"`
-	NodeName   *string `yaml:"node_name"`
-	FFmpegPath *string `yaml:"ffmpeg_path"`
-	LogLevel   *string `yaml:"log_level"`
+	Role         *string `yaml:"role"`
+	Port         *int    `yaml:"port"`
+	DataDir      *string `yaml:"data_dir"`
+	ScratchDir   *string `yaml:"scratch_dir"`
+	Server       *string `yaml:"server"`
+	Token        *string `yaml:"token"`
+	NodeName     *string `yaml:"node_name"`
+	FFmpegPath   *string `yaml:"ffmpeg_path"`
+	LogLevel     *string `yaml:"log_level"`
+	DiscoverPort *int    `yaml:"discovery_port"`
+	DiscoverMDNS *bool   `yaml:"discovery_mdns"`
+	DiscoverBC   *bool   `yaml:"discovery_broadcast"`
 }
 
 // Flag and environment names for every setting.
@@ -95,6 +105,13 @@ const (
 	envFFmpeg      = "SHRINK_FFMPEG_PATH"
 	flagLogLevel   = "log-level"
 	envLogLevel    = "SHRINK_LOG_LEVEL"
+
+	flagDiscoverPort = "discovery-port"
+	envDiscoverPort  = "SHRINK_DISCOVERY_PORT"
+	flagDiscoverMDNS = "discovery-mdns"
+	envDiscoverMDNS  = "SHRINK_DISCOVERY_MDNS"
+	flagDiscoverBC   = "discovery-broadcast"
+	envDiscoverBC    = "SHRINK_DISCOVERY_BROADCAST"
 )
 
 // NewFlags builds the pflag set shared by the serve and worker subcommands.
@@ -110,6 +127,9 @@ func NewFlags(name string) *pflag.FlagSet {
 	flags.String(flagNodeName, "", "display name of this node")
 	flags.String(flagFFmpeg, "", "path to ffmpeg; ffprobe assumed beside it")
 	flags.String(flagLogLevel, "", "debug, info, warn or error")
+	flags.Int(flagDiscoverPort, 0, "UDP broadcast port for LAN discovery")
+	flags.Bool(flagDiscoverMDNS, true, "use mDNS for LAN discovery")
+	flags.Bool(flagDiscoverBC, true, "use UDP broadcast for LAN discovery")
 	return flags
 }
 
@@ -164,6 +184,11 @@ func Load(opts Options) (Config, error) {
 	cfg.NodeName = src.string(flagNodeName, envNodeName, src.file.NodeName, nodeNameDefault())
 	cfg.FFmpegPath = src.string(flagFFmpeg, envFFmpeg, src.file.FFmpegPath, "")
 	cfg.LogLevel = src.string(flagLogLevel, envLogLevel, src.file.LogLevel, "info")
+	if cfg.DiscoveryPort, err = src.int(flagDiscoverPort, envDiscoverPort, src.file.DiscoverPort, 8766); err != nil {
+		return Config{}, err
+	}
+	cfg.DiscoveryMDNS = src.bool(flagDiscoverMDNS, envDiscoverMDNS, src.file.DiscoverMDNS, true)
+	cfg.DiscoveryBroadcast = src.bool(flagDiscoverBC, envDiscoverBC, src.file.DiscoverBC, true)
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -264,6 +289,27 @@ func (s sources) int(flagName, envKey string, fileVal *int, def int) (int, error
 	return def, nil
 }
 
+// bool resolves one boolean setting: flag > env > file > default. An env
+// value of 0/false/off disables; any other non-empty value enables.
+func (s sources) bool(flagName, envKey string, fileVal *bool, def bool) bool {
+	if s.flags.Changed(flagName) {
+		v, _ := s.flags.GetBool(flagName)
+		return v
+	}
+	if v, ok := s.env[envKey]; ok && v != "" {
+		switch strings.ToLower(v) {
+		case "0", "false", "off":
+			return false
+		default:
+			return true
+		}
+	}
+	if fileVal != nil {
+		return *fileVal
+	}
+	return def
+}
+
 func defaultPort() int { return 8765 }
 
 // dataDirDefault is ~/.shrinkyourshit outside Docker. The Docker image sets
@@ -324,4 +370,31 @@ func envMap(environ []string) map[string]string {
 		m[k] = v
 	}
 	return m
+}
+
+// JoinExisting records a "join an existing server" choice (task 08) in the
+// data dir's config.yaml: role becomes worker and server the chosen URL.
+// Unknown keys in an existing file are preserved. The process then runs
+// the worker flow — on this run and on every restart — so the docker or
+// systemd unit that always launches the default subcommand keeps working.
+func JoinExisting(dataDir, serverURL string) error {
+	path := filepath.Join(dataDir, "config.yaml")
+	doc := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := yaml.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf("join: parse existing config %s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("join: read config %s: %w", path, err)
+	}
+	doc["role"] = RoleWorker
+	doc["server"] = serverURL
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("join: encode config: %w", err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		return fmt.Errorf("join: write config %s: %w", path, err)
+	}
+	return nil
 }
