@@ -89,6 +89,63 @@ jobs:
           curl -fsS http://localhost:8765/install.ps1 | grep -o "'http://localhost:8765'"
           docker rm -f "$container" > /dev/null
 
+  # Task 12: Playwright layout suite against the real binary. The docker
+  # image serves the built web app (embedded, no dev server), a browser
+  # drives it at phone, tablet and desktop widths over the seeded state,
+  # and failing runs upload their screenshots as artifacts.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: npm ci (web)
+        working-directory: web
+        run: npm ci --no-fund --no-audit
+      - name: Build image (web app + Go binary, UI embedded)
+        run: docker build -f docker/Dockerfile -t shrinkyourshit:e2e .
+      - name: ffmpeg for the seeded test media
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Fixture dirs (owned by the runner, container runs as the same uid)
+        run: mkdir -p .e2e/config .e2e/scratch .e2e/media/e2e-lib
+      - name: Run the image
+        run: |
+          docker run -d --name shrink-e2e \
+            -p 127.0.0.1:8712:8765 \
+            -e PUID="$(id -u)" -e PGID="$(id -g)" \
+            -e SHRINK_DISCOVERY_MDNS=false -e SHRINK_DISCOVERY_BROADCAST=false \
+            -v "$PWD/.e2e/config:/config" \
+            -v "$PWD/.e2e/scratch:/scratch" \
+            -v "$PWD/.e2e/media:/media" \
+            shrinkyourshit:e2e
+      - name: Install the browser (with system deps)
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run the layout suite
+        working-directory: web
+        env:
+          SHRINK_E2E_BASE_URL: http://127.0.0.1:8712
+          SHRINK_E2E_MEDIA_DIR: ${{ github.workspace }}/.e2e/media/e2e-lib
+          SHRINK_E2E_LIBRARY_PATH: /media/e2e-lib
+        run: npx playwright test
+      - name: Upload failure artifacts (screenshots, traces, report)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            web/test-results/
+            web/playwright-report/
+          retention-days: 7
+      - name: Stop the image
+        if: always()
+        run: docker rm -f shrink-e2e
+
   # Installer checks (task 09): shellcheck over the POSIX installer, an
   # install run inside a throwaway container against a fake release
   # server, a structural systemd-analyze verify of the written unit, and
@@ -149,7 +206,7 @@ jobs:
   # state without the Actions/Checks API scope. The comment is best-effort;
   # the run summary is the reliable copy.
   report:
-    needs: [go, web, docker, installer, installer-powershell]
+    needs: [go, web, docker, installer, installer-powershell, e2e]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -164,6 +221,7 @@ jobs:
             echo "- docker: ${{ needs.docker.result }}"
             echo "- installer (shell): ${{ needs.installer.result }}"
             echo "- installer (powershell): ${{ needs.installer-powershell.result }}"
+            echo "- e2e: ${{ needs.e2e.result }}"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Comment on the PR
         continue-on-error: true
@@ -178,6 +236,7 @@ jobs:
               `- docker: **${{ needs.docker.result }}**`,
               `- installer (shell): **${{ needs.installer.result }}**`,
               `- installer (powershell): **${{ needs.installer-powershell.result }}**`,
+              `- e2e: **${{ needs.e2e.result }}**`,
             ].join('\n')
             await github.rest.issues.createComment({
               owner: context.repo.owner,

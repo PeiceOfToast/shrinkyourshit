@@ -14,7 +14,8 @@ CROSS_TARGETS := \
 	darwin/arm64
 
 .PHONY: all build dev web web-deps placeholder test test-go test-web \
-	test-integration lint lint-go lint-web spdx installer-check docker cross clean
+	test-integration e2e lint lint-go lint-web spdx installer-check docker \
+	cross clean
 
 all: build
 
@@ -58,6 +59,17 @@ test-web: web-deps
 # with a clear message when they are absent.
 test-integration: placeholder
 	go test -tags=integration ./...
+
+# e2e (task 12): Playwright layout suite at phone/tablet/desktop widths
+# against the real Go binary serving the built web app. `make web` builds
+# the UI into the embed, the binary is compiled fresh, and the suite's
+# global setup starts the server with throwaway dirs and a seeded library.
+# First run downloads the chromium headless shell; system deps that
+# chromium needs must be present (see README).
+e2e: web
+	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(BINARY) ./cmd/shrinkyourshit
+	cd web && npx playwright install chromium
+	cd web && npx playwright test
 
 lint: lint-go spdx lint-web
 
