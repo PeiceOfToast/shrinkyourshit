@@ -61,10 +61,25 @@ func TestWorkerRunProcessesQueuedJob(t *testing.T) {
 	// The heartbeat must report the desired concurrency; the worker learns it.
 	api.concurrency = 1
 
+	// The instant fake run could finish before the first heartbeat fires,
+	// so the run blocks until the fake API has actually recorded a
+	// heartbeat that reports job1 as running, then produces the output.
+	running := api.notifyWhenRunning("job1")
+	run := func(ctx context.Context, args []string) error {
+		select {
+		case <-running:
+		case <-time.After(5 * time.Second):
+			return errors.New("no heartbeat reported job1 as running")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return os.WriteFile(args[len(args)-1], []byte("OUTPUT"), 0o644)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, testWorkerConfig(api, filepath.Join(dir, "scratch"), writeRun("OUTPUT", nil)))
+		done <- Run(ctx, testWorkerConfig(api, filepath.Join(dir, "scratch"), run))
 	}()
 
 	waitUntil(t, "job completion", func() bool { return api.completeOf("job1").Encoder != "" })
