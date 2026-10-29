@@ -13,6 +13,8 @@ ARCHITECTURE.md (update path). STACK.md (release, Docker). API.md (task 16). Dep
   - Embed the commit and build date with `-ldflags "-X main.version=... -X main.commit=... -X main.date=..."`.
   - Add a release dry run that can be triggered by hand (`workflow_dispatch`) so the pipeline can be proven without publishing: it builds and verifies but skips the upload and the push.
   - Attest build provenance with `actions/attest-build-provenance` so a user can verify where a binary came from.
+  - OCI labels on the image: `org.opencontainers.image.source`, `.licenses=AGPL-3.0-only`, `.version`, `.revision`. A redistributed image must state its licence and point at the source for the exact tag it was built from.
+  - After the first push, the ghcr package is private by default even when the repo is public. Set the package visibility to public and enable inherited access from the repository so later pushes stay public. Pulling without auth is the whole point of publishing.
 - `internal/update`:
   - `Latest(ctx, channel)` reads `https://api.github.com/repos/PeiceOfToast/shrinkyourshit/releases/latest` (or the releases list for prerelease), with an on disk cache in the data dir, a 6 hour TTL, and ETag support so a check costs no API budget when nothing changed.
   - Asset selection by `runtime.GOOS` and `runtime.GOARCH` from the archive names the release workflow produces.
