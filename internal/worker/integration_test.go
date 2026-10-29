@@ -662,3 +662,247 @@ func (s *stack) waitForNoScratch() {
 		return os.IsNotExist(err) || (err == nil && len(entries) == 0)
 	})
 }
+
+// --- task 08: pairing, revocation and shared mode ---
+
+// pairWithToken runs the real pairing flow over the HTTP API with a fresh
+// one-time token and returns the node id and key.
+func (s *stack) pairWithToken(name string) (nodeID, key string) {
+	s.t.Helper()
+	raw, _, err := s.svc.Nodes().CreateToken(context.Background())
+	require.NoError(s.t, err)
+	resp, err := NewClient(s.apiSrv.URL, "").Pair(context.Background(), PairInput{
+		Token: raw, Name: name, OS: "linux", Arch: "amd64",
+	})
+	require.NoError(s.t, err)
+	require.Equal(s.t, "approved", resp.Status)
+	require.NotEmpty(s.t, resp.NodeKey)
+	return resp.NodeID, resp.NodeKey
+}
+
+// TestIntegrationTokenPairing is acceptance item 2: a worker with a valid
+// token is approved immediately, claims a job and completes it; the used
+// token is rejected with 401 afterwards.
+func TestIntegrationTokenPairing(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	target := flow.Default()
+	target.Video.Quality = flow.QualityMin
+	lib := s.createLibraryTarget(target, store.ResultPolicyReplaceIfSmaller)
+	origPath := s.copyFixtureIn(makeFatH264(t, s.ffmpeg), "movie.mkv")
+
+	res := s.scanSync(lib.ID)
+	_ = res
+
+	nodeID, key := s.pairWithToken("tokened-worker")
+	require.NotEmpty(t, nodeID)
+
+	// A second token pairs fine once, then is spent: the repeat is 401.
+	raw2, _, err := s.svc.Nodes().CreateToken(context.Background())
+	require.NoError(t, err)
+	_, err = NewClient(s.apiSrv.URL, "").Pair(context.Background(), PairInput{
+		Token: raw2, Name: "throwaway",
+	})
+	require.NoError(t, err)
+	_, err = NewClient(s.apiSrv.URL, "").Pair(context.Background(), PairInput{
+		Token: raw2, Name: "throwaway",
+	})
+	require.True(t, isAPIStatus(err, http.StatusUnauthorized), "used token must be 401, got %v", err)
+
+	// The paired worker claims and completes the job.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(func(c *Config) { c.Key = key }))
+
+	s.waitFor("job done by token-paired worker", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone && job.NodeID == nodeID
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status == store.FileStatusSatisfied
+	})
+	row := s.fileRow(lib.ID)
+	require.Equal(t, origPath, row.Path)
+	require.Greater(t, row.BytesSaved, int64(0))
+}
+
+// TestIntegrationApprovalPairing is acceptance item 3: a worker without a
+// token shows up pending, cannot claim, gets its key after the admin
+// approves it, and then completes a job.
+func TestIntegrationApprovalPairing(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	target := flow.Default()
+	target.Video.Quality = flow.QualityMin
+	lib := s.createLibraryTarget(target, store.ResultPolicyReplaceIfSmaller)
+	s.copyFixtureIn(makeFatH264(t, s.ffmpeg), "movie.mkv")
+	s.scanSync(lib.ID)
+
+	// The worker pairs without a token: EnsurePaired blocks in the poll
+	// loop until the admin approves.
+	paired := make(chan error, 1)
+	var pairKey, pairURL string
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		url, key, err := EnsurePaired(ctx, PairConfig{
+			ServerURL:    s.apiSrv.URL,
+			NodeName:     "approval-worker",
+			DataDir:      t.TempDir(),
+			PollInterval: 100 * time.Millisecond,
+			Log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		pairURL, pairKey = url, key
+		paired <- err
+	}()
+
+	// The pending node appears.
+	var pendingID string
+	s.waitFor("pending node appears", func() bool {
+		nodes, err := s.st.ListNodes(context.Background())
+		if err != nil {
+			return false
+		}
+		for _, n := range nodes {
+			if n.Name == "approval-worker" && n.Status == store.NodeStatusPending {
+				pendingID = n.ID
+				return true
+			}
+		}
+		return false
+	})
+
+	// Without a key the worker cannot claim: its request is 401.
+	_, err := NewClient(s.apiSrv.URL, "").Claim(context.Background())
+	require.True(t, isAPIStatus(err, http.StatusUnauthorized), "unpaired claim must be 401, got %v", err)
+
+	// The admin approves; EnsurePaired returns with the key.
+	_, err = s.svc.Nodes().Approve(context.Background(), pendingID)
+	require.NoError(t, err)
+	require.NoError(t, <-paired)
+	require.Equal(t, s.apiSrv.URL, pairURL)
+	require.NotEmpty(t, pairKey)
+
+	// The approved worker claims and completes.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	s.runWorker(ctx2, s.workerConfig(func(c *Config) { c.Key = pairKey }))
+	s.waitFor("job done by approved worker", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone && job.NodeID == pendingID
+	})
+}
+
+// TestIntegrationRevokeRequeuesForBuiltinWorker is acceptance item 4:
+// revoking a node kills its access (401), returns its running job to the
+// queue and the built-in worker finishes it.
+func TestIntegrationRevokeRequeuesForBuiltinWorker(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	lib := s.createLibrary(store.ResultPolicyReplaceIfSmaller)
+	s.copyFixtureIn(makeLongFixture(t, s.ffmpeg), "long.mkv")
+	s.scanSync(lib.ID)
+
+	// A remote node takes the job (the built-in worker only starts after
+	// the revoke, so the remote reliably gets it first).
+	nodeID, key := s.pairWithToken("doomed-worker")
+	ctxRemote, cancelRemote := context.WithCancel(context.Background())
+	defer cancelRemote()
+	s.runWorker(ctxRemote, s.workerConfig(func(c *Config) { c.Key = key }))
+
+	s.waitFor("remote node running the job", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusRunning && job.NodeID == nodeID
+	})
+
+	// Revoke: the key stops working, the running job returns to the queue.
+	_, err := s.svc.Nodes().Revoke(context.Background(), nodeID)
+	require.NoError(t, err)
+	s.waitFor("job requeued on revoke", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusQueued && job.Attempt == 1
+	})
+	_, err = NewClient(s.apiSrv.URL, key).Heartbeat(context.Background(), HeartbeatInput{})
+	require.True(t, isAPIStatus(err, http.StatusUnauthorized), "revoked node must get 401, got %v", err)
+
+	// The remote encode cannot apply anything anymore: stop it cleanly.
+	cancelRemote()
+
+	// The built-in worker (its key from the stack setup) finishes the job.
+	builtin, err := s.svc.Nodes().Authenticate(context.Background(), s.key)
+	require.NoError(t, err)
+	ctxBuiltin, cancelBuiltin := context.WithCancel(context.Background())
+	defer cancelBuiltin()
+	s.runWorker(ctxBuiltin, s.workerConfig(nil))
+
+	s.waitFor("job done by built-in worker", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone && job.NodeID == builtin.ID
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status == store.FileStatusSatisfied
+	})
+	row := s.fileRow(lib.ID)
+	require.Equal(t, store.FileStatusSatisfied, row.Status)
+}
+
+// TestIntegrationSharedModePathMapping is acceptance item 5: a node in
+// shared mode with a path mapping resolves the source path through it and
+// completes the job. On one machine the "different mount" is a symlink to
+// the same storage — different path, same bytes, exactly the shared-mount
+// semantics the mapping exists for.
+func TestIntegrationSharedModePathMapping(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	target := flow.Default()
+	target.Video.Quality = flow.QualityMin
+	lib := s.createLibraryTarget(target, store.ResultPolicyReplaceIfSmaller)
+	origPath := s.copyFixtureIn(makeFatH264(t, s.ffmpeg), "movie.mkv")
+
+	alias := filepath.Join(t.TempDir(), "alias")
+	require.NoError(t, os.Symlink(s.library, alias), "symlink must work on this platform")
+
+	nodeID, key := s.pairWithToken("mapped-worker")
+	mappings := fmt.Sprintf(`[{"server_path": %q, "node_path": %q}]`, s.library, alias)
+	_, err := s.svc.Nodes().Update(context.Background(), nodeID, server.NodeUpdateParams{
+		PathMappings: &mappings,
+	})
+	require.NoError(t, err)
+	s.scanSync(lib.ID)
+
+	// The job spec hands the node its own view of the source.
+	claimed, err := NewClient(s.apiSrv.URL, key).Claim(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	spec, err := NewClient(s.apiSrv.URL, key).JobSpec(context.Background(), claimed.ID)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(alias, "movie.mkv"), spec.SourcePath)
+	require.Equal(t, store.NodeAccessShared, spec.AccessMode)
+
+	// Hand the job back so the real worker can take it.
+	_, err = s.svc.Queue().Cancel(context.Background(), claimed.ID)
+	require.NoError(t, err)
+	_, err = s.svc.Queue().Retry(context.Background(), claimed.ID)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(func(c *Config) { c.Key = key }))
+
+	s.waitFor("mapped job done", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone && job.NodeID == nodeID
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status == store.FileStatusSatisfied
+	})
+
+	// The library row kept the server-side path, and the file behind it
+	// (shared storage: the alias points at the same directory) is the
+	// encoded output.
+	row := s.fileRow(lib.ID)
+	require.Equal(t, origPath, row.Path)
+	info, err := probe.Probe(context.Background(), "", row.Path)
+	require.NoError(t, err)
+	require.Equal(t, flow.CodecHEVC, info.Video[0].Codec)
+	require.Greater(t, row.BytesSaved, int64(0))
+}

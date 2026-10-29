@@ -235,11 +235,11 @@ func serve(args []string, version string) error {
 
 // runWorkerFlow pairs (when needed) and runs the worker loop until ctx is
 // done. It blocks, so a docker or systemd unit that starts the default
-// subcommand keeps a joined machine working across restarts. token is the
-// optional one-time pairing token from the join request (empty otherwise).
+// subcommand keeps a joined machine working across restarts. token, when
+// given, overrides cfg.Token (the join request carries it explicitly).
 func runWorkerFlow(ctx context.Context, cfg config.Config, logger *slog.Logger, token ...string) error {
-	pairToken := ""
-	if len(token) > 0 {
+	pairToken := cfg.Token
+	if len(token) > 0 && token[0] != "" {
 		pairToken = token[0]
 	}
 	serverURL, key, err := workerpkg.EnsurePaired(ctx, workerpkg.PairConfig{
