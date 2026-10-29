@@ -377,6 +377,8 @@ export interface Node {
   capabilities: NodeCapabilities | null
   access_mode: string
   path_mappings: PathMapping[] | null
+  /** Transfer speed cap in MB/s; 0 = unlimited (task 09). */
+  throughput_limit_mbps: number
   status: string
   enabled: boolean
   last_heartbeat_at?: string
@@ -421,6 +423,8 @@ export interface NodeUpdate {
   enabled?: boolean
   access_mode?: string
   path_mappings?: PathMapping[]
+  /** Transfer speed cap in MB/s; 0 = unlimited. */
+  throughput_limit_mbps?: number
 }
 
 export function updateNode(id: string, body: NodeUpdate): Promise<Node> {
