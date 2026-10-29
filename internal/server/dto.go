@@ -259,17 +259,17 @@ type ListResponse[T any] struct {
 // shared-storage check and reports the choice (task 09). ThroughputLimitMBs
 // caps transfer speed in MB/s (0 = unlimited).
 type JobSpec struct {
-	ID                string      `json:"id"`
-	FileID            string      `json:"file_id"`
-	LibraryID         string      `json:"library_id"`
-	Attempt           int         `json:"attempt"`
-	Target            flow.Target `json:"target"`
-	SourcePath        string      `json:"source_path"`
-	SourceSize        int64       `json:"source_size"`
-	SourceMtime       int64       `json:"source_mtime"`
-	Fingerprint       string      `json:"fingerprint"`
-	AccessMode        string      `json:"access_mode"`
-	ResultPolicy      string      `json:"result_policy"`
-	BytesBefore       int64       `json:"bytes_before"`
-	ThroughputLimitMBs int64      `json:"throughput_limit_mbps"`
+	ID                 string      `json:"id"`
+	FileID             string      `json:"file_id"`
+	LibraryID          string      `json:"library_id"`
+	Attempt            int         `json:"attempt"`
+	Target             flow.Target `json:"target"`
+	SourcePath         string      `json:"source_path"`
+	SourceSize         int64       `json:"source_size"`
+	SourceMtime        int64       `json:"source_mtime"`
+	Fingerprint        string      `json:"fingerprint"`
+	AccessMode         string      `json:"access_mode"`
+	ResultPolicy       string      `json:"result_policy"`
+	BytesBefore        int64       `json:"bytes_before"`
+	ThroughputLimitMBs int64       `json:"throughput_limit_mbps"`
 }

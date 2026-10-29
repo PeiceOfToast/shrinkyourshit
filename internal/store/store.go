@@ -94,12 +94,12 @@ type Job struct {
 	Error           string
 	// AccessMode is how the node actually reached the source: shared or
 	// transfer. Empty until the node reports it (task 09).
-	AccessMode string
-	ClaimedAt  time.Time
-	StartedAt  time.Time
-	FinishedAt time.Time
+	AccessMode  string
+	ClaimedAt   time.Time
+	StartedAt   time.Time
+	FinishedAt  time.Time
 	HeartbeatAt time.Time
-	CreatedAt  time.Time
+	CreatedAt   time.Time
 }
 
 // Node statuses (ARCHITECTURE.md; do not add values without updating it).
@@ -118,9 +118,9 @@ const (
 
 // Node is a registered worker machine.
 type Node struct {
-	ID           string
-	Name         string
-	KeyHash      string
+	ID      string
+	Name    string
+	KeyHash string
 	// KeyOnce holds the raw key between admin approval and the node's
 	// first retrieval (pairing flow, task 08). It is wiped on first
 	// retrieval, revoke and delete — afterwards only the hash remains.

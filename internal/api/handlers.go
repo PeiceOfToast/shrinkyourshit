@@ -22,13 +22,13 @@ import (
 // Target and Easy may be present: Easy is the easy-screen input the server
 // compiles into a Target (and stores verbatim for round-tripping).
 type libraryBody struct {
-	Name         string             `json:"name"`
-	Path         string             `json:"path"`
-	Target       *flow.Target       `json:"target"`
+	Name         string              `json:"name"`
+	Path         string              `json:"path"`
+	Target       *flow.Target        `json:"target"`
 	Easy         *flow.EasyModeInput `json:"easy"`
-	Watch        bool               `json:"watch"`
-	Schedule     string             `json:"schedule"`
-	ResultPolicy string             `json:"result_policy"`
+	Watch        bool                `json:"watch"`
+	Schedule     string              `json:"schedule"`
+	ResultPolicy string              `json:"result_policy"`
 }
 
 // listLibraries returns every library.

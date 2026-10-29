@@ -114,18 +114,18 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		return
 	}
 	writeJSON(w, http.StatusOK, server.JobSpec{
-		ID:           job.ID,
-		FileID:       f.ID,
-		LibraryID:    lib.ID,
-		Attempt:      job.Attempt,
-		Target:       target,
-		SourcePath:   server.ResolveNodePath(node, f.Path),
-		SourceSize:   f.Size,
-		SourceMtime:  f.Mtime,
-		Fingerprint:  f.Fingerprint,
-		AccessMode:   effectiveAccessMode(node),
-		ResultPolicy: lib.ResultPolicy,
-		BytesBefore:  job.BytesBefore,
+		ID:                 job.ID,
+		FileID:             f.ID,
+		LibraryID:          lib.ID,
+		Attempt:            job.Attempt,
+		Target:             target,
+		SourcePath:         server.ResolveNodePath(node, f.Path),
+		SourceSize:         f.Size,
+		SourceMtime:        f.Mtime,
+		Fingerprint:        f.Fingerprint,
+		AccessMode:         effectiveAccessMode(node),
+		ResultPolicy:       lib.ResultPolicy,
+		BytesBefore:        job.BytesBefore,
 		ThroughputLimitMBs: node.ThroughputLimit,
 	})
 }

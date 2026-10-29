@@ -22,7 +22,6 @@ func writeTestFile(t *testing.T, path, content string) int64 {
 	return info.Size()
 }
 
-
 func TestExtractFilesListsScratchSubs(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "output.mkv"), "x")
