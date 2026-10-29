@@ -22,14 +22,17 @@ type API struct {
 	// through the server services.
 	st  store.Store
 	log *slog.Logger
+	// logins rate-limits failed login attempts per IP (task 06).
+	logins *loginLimiter
 }
 
 // New builds the root HTTP handler. version is reported by /api/v1/health;
 // static is the built web UI (web/dist), served at / with an index.html
 // fallback for unknown non-API paths so client-side routing works. svc holds
-// the server services; task 06 replaces requireAdmin with real session auth.
+// the server services; requireAdmin enforces session auth (open when login
+// is disabled).
 func New(version string, static fs.FS, svc *server.Server) http.Handler {
-	a := &API{svc: svc, log: slog.Default()}
+	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter()}
 	if svc != nil {
 		a.st = svc.Store()
 	}
@@ -38,6 +41,16 @@ func New(version string, static fs.FS, svc *server.Server) http.Handler {
 	mux.HandleFunc("GET /api/v1/health", health(version))
 
 	if svc != nil {
+		// First-run setup and login stay open; requireAdmin is applied to
+		// every other admin route (task 06).
+		mux.HandleFunc("GET /api/v1/setup/status", a.setupStatus)
+		mux.HandleFunc("POST /api/v1/setup", a.completeSetup)
+		mux.HandleFunc("POST /api/v1/auth/login", a.login)
+		mux.HandleFunc("POST /api/v1/auth/logout", a.requireAdmin(a.logout))
+		mux.HandleFunc("GET /api/v1/auth/me", a.requireAdmin(a.me))
+		mux.HandleFunc("GET /api/v1/settings", a.requireAdmin(a.getSettings))
+		mux.HandleFunc("PUT /api/v1/settings", a.requireAdmin(a.putSettings))
+
 		mux.HandleFunc("GET /api/v1/libraries", a.requireAdmin(a.listLibraries))
 		mux.HandleFunc("POST /api/v1/libraries", a.requireAdmin(a.createLibrary))
 		mux.HandleFunc("GET /api/v1/libraries/{id}", a.requireAdmin(a.getLibrary))
@@ -66,12 +79,10 @@ func New(version string, static fs.FS, svc *server.Server) http.Handler {
 	return mux
 }
 
-// requireAdmin is the admin-auth middleware. Task 03 ships it as a no-op
-// placeholder: task 06 fills in session-cookie checks here (and every
-// admin endpoint is already wrapped, so nothing else changes).
-func (a *API) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
-	return next
-}
+// requireAdmin lives in auth.go: it passes requests through when login is
+// disabled and otherwise demands a valid sys_session cookie. Every admin
+// route above is wrapped; /setup/*, /auth/login, /health and the /worker/*
+// node routes (node-key auth) are registered unwrapped.
 
 // healthResponse is the /api/v1/health body (API.md, task 01).
 type healthResponse struct {

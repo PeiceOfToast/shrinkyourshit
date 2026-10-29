@@ -103,11 +103,11 @@ func TestSettingsPasswordChangeRequiresCurrent(t *testing.T) {
 	}))
 
 	// Wrong current password.
-	err := s.Update(ctx, h.auth, Update{CurrentPassword: "wrong", NewPassword: "new"})
+	err := s.Update(ctx, h.auth, Update{CurrentPassword: "wrong", Password: "new"})
 	require.ErrorIs(t, err, ErrPasswordMismatch)
 
 	// Correct current password.
-	require.NoError(t, s.Update(ctx, h.auth, Update{CurrentPassword: "old", NewPassword: "new"}))
+	require.NoError(t, s.Update(ctx, h.auth, Update{CurrentPassword: "old", Password: "new"}))
 	_, err = h.auth.Login(ctx, "admin", "new")
 	require.NoError(t, err)
 }

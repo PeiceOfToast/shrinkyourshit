@@ -150,12 +150,13 @@ type Update struct {
 	// username (when none is stored) and a password in the same request.
 	LoginEnabled *bool
 	Username     string
-	Password     string
 
-	// Password change (only when login is enabled): the current password
-	// must verify. An empty NewPassword keeps the existing password.
+	// Password: the initial password when enabling login, or a password
+	// change when login is already on. A change requires CurrentPassword
+	// to verify (login enabled) and never passes through here in clear
+	// text further than to the auth service.
+	Password        string
 	CurrentPassword string
-	NewPassword     string
 }
 
 // Update validates and applies a settings change. The auth service carries
@@ -203,13 +204,11 @@ func (s *Settings) Update(ctx context.Context, auth *Auth, u Update) error {
 
 	if u.LoginEnabled == nil {
 		// No login change; a password change may still be requested.
-		if u.NewPassword != "" {
-			if err := auth.ChangePassword(ctx, ChangePasswordParams{
+		if u.Password != "" {
+			return auth.ChangePassword(ctx, ChangePasswordParams{
 				CurrentPassword: u.CurrentPassword,
-				NewPassword:     u.NewPassword,
-			}); err != nil {
-				return err
-			}
+				NewPassword:     u.Password,
+			})
 		}
 		return nil
 	}
@@ -234,13 +233,11 @@ func (s *Settings) Update(ctx context.Context, auth *Auth, u Update) error {
 		}
 	default:
 		// Login state unchanged; still apply a password change if asked.
-		if u.NewPassword != "" {
-			if err := auth.ChangePassword(ctx, ChangePasswordParams{
+		if u.Password != "" {
+			return auth.ChangePassword(ctx, ChangePasswordParams{
 				CurrentPassword: u.CurrentPassword,
-				NewPassword:     u.NewPassword,
-			}); err != nil {
-				return err
-			}
+				NewPassword:     u.Password,
+			})
 		}
 	}
 	return nil
