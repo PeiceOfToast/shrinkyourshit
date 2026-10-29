@@ -53,6 +53,10 @@ type fakeAPI struct {
 	heartbeats   []HeartbeatInput
 	concurrency  int
 	authFailures int
+	// runningWaits holds channels closed once a heartbeat reports the job
+	// id as running; tests block the fake run on one to synchronize with
+	// the heartbeat loop instead of sleeping.
+	runningWaits map[string]chan struct{}
 	// Transfer endpoints (task 09): per-job source payloads, assembled
 	// uploads, canned access-check challenges and scripted upload status
 	// overrides.
@@ -89,6 +93,7 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		uploads:     map[string][]byte{},
 		challenges:  map[string]*AccessChallenge{},
 		uploadState: map[string]*uploadCapture{},
+		runningWaits: map[string]chan struct{}{},
 	}
 	mux := http.NewServeMux()
 	guard := func(next http.HandlerFunc) http.HandlerFunc {
@@ -109,6 +114,14 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		f.mu.Lock()
 		f.heartbeats = append(f.heartbeats, in)
 		c := f.concurrency
+		// Release tests blocked on a job id this heartbeat reports as
+		// running. Delete before close so it can never close twice.
+		for _, id := range in.RunningJobIDs {
+			if ch, ok := f.runningWaits[id]; ok {
+				delete(f.runningWaits, id)
+				close(ch)
+			}
+		}
 		f.mu.Unlock()
 		if c < 1 {
 			c = 1
@@ -310,6 +323,20 @@ func (f *fakeAPI) heartbeatHadRunningJob(jobID string) bool {
 		}
 	}
 	return false
+}
+
+// notifyWhenRunning returns a channel that is closed once a recorded
+// heartbeat reports jobID as running. A test's fake run can wait on it so
+// the job cannot finish before a heartbeat has carried its id.
+func (f *fakeAPI) notifyWhenRunning(jobID string) <-chan struct{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ch, ok := f.runningWaits[jobID]
+	if !ok {
+		ch = make(chan struct{})
+		f.runningWaits[jobID] = ch
+	}
+	return ch
 }
 
 // setSource wires the fake source endpoint for a job.

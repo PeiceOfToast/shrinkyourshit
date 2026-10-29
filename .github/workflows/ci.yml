@@ -69,7 +69,11 @@ jobs:
           docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -version \
             | grep -E -- '--enable-nvenc'
           docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -version \
-            | grep -E -- '--enable-(libmfx|vpl|qsv)'
+            | grep -E -- '--enable-libvpl'
+          docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -hide_banner -encoders \
+            | grep -w 'h264_qsv'
+          docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -hide_banner -encoders \
+            | grep -w 'h264_nvenc'
       - name: Image serves the UI and the health endpoint
         run: |
           container=$(docker run -d -p 8765:8765 shrinkyourshit:ci)
