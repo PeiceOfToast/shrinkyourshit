@@ -233,6 +233,35 @@ func TestWorkerFailEndpoint(t *testing.T) {
 	require.Equal(t, store.FileStatusFailed, file.Status)
 }
 
+func TestWorkerProgressOnCancelledJobStillReportsStatus(t *testing.T) {
+	h := newAPIHarness(t)
+	key, _ := h.addNode(t, "w1", store.NodeStatusApproved, true)
+	_, _, _ = h.queueOne(t)
+
+	rec := h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, key)
+	var job server.JobDTO
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &job))
+
+	// An admin cancels the job while the worker encodes.
+	_, err := h.svc.Queue().Cancel(context.Background(), job.ID)
+	require.NoError(t, err)
+
+	// The next progress poll must answer 200 with the terminal status, not
+	// 409 — otherwise the worker never learns to stop the encode.
+	rec = h.doNode(http.MethodPost, "/api/v1/worker/jobs/"+job.ID+"/progress",
+		map[string]any{"percent": 50.0}, key)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var out struct {
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Equal(t, store.JobStatusCancelled, out.Status)
+	// The late progress must not resurrect the cancelled job.
+	after, err := h.st.GetJob(context.Background(), job.ID)
+	require.NoError(t, err)
+	require.Equal(t, store.JobStatusCancelled, after.Status)
+}
+
 func TestWorkerOwnershipEnforced(t *testing.T) {
 	h := newAPIHarness(t)
 	keyA, _ := h.addNode(t, "wA", store.NodeStatusApproved, true)

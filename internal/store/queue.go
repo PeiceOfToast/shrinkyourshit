@@ -144,3 +144,23 @@ func (j *Job) clone() *Job {
 	c := *j
 	return &c
 }
+
+// UpdateJobIfActive applies j's fields only while the job is still
+// claimed or running. A worker report that arrives after the job was
+// cancelled (admin), failed (attempt cap) or finished elsewhere must not
+// resurrect it. Returns false when the update did not apply.
+func (s *SQLite) UpdateJobIfActive(ctx context.Context, j *Job) (bool, error) {
+	if err := validateJobStatus(j.Status); err != nil {
+		return false, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ?
+		WHERE id = ? AND status IN (?, ?)`,
+		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error,
+		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt),
+		j.ID, JobStatusClaimed, JobStatusRunning)
+	if err != nil {
+		return false, fmt.Errorf("store: guarded job update: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}

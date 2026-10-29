@@ -142,7 +142,9 @@ type ProgressParams struct {
 // Progress records a running worker's progress. The first report moves the
 // job from claimed to running and stamps started_at; every report refreshes
 // the job heartbeat, so the sweeper only requeues genuinely dead workers.
-// Only the claiming node may report.
+// Only the claiming node may report. The write is guarded: a report racing
+// a cancel cannot resurrect the cancelled job — the caller then gets the
+// fresh job back with ErrJobNotActive.
 func (q *Queue) Progress(ctx context.Context, jobID, nodeID string, p ProgressParams) (*store.Job, error) {
 	job, err := q.ownedActiveJob(ctx, jobID, nodeID)
 	if err != nil {
@@ -161,12 +163,25 @@ func (q *Queue) Progress(ctx context.Context, jobID, nodeID string, p ProgressPa
 		job.Status = store.JobStatusRunning
 		job.StartedAt = now
 	}
-	if err := q.st.UpdateJob(ctx, job); err != nil {
+	applied, err := q.st.UpdateJobIfActive(ctx, job)
+	if err != nil {
 		return nil, fmt.Errorf("queue: progress job: %w", err)
+	}
+	if !applied {
+		return q.refreshed(ctx, job)
 	}
 
 	q.publish(EventJobUpdated, NewJobDTO(job))
 	return job, nil
+}
+
+// refreshed re-reads a job after a guarded write did not apply, so callers
+// can see the terminal status that beat them.
+func (q *Queue) refreshed(ctx context.Context, job *store.Job) (*store.Job, error) {
+	if fresh, err := q.st.GetJob(ctx, job.ID); err == nil {
+		return fresh, ErrJobNotActive
+	}
+	return nil, ErrJobNotActive
 }
 
 // CompleteParams are the fields a worker reports on success. OutputPath is
@@ -212,8 +227,15 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	job.ETASeconds = 0
 	job.FinishedAt = now
 	job.HeartbeatAt = now
-	if err := q.st.UpdateJob(ctx, job); err != nil {
+	applied, err := q.st.UpdateJobIfActive(ctx, job)
+	if err != nil {
 		return nil, fmt.Errorf("queue: complete job: %w", err)
+	}
+	if !applied {
+		// The job left the active state while we were finishing (a cancel
+		// raced the last second). Do not touch the file: disk state
+		// self-heals on the next scan.
+		return q.refreshed(ctx, job)
 	}
 
 	f, err := q.st.GetFile(ctx, job.FileID)
@@ -228,7 +250,9 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	// keeps pointing at the original (its fingerprint and probe are still
 	// valid, so rescans skip it instead of reprocessing forever).
 	policy := store.ResultPolicyReplaceIfSmaller
-	if lib, err := q.st.GetLibrary(ctx, job.LibraryID); err == nil && lib.ResultPolicy != "" {
+	if lib, err := q.st.GetLibrary(ctx, job.LibraryID); err != nil {
+		q.log.Error("queue: complete policy lookup", "library", job.LibraryID, "err", err)
+	} else if lib.ResultPolicy != "" {
 		policy = lib.ResultPolicy
 	}
 	keepBoth := policy == store.ResultPolicyKeepBoth && p.SkippedReason == ""
@@ -314,8 +338,12 @@ func (q *Queue) Fail(ctx context.Context, jobID, nodeID string, p FailParams) (*
 	job.Log = capLogTail(p.LogTail)
 	job.FinishedAt = now
 	job.HeartbeatAt = now
-	if err := q.st.UpdateJob(ctx, job); err != nil {
+	applied, err := q.st.UpdateJobIfActive(ctx, job)
+	if err != nil {
 		return nil, fmt.Errorf("queue: fail job: %w", err)
+	}
+	if !applied {
+		return q.refreshed(ctx, job)
 	}
 
 	if f, ferr := q.st.GetFile(ctx, job.FileID); ferr == nil {

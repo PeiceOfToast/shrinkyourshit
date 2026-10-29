@@ -182,20 +182,13 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 }
 
 // reportLoop sends progress on a fixed ticker and watches for cancellation:
-// a progress response carrying a cancelled job kills the encode within the
-// tick interval.
+// a progress response carrying a terminal job status kills the encode
+// within the tick interval. The first report goes out immediately, so a
+// claimed job flips to running (and starts refreshing its heartbeat) as
+// soon as the encode begins.
 func (r *runner) reportLoop(stop <-chan struct{}, runCtx context.Context, spec *server.JobSpec,
 	state *progressState, srcDuration float64, cancelled *atomic.Bool, cancelRun context.CancelFunc) {
-	ticker := time.NewTicker(r.cfg.progressInterval())
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-runCtx.Done():
-			return
-		case <-ticker.C:
-		}
+	report := func() bool {
 		out, speed, _ := state.snapshot()
 		in := ProgressInput{Speed: speed, Encoder: r.tracker.current()}
 		if srcDuration > 0 && out > 0 {
@@ -211,15 +204,46 @@ func (r *runner) reportLoop(stop <-chan struct{}, runCtx context.Context, spec *
 		if err != nil {
 			// A blip must not kill the job; the next tick retries.
 			r.log.Debug("worker: progress report", "job", spec.ID, "err", err)
-			continue
+			return false
 		}
-		if status == store.JobStatusCancelled {
-			r.log.Info("worker: job cancelled, stopping encode", "job", spec.ID)
+		if jobTerminal(status) {
+			r.log.Info("worker: job left the active state, stopping encode",
+				"job", spec.ID, "status", status)
 			cancelled.Store(true)
 			cancelRun()
+			return true
+		}
+		return false
+	}
+
+	if report() {
+		return
+	}
+	ticker := time.NewTicker(r.cfg.progressInterval())
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-runCtx.Done():
+			return
+		case <-ticker.C:
+		}
+		if report() {
 			return
 		}
 	}
+}
+
+// jobTerminal reports whether a job status means the runner must stop:
+// cancelled (admin), failed (sweeper at the attempt cap) or done (another
+// report path closed it).
+func jobTerminal(status string) bool {
+	switch status {
+	case store.JobStatusCancelled, store.JobStatusFailed, store.JobStatusDone:
+		return true
+	}
+	return false
 }
 
 // execEncode runs one ffmpeg attempt with live progress parsing.

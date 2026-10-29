@@ -44,6 +44,14 @@ func (a *API) nodeAuth(next func(w http.ResponseWriter, r *http.Request, node *s
 	}
 }
 
+// workerCtx detaches a worker request from its HTTP context. These calls
+// record the outcome of work that already happened (a claim, a completed
+// encode); they must persist even when the worker disconnects mid-request,
+// or a cancelled completion would leave a file stuck in processing.
+func workerCtx(r *http.Request) context.Context {
+	return context.WithoutCancel(r.Context())
+}
+
 // heartbeatBody is the POST /api/v1/worker/heartbeat request (API.md):
 // the node's detected capabilities and the ids of its claimed/running jobs.
 type heartbeatBody struct {
@@ -60,7 +68,7 @@ func (a *API) workerHeartbeat(w http.ResponseWriter, r *http.Request, node *stor
 		return
 	}
 	caps := strings.TrimSpace(string(body.Capabilities))
-	concurrency, err := a.svc.Nodes().Heartbeat(r.Context(), node, caps, body.RunningJobIDs)
+	concurrency, err := a.svc.Nodes().Heartbeat(workerCtx(r), node, caps, body.RunningJobIDs)
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -70,7 +78,7 @@ func (a *API) workerHeartbeat(w http.ResponseWriter, r *http.Request, node *stor
 
 // workerClaim returns the next queued job for this node, or 204.
 func (a *API) workerClaim(w http.ResponseWriter, r *http.Request, node *store.Node) {
-	job, err := a.svc.Queue().Claim(r.Context(), node.ID)
+	job, err := a.svc.Queue().Claim(workerCtx(r), node.ID)
 	if errors.Is(err, store.ErrQueueEmpty) {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -130,8 +138,7 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 	})
 }
 
-// progressBody is the POST .../progress request (API.md). The response
-// carries the job's current status so the worker can detect a cancel.
+// progressBody is the POST .../progress request (API.md).
 type progressBody struct {
 	Percent    float64 `json:"percent"`
 	Speed      float64 `json:"speed"`
@@ -139,19 +146,29 @@ type progressBody struct {
 	Encoder    string  `json:"encoder"`
 }
 
-// workerProgress records encode progress.
+// workerProgress records encode progress. The response carries the job's
+// current status so the worker can detect a cancel — including a job that
+// left the active state while it encoded (cancelled, failed, done): those
+// return 200 with the terminal status instead of 409, or the worker would
+// never learn it should stop.
 func (a *API) workerProgress(w http.ResponseWriter, r *http.Request, node *store.Node) {
 	body, err := decode[progressBody](r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	job, err := a.svc.Queue().Progress(r.Context(), r.PathValue("id"), node.ID, server.ProgressParams{
+	job, err := a.svc.Queue().Progress(workerCtx(r), r.PathValue("id"), node.ID, server.ProgressParams{
 		Percent:    body.Percent,
 		Speed:      body.Speed,
 		ETASeconds: body.ETASeconds,
 		Encoder:    body.Encoder,
 	})
+	if err != nil && errors.Is(err, server.ErrJobNotActive) {
+		if j, gerr := a.st.GetJob(workerCtx(r), r.PathValue("id")); gerr == nil && j.NodeID == node.ID {
+			writeJSON(w, http.StatusOK, map[string]string{"status": j.Status})
+			return
+		}
+	}
 	if a.queueError(w, err) {
 		return
 	}
@@ -178,7 +195,7 @@ func (a *API) workerComplete(w http.ResponseWriter, r *http.Request, node *store
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	job, err := a.svc.Queue().Complete(r.Context(), r.PathValue("id"), node.ID, server.CompleteParams{
+	job, err := a.svc.Queue().Complete(workerCtx(r), r.PathValue("id"), node.ID, server.CompleteParams{
 		OutputPath:      body.OutputPath,
 		BytesAfter:      body.BytesAfter,
 		Encoder:         body.Encoder,
@@ -205,7 +222,7 @@ func (a *API) workerFail(w http.ResponseWriter, r *http.Request, node *store.Nod
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	job, err := a.svc.Queue().Fail(r.Context(), r.PathValue("id"), node.ID, server.FailParams{
+	job, err := a.svc.Queue().Fail(workerCtx(r), r.PathValue("id"), node.ID, server.FailParams{
 		Error:   body.Error,
 		LogTail: body.LogTail,
 	})

@@ -89,8 +89,10 @@ Request/response details beyond the table:
   effective mode; `auto` resolves to `shared` until the shared-storage
   check arrives with task 09.
 - `POST /api/v1/worker/jobs/{id}/progress` — response
-  `{"status": "<job status>"}`; the worker polls it and treats `cancelled`
-  as the kill signal.
+  `{"status": "<job status>"}`; the worker polls it and stops the encode
+  when the status is terminal (`cancelled`, `failed`, `done`). A job that
+  left the active state while it was encoding answers 200 with its terminal
+  status (not 409), so the worker always learns it should stop.
 - `POST /api/v1/worker/jobs/{id}/complete` — also accepts
   `skipped_reason` (set when the result policy kept the original, e.g. the
   output was not smaller) and `log_tail` (stored on the job, capped at
