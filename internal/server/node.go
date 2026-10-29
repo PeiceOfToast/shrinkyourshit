@@ -226,12 +226,11 @@ func (r *NodeRegistry) Heartbeat(ctx context.Context, node *store.Node, capabili
 			continue
 		}
 		job.HeartbeatAt = now
-		if applied, err := r.st.UpdateJobIfActive(ctx, job); err != nil {
+		// UpdateJobIfActive only applies while the job is still claimed or
+		// running: a heartbeat racing a cancel or finish cannot resurrect
+		// it, and a refused update simply ends this iteration.
+		if _, err := r.st.UpdateJobIfActive(ctx, job); err != nil {
 			r.log.Error("node: running job heartbeat", "job", job.ID, "err", err)
-		} else if !applied {
-			// The job left the active state; the heartbeat must not
-			// resurrect it.
-			continue
 		}
 	}
 

@@ -14,19 +14,11 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
-// nodeContextKey carries the authenticated node through the request.
-type nodeContextKey struct{}
-
-// nodeFromRequest returns the node the auth middleware resolved.
-func nodeFromRequest(r *http.Request) *store.Node {
-	node, _ := r.Context().Value(nodeContextKey{}).(*store.Node)
-	return node
-}
-
 // nodeAuth guards the worker API: Authorization: Bearer <node-key>, hashed
 // and looked up in the nodes table; the node must be approved and enabled
 // (API.md). Node endpoints never accept session cookies and admin
-// endpoints never accept node keys.
+// endpoints never accept node keys. The resolved node is passed to the
+// handler.
 func (a *API) nodeAuth(next func(w http.ResponseWriter, r *http.Request, node *store.Node)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -39,8 +31,7 @@ func (a *API) nodeAuth(next func(w http.ResponseWriter, r *http.Request, node *s
 			a.internal(w, err)
 			return
 		}
-		ctx := context.WithValue(r.Context(), nodeContextKey{}, node)
-		next(w, r.WithContext(ctx), node)
+		next(w, r, node)
 	}
 }
 

@@ -324,7 +324,7 @@ type trackedEncoder struct {
 }
 
 func (e *trackedEncoder) BuildArgs(spec encoders.Spec) []string {
-	e.t.setCurrent(e.Encoder.Name())
+	e.t.setCurrent(e.Name())
 	return e.Encoder.BuildArgs(spec)
 }
 
