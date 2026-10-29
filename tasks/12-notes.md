@@ -26,14 +26,20 @@ Files, in touch order:
 
 ## Acceptance verification
 
-- [ ] `npm run e2e` at all three viewports for all five pages
-- [ ] deliberately broken layout fails the overflow assertion (scratch commit), recorded in `tasks/hermes-log.md`, reverted
-- [ ] CI runs e2e on every PR, green on the task branch
-- [ ] at 390 px the file table renders as cards (Playwright assertion)
-- [ ] `make e2e` documented in README, works on a clean checkout
+- [x] `npm run e2e` at all three viewports for all five pages (local: 48 passed, 3 conditional skips; CI run 40969686304 green, files seeded)
+- [x] deliberately broken layout fails the overflow assertion (scratch commit 4cfaedb), recorded in `tasks/hermes-log.md`, reverted (3901189)
+- [x] CI runs e2e on every PR, green on the task branch (run 40969686304, e2e job 2m04s)
+- [x] at 390 px the file table renders as cards (Playwright phone test + vitest structural test)
+- [x] `make e2e` documented in README, works on a clean checkout (fresh npm ci, fresh browser download, fresh binary build)
+
+## Environment notes (fill-in at end)
+
+- The VM has no browser system libs and no sudo; chromium runs here with `LD_LIBRARY_PATH=/tmp/opencode/pwlibs/lib` (debs from `apt-get download` + `dpkg -x`, no root). Any normal machine uses `npx playwright install-deps chromium`; README says so.
+- `go test -tags=integration ./internal/worker` flaked once on TestNodeDrainFinishesCurrentJob under full parallel load; passes 3/3 in isolation and on a full rerun — pre-existing task-11 harness timing, not touched by this task.
+- The suite's first local run caught a real 99px horizontal overflow on `/encode` at 390px (`<select>` sizes to its longest option); fixed with `w-full` on full-width form controls (also applied to the other pages' forms).
 
 ## Summary (end of run)
 
-- Built: card layout for the file table under `sm`, deliberate wrapping for long text, `data-testid="app-shell"`, a Playwright suite (3 viewports x 5 pages: overflow, shell coverage, nav reachability + file-table card check), a self-managed server fixture that drives the real Go binary (or an external one for CI), a CI `e2e` job, a `make e2e` target and README docs.
-- Skipped: visual-diff baselines, tab bar, accessibility checks (out of scope per task file).
-- Next task should know: `@playwright/test` is in web devDependencies; the e2e suite is driven by `SHRINK_E2E_BASE_URL` (external server) or starts `bin/shrinkyourshit` itself; seeded library id is exported from global setup via `process.env.SHRINK_E2E_LIBRARY_ID`-style metadata in `web/e2e/fixtures.ts`.
+- Built: card layout for the file table under `sm` (label/value pairs for secondary columns), deliberate wrapping for long paths/reasons/node names, `w-full` on form controls, `data-testid="app-shell"`, the Playwright suite (3 viewports x 5 pages: overflow, shell coverage, nav reachability + file-table card checks), a server fixture that drives the real Go binary (or an external one for CI), a CI `e2e` job, `make e2e`, README docs. PR #13, CI green including e2e.
+- Skipped: visual-diff baselines, tab bar, accessibility checks (out of scope per task file); no job-log UI exists yet so "ffmpeg logs" needed no new handling beyond the wrapping rules.
+- Next task should know: `@playwright/test` is in web devDependencies; `npm run e2e` needs a built binary (`make e2e` does everything); the suite is driven by `SHRINK_E2E_BASE_URL` (external server) or starts `bin/shrinkyourshit` itself; the seeded library id is in `process.env.SHRINK_E2E_LIBRARY_ID` (set by `web/e2e/global-setup.ts`); vitest excludes `e2e/**`.
