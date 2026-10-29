@@ -10,11 +10,12 @@ import (
 
 // JobFilter narrows ListJobs. Empty fields mean "no filter".
 type JobFilter struct {
-	Status string
-	FileID string
-	NodeID string
-	Limit  int // 0 = no limit
-	Offset int
+	Status    string
+	FileID    string
+	LibraryID string
+	NodeID    string
+	Limit     int // 0 = no limit
+	Offset    int
 }
 
 // Store is the persistence interface. All access goes through it so the
@@ -54,12 +55,19 @@ type Store interface {
 	// RequeueStaleJobs returns claimed/running jobs whose heartbeat is
 	// older than cutoff to queued (attempt+1, claim fields cleared) or, at
 	// maxAttempts, fails them; it returns the jobs it transitioned.
+	// UpdateJobIfActive applies a job update only while the job is still
+	// claimed/running, so a late worker report can never resurrect a
+	// cancelled or finished job.
 	ClaimNextJob(ctx context.Context, nodeID string) (*Job, error)
 	RequeueStaleJobs(ctx context.Context, cutoff time.Time, maxAttempts int) ([]*Job, error)
+	UpdateJobIfActive(ctx context.Context, j *Job) (bool, error)
 
 	// Nodes.
 	CreateNode(ctx context.Context, n *Node) error
 	GetNode(ctx context.Context, id string) (*Node, error)
+	// GetNodeByKeyHash looks a node up by the SHA-256 hex hash of its raw
+	// key; raw keys are never stored.
+	GetNodeByKeyHash(ctx context.Context, keyHash string) (*Node, error)
 	ListNodes(ctx context.Context) ([]*Node, error)
 	UpdateNode(ctx context.Context, n *Node) error
 	DeleteNode(ctx context.Context, id string) error

@@ -297,6 +297,10 @@ func (s *SQLite) ListJobs(ctx context.Context, filter JobFilter) ([]*Job, error)
 		conds = append(conds, `file_id = ?`)
 		args = append(args, filter.FileID)
 	}
+	if filter.LibraryID != "" {
+		conds = append(conds, `library_id = ?`)
+		args = append(args, filter.LibraryID)
+	}
 	if filter.NodeID != "" {
 		conds = append(conds, `node_id = ?`)
 		args = append(args, filter.NodeID)
@@ -382,6 +386,24 @@ func (s *SQLite) CreateNode(ctx context.Context, n *Node) error {
 // GetNode returns one node or ErrNotFound.
 func (s *SQLite) GetNode(ctx context.Context, id string) (*Node, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+nodeColumns+` FROM nodes WHERE id = ?`, id)
+	if err != nil {
+		return nil, fmt.Errorf("store: query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return nil, ErrNotFound
+	}
+	n, err := scanNode(rows)
+	if err != nil {
+		return nil, fmt.Errorf("store: scan node: %w", err)
+	}
+	return n, nil
+}
+
+// GetNodeByKeyHash returns one node by the hash of its raw key, or
+// ErrNotFound.
+func (s *SQLite) GetNodeByKeyHash(ctx context.Context, keyHash string) (*Node, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+nodeColumns+` FROM nodes WHERE key_hash = ?`, keyHash)
 	if err != nil {
 		return nil, fmt.Errorf("store: query: %w", err)
 	}

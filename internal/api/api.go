@@ -51,6 +51,14 @@ func New(version string, static fs.FS, svc *server.Server) http.Handler {
 		mux.HandleFunc("POST /api/v1/jobs/{id}/retry", a.requireAdmin(a.retryJob))
 		mux.HandleFunc("GET /api/v1/events", a.requireAdmin(a.events))
 		mux.HandleFunc("GET /api/v1/fs/browse", a.requireAdmin(a.browse))
+
+		// Worker API (task 05): bearer node-key auth, never session cookies.
+		mux.HandleFunc("POST /api/v1/worker/heartbeat", a.nodeAuth(a.workerHeartbeat))
+		mux.HandleFunc("POST /api/v1/worker/claim", a.nodeAuth(a.workerClaim))
+		mux.HandleFunc("GET /api/v1/worker/jobs/{id}", a.nodeAuth(a.workerJobSpec))
+		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/progress", a.nodeAuth(a.workerProgress))
+		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/complete", a.nodeAuth(a.workerComplete))
+		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/fail", a.nodeAuth(a.workerFail))
 	}
 
 	mux.Handle("/api/", apiNotFound())
