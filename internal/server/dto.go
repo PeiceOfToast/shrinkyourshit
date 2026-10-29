@@ -214,6 +214,15 @@ type DiscoveredServer struct {
 	Version string `json:"version"`
 }
 
+// PairResponse is the POST /pair and GET /pair/{id} body (task 08). The
+// node key is only ever set on the response that first delivers it; it
+// never appears in any other payload or event.
+type PairResponse struct {
+	NodeID  string `json:"node_id"`
+	Status  string `json:"status"`
+	NodeKey string `json:"node_key,omitempty"`
+}
+
 // rfc3339 formats a time for JSON output; zero times become empty strings
 // (omitted by omitempty where it matters).
 func rfc3339(t time.Time) string {

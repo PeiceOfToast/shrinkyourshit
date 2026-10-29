@@ -25,13 +25,8 @@ type pairBody struct {
 	Capabilities json.RawMessage `json:"capabilities"`
 }
 
-// pairResponse is the POST /pair reply: the node id plus either the key
-// (token matched, node approved) or the pending status to poll.
-type pairResponse struct {
-	NodeID  string `json:"node_id"`
-	Status  string `json:"status"`
-	NodeKey string `json:"node_key,omitempty"`
-}
+// pairResponse is the POST /pair and GET /pair/{id} body (API.md task 08).
+type pairResponse = server.PairResponse
 
 // pair answers POST /pair.
 func (a *API) pair(w http.ResponseWriter, r *http.Request) {
