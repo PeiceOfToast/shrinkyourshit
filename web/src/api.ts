@@ -74,6 +74,10 @@ export interface SetupRequest {
   /** Join target and optional one-time pairing token (mode join). */
   server?: string
   token?: string
+  /** The wizard's explicit "start the built-in node now" choice
+   * (mode server, task 11). Default false: never start encoding because
+   * a wizard was completed. */
+  start_node?: boolean
 }
 
 export function completeSetup(body: SetupRequest): Promise<SetupStatus> {
@@ -379,6 +383,16 @@ export interface Node {
   path_mappings: PathMapping[] | null
   /** Transfer speed cap in MB/s; 0 = unlimited (task 09). */
   throughput_limit_mbps: number
+  /** Operator intent: stopped | running | draining (task 11). */
+  desired_state: string
+  /** stopped | running | draining | error (mirrors desired_state or error). */
+  effective_state: string
+  /** Parallel-job cap, 1 to 16 (task 11). */
+  concurrency: number
+  /** Why a lifecycle transition failed to apply; empty when healthy. */
+  state_error?: string
+  /** The oldest claimed/running job on this node; absent when idle. */
+  current_job_id?: string
   status: string
   enabled: boolean
   last_heartbeat_at?: string
@@ -387,6 +401,32 @@ export interface Node {
 
 export function getNodes(): Promise<ListResponse<Node>> {
   return api<ListResponse<Node>>('/api/v1/nodes')
+}
+
+/** Node lifecycle controls (task 11): start, stop, drain, pause everything. */
+export function startNode(id: string): Promise<Node> {
+  return api<Node>(`/api/v1/nodes/${id}/start`, { method: 'POST' })
+}
+
+export function stopNode(id: string, drain: boolean): Promise<Node> {
+  return api<Node>(`/api/v1/nodes/${id}/stop`, {
+    method: 'POST',
+    body: JSON.stringify({ drain }),
+  })
+}
+
+export function drainNode(id: string): Promise<Node> {
+  return api<Node>(`/api/v1/nodes/${id}/drain`, { method: 'POST' })
+}
+
+export function pauseAllNodes(): Promise<{ paused: number }> {
+  return api<{ paused: number }>('/api/v1/nodes/pause-all', { method: 'POST' })
+}
+
+export function resumeAllNodes(): Promise<{ resumed: number }> {
+  return api<{ resumed: number }>('/api/v1/nodes/resume-all', {
+    method: 'POST',
+  })
 }
 
 /** The one-time token and the ready-to-copy install commands. */
@@ -425,6 +465,9 @@ export interface NodeUpdate {
   path_mappings?: PathMapping[]
   /** Transfer speed cap in MB/s; 0 = unlimited. */
   throughput_limit_mbps?: number
+  /** Parallel-job cap, 1 to 16 (task 11). Lifecycle moves only through
+   * the start/stop/drain endpoints, never through this. */
+  concurrency?: number
 }
 
 export function updateNode(id: string, body: NodeUpdate): Promise<Node> {

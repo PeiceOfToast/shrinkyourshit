@@ -11,6 +11,9 @@ export interface WizardState {
   username: string
   password: string
   confirm: string
+  /** Task 11: the wizard's explicit start choice. Default false —
+   * a completed wizard never begins encoding on its own. */
+  startNode: boolean
 }
 
 export const initialWizardState: WizardState = {
@@ -20,6 +23,7 @@ export const initialWizardState: WizardState = {
   username: '',
   password: '',
   confirm: '',
+  startNode: false,
 }
 
 /**

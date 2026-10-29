@@ -18,12 +18,18 @@ function nodeFixture(overrides: Record<string, unknown> = {}) {
     name: 'worker-a',
     os: 'linux',
     arch: 'amd64',
-    capabilities: { encoders: [{ name: 'cpu', codecs: ['hevc'] }] },
+    capabilities: {
+      encoders: [{ name: 'cpu', codecs: ['hevc'] }],
+      ffmpeg_version: 'ffmpeg version 6.0',
+    },
     access_mode: 'auto',
     path_mappings: [],
     throughput_limit_mbps: 0,
     status: 'approved',
     enabled: true,
+    desired_state: 'running',
+    effective_state: 'running',
+    concurrency: 1,
     created_at: '2026-10-29T00:00:00Z',
     ...overrides,
   }
@@ -297,6 +303,189 @@ describe('NodesPage', () => {
       expect(
         mock.calls('POST', /\/api\/v1\/nodes\/node-1\/revoke$/).length,
       ).toBeGreaterThan(0),
+    )
+  })
+
+  it('renders the lifecycle pill and starts a stopped node (task 11)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            nodeFixture({
+              desired_state: 'stopped',
+              effective_state: 'stopped',
+            }),
+          ],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/node-1\/start$/,
+        body: nodeFixture(),
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-lifecycle-node-1'))
+    expect(screen.getByTestId('node-lifecycle-node-1')).toHaveTextContent(
+      'Stopped',
+    )
+    // The primary toggle is Start while stopped.
+    expect(screen.getByTestId('node-start-node-1')).toBeInTheDocument()
+    expect(screen.queryByTestId('node-stop-node-1')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('node-start-node-1'))
+    await waitFor(() =>
+      expect(
+        mock.calls('POST', /\/api\/v1\/nodes\/node-1\/start$/).length,
+      ).toBeGreaterThan(0),
+    )
+  })
+
+  it('stops a running node, drain unchecked by default (task 11)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/node-1\/stop$/,
+        body: nodeFixture({
+          desired_state: 'stopped',
+          effective_state: 'stopped',
+        }),
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-lifecycle-node-1'))
+    expect(screen.getByTestId('node-lifecycle-node-1')).toHaveTextContent(
+      'Running',
+    )
+    expect(screen.getByTestId('node-drain-node-1')).not.toBeChecked()
+
+    // Stop now: drain false goes in the body.
+    fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    await waitFor(() => {
+      const calls = mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls[0].body).toEqual({ drain: false })
+    })
+  })
+
+  it('sends drain: true when finishing the current job first is checked (task 11)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/node-1\/stop$/,
+        body: nodeFixture({
+          desired_state: 'draining',
+          effective_state: 'draining',
+        }),
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-drain-node-1'))
+    fireEvent.click(screen.getByTestId('node-drain-node-1'))
+    fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    await waitFor(() => {
+      const calls = mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls[0].body).toEqual({ drain: true })
+    })
+  })
+
+  it('steps concurrency between 1 and 16 (task 11)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture({ concurrency: 1 })], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/nodes\/node-1$/,
+        bodyFn: (ctx) => ({
+          ...nodeFixture(),
+          ...(ctx.body as Record<string, unknown>),
+        }),
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-concurrency-node-1'))
+    // Down is disabled at the floor of 1.
+    expect(screen.getByTestId('node-concurrency-down-node-1')).toBeDisabled()
+    expect(screen.getByTestId('node-concurrency-node-1')).toHaveTextContent('1')
+
+    fireEvent.click(screen.getByTestId('node-concurrency-up-node-1'))
+    await waitFor(() => {
+      const puts = mock.calls('PUT', /\/api\/v1\/nodes\/node-1$/)
+      expect(puts.length).toBeGreaterThan(0)
+      expect(puts[0].body).toMatchObject({ concurrency: 2 })
+    })
+  })
+
+  it('shows the error pill with the recorded reason (task 11)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            nodeFixture({
+              effective_state: 'error',
+              state_error: 'pause-all: disk went away',
+            }),
+          ],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-lifecycle-node-1'))
+    expect(screen.getByTestId('node-lifecycle-node-1')).toHaveTextContent(
+      'Error',
+    )
+    expect(screen.getByTestId('node-state-error-node-1')).toHaveTextContent(
+      'pause-all: disk went away',
     )
   })
 
