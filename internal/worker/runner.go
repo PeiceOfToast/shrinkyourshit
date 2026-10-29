@@ -143,7 +143,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		return fail("output verification failed: %v", err)
 	}
 
-	applied, err := applyResultPolicy(ctx, spec.ResultPolicy, output, spec.SourcePath,
+	applied, err := server.ApplyResultPolicy(ctx, spec.ResultPolicy, output, spec.SourcePath,
 		st.Size(), spec.BytesBefore, r.sc.extractFiles(dir, "output"))
 	if err != nil {
 		if cancelled.Load() || ctx.Err() != nil {

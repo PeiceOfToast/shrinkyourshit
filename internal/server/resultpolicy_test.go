@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package worker
+package server
 
 import (
 	"context"
@@ -53,7 +53,7 @@ func writeTestFile(t *testing.T, path, content string) int64 {
 
 func TestPolicyReplaceIfSmallerSkips(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	res, err := applyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
+	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
 		p.output, p.original, p.outSize, p.origSize, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.SkipReason)
@@ -67,7 +67,7 @@ func TestPolicyReplaceIfSmallerSkips(t *testing.T) {
 
 func TestPolicyReplaceIfSmallerReplaces(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	res, err := applyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
+	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
 		p.output, p.original, p.origSize-1, p.origSize, nil)
 	require.NoError(t, err)
 	require.Empty(t, res.SkipReason)
@@ -88,7 +88,7 @@ func TestPolicyReplaceIfSmallerReplaces(t *testing.T) {
 
 func TestPolicyReplaceSameExtensionRemovesNothing(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mkv")
-	res, err := applyResultPolicy(context.Background(), store.ResultPolicyReplace,
+	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplace,
 		p.output, p.original, p.outSize, p.origSize, nil)
 	require.NoError(t, err)
 	require.Equal(t, p.original, res.FinalPath) // replaced in place
@@ -99,7 +99,7 @@ func TestPolicyReplaceSameExtensionRemovesNothing(t *testing.T) {
 
 func TestPolicyKeepBoth(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	res, err := applyResultPolicy(context.Background(), store.ResultPolicyKeepBoth,
+	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyKeepBoth,
 		p.output, p.original, p.outSize, p.origSize, []string{p.extract})
 	require.NoError(t, err)
 	require.Empty(t, res.SkipReason)
@@ -121,7 +121,7 @@ func TestPolicyKeepBoth(t *testing.T) {
 
 func TestPolicyExtractsFollowRenamedOutput(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	res, err := applyResultPolicy(context.Background(), store.ResultPolicyReplace,
+	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplace,
 		p.output, p.original, p.outSize, p.origSize, []string{p.extract})
 	require.NoError(t, err)
 	extracted, err := os.ReadFile(filepath.Join(p.dir, "library", "movie.eng.srt"))
@@ -135,7 +135,7 @@ func TestPolicyExtractsFollowRenamedOutput(t *testing.T) {
 
 func TestPolicyExtractsDroppedWhenSkipped(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	res, err := applyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
+	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
 		p.output, p.original, p.origSize+5, p.origSize, []string{p.extract})
 	require.NoError(t, err)
 	require.NotEmpty(t, res.SkipReason)
@@ -146,43 +146,6 @@ func TestPolicyExtractsDroppedWhenSkipped(t *testing.T) {
 
 func TestPolicyUnknownPolicy(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	_, err := applyResultPolicy(context.Background(), "wat", p.output, p.original, 1, 1, nil)
+	_, err := ApplyResultPolicy(context.Background(), "wat", p.output, p.original, 1, 1, nil)
 	require.ErrorContains(t, err, "unknown result policy")
-}
-
-func TestExtractFilesListsScratchSubs(t *testing.T) {
-	dir := t.TempDir()
-	writeTestFile(t, filepath.Join(dir, "output.mkv"), "x")
-	writeTestFile(t, filepath.Join(dir, "output.eng.srt"), "a")
-	writeTestFile(t, filepath.Join(dir, "output.eng.2.srt"), "b")
-	writeTestFile(t, filepath.Join(dir, "output.ger.srt"), "c")
-	writeTestFile(t, filepath.Join(dir, "other.eng.srt"), "d") // not our base
-
-	s := newScratch(t.TempDir())
-	files := s.extractFiles(dir, "output")
-	require.Len(t, files, 3)
-}
-
-func TestScratchCleanupOrphans(t *testing.T) {
-	root := t.TempDir()
-	s := newScratch(root)
-	dir, err := s.ensure("job-a")
-	require.NoError(t, err)
-	writeTestFile(t, filepath.Join(dir, "source.mkv"), "x")
-	writeTestFile(t, filepath.Join(root, "stray"), "y")
-
-	s.cleanupOrphans()
-	entries, err := os.ReadDir(root)
-	require.NoError(t, err)
-	require.Empty(t, entries)
-}
-
-func TestScratchRemoveJob(t *testing.T) {
-	s := newScratch(t.TempDir())
-	dir, err := s.ensure("job-a")
-	require.NoError(t, err)
-	writeTestFile(t, filepath.Join(dir, "f"), "x")
-	s.remove("job-a")
-	_, err = os.Stat(dir)
-	require.True(t, os.IsNotExist(err))
 }
