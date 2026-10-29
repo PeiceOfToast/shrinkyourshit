@@ -215,8 +215,8 @@ func (a *API) workerFail(w http.ResponseWriter, r *http.Request, node *store.Nod
 	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
 }
 
-// ownedJob loads the job and enforces that this node owns it and that it is
-// still active.
+// ownedJob loads the job and enforces that it is active and owned by this
+// node (the status check comes first: a queued job has no owner yet).
 func (a *API) ownedJob(w http.ResponseWriter, r *http.Request, node *store.Node) (*store.Job, bool) {
 	job, err := a.st.GetJob(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
@@ -227,12 +227,12 @@ func (a *API) ownedJob(w http.ResponseWriter, r *http.Request, node *store.Node)
 		a.internal(w, err)
 		return nil, false
 	}
-	if job.NodeID != node.ID {
-		writeError(w, http.StatusForbidden, "not_job_owner", "this node does not own the job")
-		return nil, false
-	}
 	if job.Status != store.JobStatusClaimed && job.Status != store.JobStatusRunning {
 		writeError(w, http.StatusConflict, "job_not_active", "job is not claimed or running")
+		return nil, false
+	}
+	if job.NodeID != node.ID {
+		writeError(w, http.StatusForbidden, "not_job_owner", "this node does not own the job")
 		return nil, false
 	}
 	return job, true

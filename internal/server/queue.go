@@ -223,6 +223,16 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	f.LastJobID = job.ID
 	f.BytesSaved = f.Size - p.BytesAfter
 
+	// The result policy decides what completion means for the file row.
+	// keep_both wrote a sidecar beside the untouched original; the row
+	// keeps pointing at the original (its fingerprint and probe are still
+	// valid, so rescans skip it instead of reprocessing forever).
+	policy := store.ResultPolicyReplaceIfSmaller
+	if lib, err := q.st.GetLibrary(ctx, job.LibraryID); err == nil && lib.ResultPolicy != "" {
+		policy = lib.ResultPolicy
+	}
+	keepBoth := policy == store.ResultPolicyKeepBoth && p.SkippedReason == ""
+
 	if p.SkippedReason != "" {
 		// The original was kept: nothing on disk changed, so the
 		// fingerprint and probe stay valid and the next scan skips it.
@@ -236,33 +246,39 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 		return job, nil
 	}
 
-	// The output is the file's new identity. Drop any row a racing scan
-	// created for the new path first, so (library_id, path) stays unique.
-	if err := q.dropDuplicateFiles(ctx, f.LibraryID, p.OutputPath, f.ID); err != nil {
-		q.log.Error("queue: complete dedupe", "file", f.ID, "err", err)
-	}
-
-	res, inspectErr := q.inspect(ctx, q.ffprobe, p.OutputPath)
-	if inspectErr != nil {
-		// The output could not be inspected (deleted mid-job, or a future
-		// transfer-mode node). Record the failure on the file; the next
-		// scan re-evaluates from disk.
-		q.log.Error("queue: complete inspect", "path", p.OutputPath, "err", inspectErr)
-		f.Status = store.FileStatusFailed
-		f.SatisfiedReason = "output could not be verified: " + inspectErr.Error()
-		if err := q.st.UpdateFile(ctx, f); err != nil {
-			return job, fmt.Errorf("queue: complete failed file: %w", err)
+	// The output becomes the file's new identity — except for keep_both,
+	// whose output is a sidecar beside the original.
+	if !keepBoth {
+		// Drop any row a racing scan created for the new path first, so
+		// (library_id, path) stays unique.
+		if err := q.dropDuplicateFiles(ctx, f.LibraryID, p.OutputPath, f.ID); err != nil {
+			q.log.Error("queue: complete dedupe", "file", f.ID, "err", err)
 		}
-		q.finishEvents(job, f)
-		return job, nil
-	}
 
-	f.Path = p.OutputPath
-	f.Size = res.Size
-	f.Mtime = res.Mtime
-	f.Fingerprint = res.Fingerprint
-	if raw, err := json.Marshal(res.Info); err == nil {
-		f.ProbeJSON = string(raw)
+		res, inspectErr := q.inspect(ctx, q.ffprobe, p.OutputPath)
+		if inspectErr != nil {
+			// The output could not be inspected (deleted mid-job, or a
+			// future transfer-mode node). Record the failure on the file;
+			// the next scan re-evaluates from disk.
+			q.log.Error("queue: complete inspect", "path", p.OutputPath, "err", inspectErr)
+			f.Status = store.FileStatusFailed
+			f.SatisfiedReason = "output could not be verified: " + inspectErr.Error()
+			if err := q.st.UpdateFile(ctx, f); err != nil {
+				return job, fmt.Errorf("queue: complete failed file: %w", err)
+			}
+			q.finishEvents(job, f)
+			return job, nil
+		}
+
+		f.Path = p.OutputPath
+		f.Size = res.Size
+		f.Mtime = res.Mtime
+		f.Fingerprint = res.Fingerprint
+		if raw, err := json.Marshal(res.Info); err == nil {
+			f.ProbeJSON = string(raw)
+		}
+	} else {
+		f.BytesSaved = 0 // disk usage did not shrink; the original is still there
 	}
 	f.Status = store.FileStatusSatisfied
 	f.SatisfiedReason = ""

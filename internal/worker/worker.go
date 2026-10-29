@@ -167,21 +167,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 // Run starts the worker loops and blocks until ctx is done.
 func (w *Worker) Run(ctx context.Context) error {
-	// Hardware detection (task 04) is cached per process. A worker whose
-	// detection fails keeps running: encodes fail with clear errors instead
-	// of taking the whole process down (a role-both serve must keep
-	// serving the API).
-	caps, err := encoders.DetectAll(ctx, w.cfg.FFmpegPath)
-	if err != nil {
-		w.log.Error("worker: hardware detection failed; encodes will fail until ffmpeg is usable", "err", err)
-		w.capsJSON = json.RawMessage(`{}`)
-	} else {
-		w.caps = caps
-		w.runner.caps = caps
-		w.capsJSON = w.capabilitiesPayload(caps)
-		w.log.Info("worker: hardware detected",
-			"encoders", encoderNames(caps), "ffmpeg", w.cfg.FFmpegOrPath())
-	}
+	w.detect(ctx)
 
 	// Scratch leftovers belong to jobs of a dead worker process; the
 	// server requeues those through the heartbeat timeout.
@@ -209,6 +195,31 @@ func (w *Worker) Run(ctx context.Context) error {
 	<-hbDone
 	w.log.Info("worker stopped")
 	return nil
+}
+
+// detect runs hardware detection (task 04) unless the config preseeds it
+// (tests). Detection is cached per process. A worker whose detection fails
+// keeps running: encodes fail with clear errors instead of taking the whole
+// process down (a role-both serve must keep serving the API).
+func (w *Worker) detect(ctx context.Context) {
+	if w.cfg.Capabilities != nil {
+		w.caps = *w.cfg.Capabilities
+		w.runner.caps = *w.cfg.Capabilities
+		w.capsJSON = w.capabilitiesPayload(*w.cfg.Capabilities)
+		w.log.Info("worker: capabilities preset", "encoders", encoderNames(*w.cfg.Capabilities))
+		return
+	}
+	caps, err := encoders.DetectAll(ctx, w.cfg.FFmpegPath)
+	if err != nil {
+		w.log.Error("worker: hardware detection failed; encodes will fail until ffmpeg is usable", "err", err)
+		w.capsJSON = json.RawMessage(`{}`)
+		return
+	}
+	w.caps = caps
+	w.runner.caps = caps
+	w.capsJSON = w.capabilitiesPayload(caps)
+	w.log.Info("worker: hardware detected",
+		"encoders", encoderNames(caps), "ffmpeg", w.cfg.FFmpegOrPath())
 }
 
 // capabilitiesPayload assembles the full capabilities shape. The ffmpeg
