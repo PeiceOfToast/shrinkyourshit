@@ -18,8 +18,11 @@ import {
   RemoveSubtitlesCheckbox,
 } from './easyControls'
 import { parseEasy } from './easyModel'
+import ErrorBox from './ErrorBox'
 import FolderPickerModal from './FolderPickerModal'
 import PageContainer from './PageContainer'
+import { SkeletonRows } from './skeleton'
+import { useToast } from './toastContext'
 
 const CODEC_CHOICES = [
   { value: 'hevc', label: 'HEVC (H.265) — recommended' },
@@ -53,6 +56,7 @@ export default function LibraryEditPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const client = useQueryClient()
+  const toast = useToast()
 
   const library = useQuery({
     queryKey: ['library', id],
@@ -72,17 +76,28 @@ export default function LibraryEditPage() {
   const save = useMutation({
     mutationFn: (body: LibraryBody) => updateLibrary(id, body),
     onSuccess: () => {
+      toast.success('Library saved.')
       void client.invalidateQueries({ queryKey: ['library'] })
       void client.invalidateQueries({ queryKey: ['libraries'] })
       void navigate(`/libraries/${id}`)
     },
+    onError: (err: unknown) => toast.failure('Saving the library failed', err),
   })
 
   if (library.isPending) {
-    return <p className="text-slate-400">Loading library…</p>
+    return (
+      <PageContainer className="space-y-6" data-testid="library-edit-loading">
+        <h1 className="text-2xl font-bold">Edit library</h1>
+        <SkeletonRows rows={4} />
+      </PageContainer>
+    )
   }
   if (library.isError || !library.data) {
-    return <p className="text-red-400">Cannot load this library.</p>
+    return (
+      <PageContainer className="space-y-6" data-testid="library-edit">
+        <ErrorBox title="Cannot load this library." error={library.error} />
+      </PageContainer>
+    )
   }
   const lib = library.data
   const hasEasy = lib.easy != null
@@ -362,13 +377,11 @@ export default function LibraryEditPage() {
       </section>
 
       {save.isError && (
-        <p
-          className="text-sm text-red-400"
-          role="status"
-          data-testid="library-edit-error"
-        >
-          {(save.error as Error).message}
-        </p>
+        <ErrorBox
+          title="Saving the library failed."
+          error={save.error}
+          testId="library-edit-error"
+        />
       )}
 
       <div className="flex gap-2">

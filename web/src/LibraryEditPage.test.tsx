@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Target } from './api'
 import LibraryEditPage from './LibraryEditPage'
+import { ToastProvider } from './toast'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
 
 function library(easy: unknown) {
@@ -47,11 +48,13 @@ function renderPage() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/libraries/lib-1/edit']}>
-        <Routes>
-          <Route path="/libraries/:id/edit" element={<LibraryEditPage />} />
-        </Routes>
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/libraries/lib-1/edit']}>
+          <Routes>
+            <Route path="/libraries/:id/edit" element={<LibraryEditPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }

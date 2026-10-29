@@ -14,6 +14,7 @@ import { meKey, useMarkSetupComplete } from './queries'
 import { RedirectWhenSetupComplete } from './guards'
 import SetupWizard from './SetupWizard'
 import { initialWizardState, type WizardState } from './wizardModel'
+import { useToast } from './toastContext'
 
 export default function SetupPage() {
   return (
@@ -28,6 +29,7 @@ function SetupFlow() {
   const navigate = useNavigate()
   const client = useQueryClient()
   const markSetupComplete = useMarkSetupComplete()
+  const toast = useToast()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [joinedServer, setJoinedServer] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
@@ -47,6 +49,7 @@ function SetupFlow() {
       if (status.mode === 'join') {
         // This machine is switching to worker mode; the local UI goes
         // away. Tell the user what happens instead of navigating.
+        toast.success(`Joining ${status.server ?? 'the server'} as a helper.`)
         setJoinedServer(status.server ?? 'the server')
         return
       }
@@ -67,6 +70,7 @@ function SetupFlow() {
       }
     },
     onError: (error: Error) => {
+      toast.failure('Setup failed', error)
       setSubmitError(error.message)
       setJoining(false)
     },

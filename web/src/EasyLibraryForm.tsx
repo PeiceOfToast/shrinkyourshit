@@ -10,12 +10,14 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { createLibrary, type Library } from './api'
 import { initialEasyValue, toEasyInput, type EasyFormValue } from './easyModel'
+import ErrorBox from './ErrorBox'
 import {
   AudioSlider,
   QualitySlider,
   RemoveSubtitlesCheckbox,
 } from './easyControls'
 import FolderPickerModal from './FolderPickerModal'
+import { useToast } from './toastContext'
 
 export default function EasyLibraryForm({
   initial,
@@ -26,6 +28,7 @@ export default function EasyLibraryForm({
   onSaved?: (lib: Library) => void
   submitLabel?: string
 }) {
+  const toast = useToast()
   const [value, setValue] = useState<EasyFormValue>({
     ...initialEasyValue,
     ...initial,
@@ -41,7 +44,11 @@ export default function EasyLibraryForm({
         easy: toEasyInput(value),
         watch: value.watch,
       }),
-    onSuccess: (lib) => onSaved?.(lib),
+    onSuccess: (lib) => {
+      toast.success('Folder added. The first scan is running.')
+      onSaved?.(lib)
+    },
+    onError: (err: unknown) => toast.failure('Adding the folder failed', err),
   })
 
   return (
@@ -103,13 +110,11 @@ export default function EasyLibraryForm({
       </section>
 
       {create.isError && (
-        <p
-          className="text-sm text-red-400"
-          role="status"
-          data-testid="easy-error"
-        >
-          {(create.error as Error).message}
-        </p>
+        <ErrorBox
+          title="Adding the folder failed."
+          error={create.error}
+          testId="easy-error"
+        />
       )}
 
       <button

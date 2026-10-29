@@ -6,12 +6,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { login, type ApiError } from './api'
 import { meKey, useSetupStatus } from './queries'
+import { useToast } from './toastContext'
 
 export default function LoginPage() {
   const status = useSetupStatus()
   const navigate = useNavigate()
   const location = useLocation()
   const client = useQueryClient()
+  const toast = useToast()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -24,6 +26,7 @@ export default function LoginPage() {
       void navigate(from && from !== '/login' ? from : '/', { replace: true })
     },
     onError: (err: ApiError) => {
+      toast.failure('Login failed', err)
       setError(
         err.status === 429
           ? 'Too many attempts. Try again in a minute.'

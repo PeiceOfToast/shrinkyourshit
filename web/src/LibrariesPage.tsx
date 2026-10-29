@@ -52,7 +52,8 @@ export default function LibrariesPage() {
       toast.success('Library removed. The files on disk are untouched.')
       refresh()
     },
-    onError: (err: unknown) => toast.failure('Removing the library failed', err),
+    onError: (err: unknown) =>
+      toast.failure('Removing the library failed', err),
   })
 
   const countsFor = (lib: Library): LibraryStats | undefined =>

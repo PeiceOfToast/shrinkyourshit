@@ -89,9 +89,7 @@ export default function LibraryDetailPage() {
     mutationFn: async () => {
       const failed = await getFiles(id, { status: 'failed', limit: 1000 })
       const ids = [
-        ...new Set(
-          failed.items.map((f) => f.last_job_id).filter(Boolean),
-        ),
+        ...new Set(failed.items.map((f) => f.last_job_id).filter(Boolean)),
       ]
       for (const jobId of ids) {
         try {
@@ -124,7 +122,12 @@ export default function LibraryDetailPage() {
 
   // A page past the end (files removed under us) falls back to page 0.
   useEffect(() => {
-    if (files.data && page > 0 && files.data.items.length === 0 && files.data.total > 0) {
+    if (
+      files.data &&
+      page > 0 &&
+      files.data.items.length === 0 &&
+      files.data.total > 0
+    ) {
       setPage(0)
     }
   }, [files.data, page])
@@ -219,7 +222,9 @@ export default function LibraryDetailPage() {
           className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-50"
           data-testid="retry-failed"
         >
-          {retry.isPending ? 'Retrying…' : `Retry failed (${failedOnPage.length})`}
+          {retry.isPending
+            ? 'Retrying…'
+            : `Retry failed (${failedOnPage.length})`}
         </button>
       </div>
 
@@ -368,7 +373,8 @@ export default function LibraryDetailPage() {
                 </select>
               </label>
               <span data-testid="files-page-info">
-                Page {page + 1} of {pages} · {total} file{total === 1 ? '' : 's'}
+                Page {page + 1} of {pages} · {total} file
+                {total === 1 ? '' : 's'}
               </span>
             </div>
             <div className="flex gap-2">
@@ -413,8 +419,8 @@ export default function LibraryDetailPage() {
             <span className="break-all text-slate-100">
               {truncateMiddle(toCancel.path, 64)}
             </span>{' '}
-            stops. The partially encoded temporary file is thrown away, the
-            job goes back to waiting, and the original file is never touched.
+            stops. The partially encoded temporary file is thrown away, the job
+            goes back to waiting, and the original file is never touched.
           </p>
         </ConfirmDialog>
       )}

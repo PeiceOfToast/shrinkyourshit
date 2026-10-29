@@ -21,6 +21,7 @@ import {
 import PageContainer from './PageContainer'
 import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
 import { formatBytes, formatEta, statusLabel } from './easyModel'
+import { Skeleton, SkeletonRows, SkeletonStatCards } from './skeleton'
 
 function progressWidth(percent: number): string {
   return `${Math.max(0, Math.min(100, percent))}%`
@@ -131,7 +132,7 @@ function NodeActivityList({
   jobs: Job[]
 }) {
   if (nodesPending) {
-    return <p className="text-sm text-slate-400">Loading…</p>
+    return <SkeletonRows rows={2} />
   }
   if (nodes.length === 0) {
     return (
@@ -231,53 +232,66 @@ export default function DashboardPage() {
 
       <Warnings warnings={warnings} />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div
-          className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-          data-testid="stat-space-saved"
-        >
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Space saved
-          </p>
-          <p className="mt-1 text-xl font-bold text-emerald-400">
-            {formatBytes(stats.data?.bytes_saved ?? 0)}
-          </p>
+      {stats.isPending ? (
+        <SkeletonStatCards />
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div
+            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
+            data-testid="stat-space-saved"
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              Space saved
+            </p>
+            <p className="mt-1 text-xl font-bold text-emerald-400">
+              {formatBytes(stats.data?.bytes_saved ?? 0)}
+            </p>
+          </div>
+          <div
+            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
+            data-testid="stat-files"
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              Files
+            </p>
+            <p className="mt-1 text-xl font-bold">{stats.data?.files ?? 0}</p>
+          </div>
+          <div
+            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
+            data-testid="stat-satisfied"
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              Nothing to do
+            </p>
+            <p className="mt-1 text-xl font-bold">
+              {stats.data?.satisfied ?? 0}
+            </p>
+          </div>
+          <div
+            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
+            data-testid="stat-queued"
+          >
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              Waiting
+            </p>
+            <p className="mt-1 text-xl font-bold">{stats.data?.queued ?? 0}</p>
+          </div>
         </div>
-        <div
-          className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-          data-testid="stat-files"
-        >
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Files
-          </p>
-          <p className="mt-1 text-xl font-bold">{stats.data?.files ?? 0}</p>
-        </div>
-        <div
-          className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-          data-testid="stat-satisfied"
-        >
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Nothing to do
-          </p>
-          <p className="mt-1 text-xl font-bold">{stats.data?.satisfied ?? 0}</p>
-        </div>
-        <div
-          className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-          data-testid="stat-queued"
-        >
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            Waiting
-          </p>
-          <p className="mt-1 text-xl font-bold">{stats.data?.queued ?? 0}</p>
-        </div>
-      </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
           <h2 className="font-semibold">Working now</h2>
           <div className="mt-4">
             {jobs.isPending ? (
-              <p className="text-sm text-slate-400">Loading…</p>
+              <div
+                role="status"
+                aria-label="Loading"
+                data-testid="jobs-skeleton"
+              >
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="mt-2 h-5 w-full" />
+              </div>
             ) : (
               <ActiveJobs jobs={active} />
             )}

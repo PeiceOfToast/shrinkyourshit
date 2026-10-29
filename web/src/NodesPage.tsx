@@ -5,6 +5,11 @@
  * at the top with Approve/Reject; "Add node" mints a one-time pairing
  * token and shows the three ready-to-copy install commands; the edit
  * dialog covers name, on/off, access mode and path mappings.
+ *
+ * Task 13: every mutation toasts, destructive actions confirm first with
+ * dialog text that says what happens (rejecting a node, stopping one mid
+ * job), and every dialog is a native <dialog> — Escape closes it and
+ * focus returns to the trigger.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -22,7 +27,12 @@ import {
   type Node,
   type PathMapping,
 } from './api'
+import ConfirmDialog from './ConfirmDialog'
+import ModalDialog from './dialog'
 import PageContainer from './PageContainer'
+import { SkeletonCard } from './skeleton'
+import { useToast } from './toastContext'
+import ErrorBox from './ErrorBox'
 
 const statusStyles: Record<string, string> = {
   pending: 'bg-amber-500/20 text-amber-300',
@@ -93,97 +103,103 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 function AddNodeDialog({ onClose }: { onClose: () => void }) {
-  const created = useMutation({ mutationFn: createNodeToken })
+  const toast = useToast()
+  const created = useMutation({
+    mutationFn: createNodeToken,
+    onSuccess: () =>
+      toast.success('One-time code created. It expires in 24 hours.'),
+    onError: (err: unknown) =>
+      toast.failure('Creating the one-time code failed', err),
+  })
   const tok = created.data
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-label="Add a node"
-      data-testid="add-node-dialog"
+    <ModalDialog
+      onClose={onClose}
+      label="Add a node"
+      testId="add-node-dialog"
+      className="m-auto max-h-[90vh] w-full max-w-2xl overflow-auto rounded-2xl bg-slate-900 p-6 text-slate-100 shadow-xl ring-1 ring-slate-800"
     >
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Add a node</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Add a node</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+          data-testid="add-node-close"
+        >
+          Close
+        </button>
+      </div>
+
+      {!tok ? (
+        <div className="mt-4">
+          <p className="text-sm text-slate-400">
+            A one-time code lets one machine join this server without waiting
+            for approval. It is valid for 24 hours.
+          </p>
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-            data-testid="add-node-close"
+            onClick={() => created.mutate()}
+            disabled={created.isPending}
+            className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            data-testid="add-node-generate"
           >
-            Close
+            {created.isPending ? 'Generating…' : 'Generate install commands'}
           </button>
+          {created.isError && (
+            <p className="mt-2 text-sm text-red-400">
+              Could not create a code:{' '}
+              {(created.error as Error).message}
+            </p>
+          )}
         </div>
-
-        {!tok ? (
-          <div className="mt-4">
-            <p className="text-sm text-slate-400">
-              A one-time code lets one machine join this server without waiting
-              for approval. It is valid for 24 hours.
-            </p>
-            <button
-              type="button"
-              onClick={() => created.mutate()}
-              disabled={created.isPending}
-              className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-              data-testid="add-node-generate"
-            >
-              {created.isPending ? 'Generating…' : 'Generate install commands'}
-            </button>
-            {created.isError && (
-              <p className="mt-2 text-sm text-red-400">
-                Could not create a code: {created.error.message}
-              </p>
-            )}
+      ) : (
+        <div className="mt-4 space-y-4" data-testid="add-node-commands">
+          <p className="text-sm text-slate-400">
+            Run one of these on the other machine. The code works once and
+            expires {new Date(tok.expires_at).toLocaleString()}.
+          </p>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Docker
+              </span>
+              <CopyButton text={tok.commands.docker} label="docker" />
+            </div>
+            <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-200">
+              {tok.commands.docker}
+            </pre>
           </div>
-        ) : (
-          <div className="mt-4 space-y-4" data-testid="add-node-commands">
-            <p className="text-sm text-slate-400">
-              Run one of these on the other machine. The code works once and
-              expires {new Date(tok.expires_at).toLocaleString()}.
-            </p>
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Docker
-                </span>
-                <CopyButton text={tok.commands.docker} label="docker" />
-              </div>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-200">
-                {tok.commands.docker}
-              </pre>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Linux / macOS
+              </span>
+              <CopyButton text={tok.commands.shell} label="shell" />
             </div>
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Linux / macOS
-                </span>
-                <CopyButton text={tok.commands.shell} label="shell" />
-              </div>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-200">
-                {tok.commands.shell}
-              </pre>
-            </div>
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Windows (PowerShell)
-                </span>
-                <CopyButton text={tok.commands.powershell} label="powershell" />
-              </div>
-              <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-200">
-                {tok.commands.powershell}
-              </pre>
-            </div>
-            <p className="text-xs text-slate-500">
-              The machine appears here as soon as it asks to join. Without a
-              code it still can — you approve it below.
-            </p>
+            <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-200">
+              {tok.commands.shell}
+            </pre>
           </div>
-        )}
-      </div>
-    </div>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Windows (PowerShell)
+              </span>
+              <CopyButton text={tok.commands.powershell} label="powershell" />
+            </div>
+            <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-200">
+              {tok.commands.powershell}
+            </pre>
+          </div>
+          <p className="text-xs text-slate-500">
+            The machine appears here as soon as it asks to join. Without a code
+            it still can — you approve it below.
+          </p>
+        </div>
+      )}
+    </ModalDialog>
   )
 }
 
@@ -219,151 +235,147 @@ function EditNodeDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      role="dialog"
-      aria-label={`Edit ${node.name}`}
-      data-testid="edit-node-dialog"
+    <ModalDialog
+      onClose={onClose}
+      label={`Edit ${node.name}`}
+      testId="edit-node-dialog"
+      className="m-auto max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl bg-slate-900 p-6 text-slate-100 shadow-xl ring-1 ring-slate-800"
     >
-      <div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="text-lg font-semibold">Edit node</h2>
-        <label className="mt-4 grid gap-1">
-          <span className="text-sm text-slate-300">Name</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="edit-node-name"
-          />
-        </label>
-        <label className="mt-3 flex items-center gap-3">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            data-testid="edit-node-enabled"
-          />
-          <span>This node takes on work</span>
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">How it reaches files</span>
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="edit-node-access-mode"
-          >
-            {Object.entries(accessModeLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <h2 className="text-lg font-semibold">Edit node</h2>
+      <label className="mt-4 grid gap-1">
+        <span className="text-sm text-slate-300">Name</span>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded-lg bg-slate-800 px-3 py-2"
+          data-testid="edit-node-name"
+        />
+      </label>
+      <label className="mt-3 flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          data-testid="edit-node-enabled"
+        />
+        <span>This node takes on work</span>
+      </label>
+      <label className="mt-3 grid gap-1">
+        <span className="text-sm text-slate-300">How it reaches files</span>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value)}
+          className="w-full rounded-lg bg-slate-800 px-3 py-2"
+          data-testid="edit-node-access-mode"
+        >
+          {Object.entries(accessModeLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
 
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">Transfer speed limit</span>
-          <span className="text-xs text-slate-500">
-            Only used when files are sent over the network. 0 = no limit.
-          </span>
-          <input
-            type="number"
-            min={0}
-            value={limit}
-            onChange={(e) => setLimit(e.target.value)}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="edit-node-throughput"
-          />
-        </label>
+      <label className="mt-3 grid gap-1">
+        <span className="text-sm text-slate-300">Transfer speed limit</span>
+        <span className="text-xs text-slate-500">
+          Only used when files are sent over the network. 0 = no limit.
+        </span>
+        <input
+          type="number"
+          min={0}
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+          className="w-full rounded-lg bg-slate-800 px-3 py-2"
+          data-testid="edit-node-throughput"
+        />
+      </label>
 
-        <div className="mt-4">
-          <span className="text-sm text-slate-300">Folder paths</span>
-          <p className="mt-1 text-xs text-slate-500">
-            If this machine sees the same folders under different names (a NAS
-            mount), map them here: the path on the server and the path on this
-            node.
-          </p>
-          <div className="mt-2 space-y-2">
-            {mappings.map((row, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={row.server_path}
-                  placeholder="/media on the server"
-                  onChange={(e) => setRow(i, 'server_path', e.target.value)}
-                  className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
-                  data-testid={`mapping-server-${i}`}
-                />
-                <span className="text-slate-500">→</span>
-                <input
-                  type="text"
-                  value={row.node_path}
-                  placeholder="path on this node"
-                  onChange={(e) => setRow(i, 'node_path', e.target.value)}
-                  className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
-                  data-testid={`mapping-node-${i}`}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMappings((rows) => rows.filter((_, j) => j !== i))
-                  }
-                  className="rounded-lg px-2 py-1 text-sm text-red-400 hover:bg-slate-800"
-                  aria-label={`Remove mapping ${i + 1}`}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              setMappings((rows) => [
-                ...rows,
-                { server_path: '', node_path: '' },
-              ])
-            }
-            className="mt-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
-            data-testid="add-mapping"
-          >
-            Add a mapping
-          </button>
+      <div className="mt-4">
+        <span className="text-sm text-slate-300">Folder paths</span>
+        <p className="mt-1 text-xs text-slate-500">
+          If this machine sees the same folders under different names (a NAS
+          mount), map them here: the path on the server and the path on this
+          node.
+        </p>
+        <div className="mt-2 space-y-2">
+          {mappings.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={row.server_path}
+                placeholder="/media on the server"
+                aria-label={`Path on the server, mapping ${i + 1}`}
+                onChange={(e) => setRow(i, 'server_path', e.target.value)}
+                className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                data-testid={`mapping-server-${i}`}
+              />
+              <span className="text-slate-500">→</span>
+              <input
+                type="text"
+                value={row.node_path}
+                placeholder="path on this node"
+                aria-label={`Path on this node, mapping ${i + 1}`}
+                onChange={(e) => setRow(i, 'node_path', e.target.value)}
+                className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                data-testid={`mapping-node-${i}`}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setMappings((rows) => rows.filter((_, j) => j !== i))
+                }
+                className="rounded-lg px-2 py-1 text-sm text-red-400 hover:bg-slate-800"
+                aria-label={`Remove mapping ${i + 1}`}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
         </div>
-
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
-            data-testid="edit-node-cancel"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              onSave({
-                name: name.trim(),
-                enabled,
-                access_mode: mode,
-                path_mappings: mappings.filter(
-                  (m) =>
-                    m.server_path.trim() !== '' && m.node_path.trim() !== '',
-                ),
-                throughput_limit_mbps: Math.max(0, Number(limit) || 0),
-              })
-            }
-            disabled={busy || name.trim() === ''}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-            data-testid="edit-node-save"
-          >
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() =>
+            setMappings((rows) => [...rows, { server_path: '', node_path: '' }])
+          }
+          className="mt-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+          data-testid="add-mapping"
+        >
+          Add a mapping
+        </button>
       </div>
-    </div>
+
+      <div className="mt-6 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+          data-testid="edit-node-cancel"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onSave({
+              name: name.trim(),
+              enabled,
+              access_mode: mode,
+              path_mappings: mappings.filter(
+                (m) => m.server_path.trim() !== '' && m.node_path.trim() !== '',
+              ),
+              throughput_limit_mbps: Math.max(0, Number(limit) || 0),
+            })
+          }
+          disabled={busy || name.trim() === ''}
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          data-testid="edit-node-save"
+        >
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </ModalDialog>
   )
 }
 
@@ -379,24 +391,68 @@ function NodeRow({
   onEdit: (node: Node) => void
 }) {
   const client = useQueryClient()
+  const toast = useToast()
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ['nodes'] })
+    void client.invalidateQueries({ queryKey: ['jobs'] })
   }
-  const approve = useMutation({ mutationFn: approveNode, onSuccess: refresh })
-  const revoke = useMutation({ mutationFn: revokeNode, onSuccess: refresh })
-  const reject = useMutation({ mutationFn: deleteNode, onSuccess: refresh })
-  const start = useMutation({ mutationFn: startNode, onSuccess: refresh })
+  const approve = useMutation({
+    mutationFn: approveNode,
+    onSuccess: () => {
+      toast.success(`${node.name} approved.`)
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Approving failed', err),
+  })
+  const revoke = useMutation({
+    mutationFn: revokeNode,
+    onSuccess: () => {
+      toast.success(`${node.name} revoked. Its jobs return to the queue.`)
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Revoking failed', err),
+  })
+  const reject = useMutation({
+    mutationFn: deleteNode,
+    onSuccess: () => {
+      toast.success(`${node.name} rejected. Files on disk are untouched.`)
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Rejecting failed', err),
+  })
+  const start = useMutation({
+    mutationFn: startNode,
+    onSuccess: () => {
+      toast.success(`${node.name} started. It picks up queued files.`)
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Starting failed', err),
+  })
   const stop = useMutation({
     mutationFn: (args: { id: string; drain: boolean }) =>
       stopNode(args.id, args.drain),
-    onSuccess: refresh,
+    onSuccess: (_node, args) => {
+      toast.success(
+        args.drain
+          ? `${node.name} will stop after its current job.`
+          : `${node.name} stopped.`,
+      )
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Stopping failed', err),
   })
   const setConcurrency = useMutation({
     mutationFn: (args: { id: string; concurrency: number }) =>
       updateNode(args.id, { concurrency: args.concurrency }),
-    onSuccess: refresh,
+    onSuccess: (_node, args) => {
+      toast.success(`Parallel jobs set to ${args.concurrency}.`)
+      refresh()
+    },
+    onError: (err: unknown) =>
+      toast.failure('Changing parallel jobs failed', err),
   })
   const [drain, setDrain] = useState(false)
+  const [confirming, setConfirming] = useState<null | 'stop' | 'reject'>(null)
   const encoders = node.capabilities?.encoders ?? []
   const ffmpeg = node.capabilities?.ffmpeg_version
 
@@ -448,12 +504,12 @@ function NodeRow({
               </button>
               <button
                 type="button"
-                onClick={() => reject.mutate(node.id)}
+                onClick={() => setConfirming('reject')}
                 disabled={reject.isPending}
                 className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-slate-800 disabled:opacity-50"
                 data-testid={`node-reject-${node.id}`}
               >
-                Reject
+                {reject.isPending ? 'Rejecting…' : 'Reject'}
               </button>
             </>
           )}
@@ -496,7 +552,7 @@ function NodeRow({
               </label>
               <button
                 type="button"
-                onClick={() => stop.mutate({ id: node.id, drain })}
+                onClick={() => setConfirming('stop')}
                 disabled={stop.isPending}
                 className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                 data-testid={`node-stop-${node.id}`}
@@ -591,12 +647,63 @@ function NodeRow({
           {ffmpeg && <span className="text-xs text-slate-500">{ffmpeg}</span>}
         </div>
       )}
+
+      {confirming === 'stop' && (
+        <ConfirmDialog
+          title={`Stop ${node.name}?`}
+          confirmLabel="Stop node"
+          cancelLabel="Keep running"
+          busy={stop.isPending}
+          onConfirm={() => stop.mutate({ id: node.id, drain })}
+          onClose={() => setConfirming(null)}
+          testId={`node-stop-dialog-${node.id}`}
+          confirmTestId={`node-stop-confirm-${node.id}`}
+          cancelTestId={`node-stop-cancel-${node.id}`}
+        >
+          {drain ? (
+            <p>
+              {node.name} finishes the file it is working on first, then stops
+              and takes no new work. Nothing is deleted.
+            </p>
+          ) : currentJob ? (
+            <p>
+              The file being worked on right now stops mid-way. Its unfinished
+              temporary copy is thrown away, the job returns to the queue to try
+              again later, and the original file is never touched.
+            </p>
+          ) : (
+            <p>
+              {node.name} stops where it is and takes no new work. Queued files
+              wait until it is started again. Nothing is deleted.
+            </p>
+          )}
+        </ConfirmDialog>
+      )}
+      {confirming === 'reject' && (
+        <ConfirmDialog
+          title={`Reject ${node.name}?`}
+          confirmLabel="Reject node"
+          busy={reject.isPending}
+          onConfirm={() => reject.mutate(node.id)}
+          onClose={() => setConfirming(null)}
+          testId={`node-reject-dialog-${node.id}`}
+          confirmTestId={`node-reject-confirm-${node.id}`}
+          cancelTestId={`node-reject-cancel-${node.id}`}
+        >
+          <p>
+            This removes {node.name} from this server. Its in-flight jobs return
+            to the queue so another node can take them, and files on disk are
+            never touched.
+          </p>
+        </ConfirmDialog>
+      )}
     </li>
   )
 }
 
 export default function NodesPage() {
   const client = useQueryClient()
+  const toast = useToast()
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
   // Distinct key from the dashboard's jobs list (different params); the
   // SSE invalidation of ['jobs'] still covers it (prefix match).
@@ -614,8 +721,10 @@ export default function NodesPage() {
     }) => updateNode(input.id, input.body),
     onSuccess: () => {
       setEditing(null)
+      toast.success('Node saved.')
       void client.invalidateQueries({ queryKey: ['nodes'] })
     },
+    onError: (err: unknown) => toast.failure('Saving the node failed', err),
   })
 
   const items = nodes.data?.items ?? []
@@ -647,8 +756,15 @@ export default function NodesPage() {
         </button>
       </div>
 
-      {nodes.isPending && <p className="text-slate-400">Loading nodes…</p>}
-      {nodes.isError && <p className="text-red-400">Cannot load the nodes.</p>}
+      {nodes.isPending && (
+        <>
+          <SkeletonCard className="h-24" />
+          <SkeletonCard className="h-24" />
+        </>
+      )}
+      {nodes.isError && (
+        <ErrorBox title="Cannot load the nodes." error={nodes.error} />
+      )}
       {!nodes.isPending && !nodes.isError && sorted.length === 0 && (
         <p className="text-slate-400" data-testid="nodes-empty">
           No other machines yet. “Add node” shows how to join one.

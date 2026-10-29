@@ -71,7 +71,11 @@ afterEach(() => mock?.restore())
 describe('LibraryDetailPage', () => {
   it('lists files with status, reason and saved bytes', async () => {
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -111,7 +115,11 @@ describe('LibraryDetailPage', () => {
   // the structural contract is what the unit test can assert.
   it('renders the phone card list with label/value pairs', async () => {
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -145,7 +153,11 @@ describe('LibraryDetailPage', () => {
 
   it('filters files by status and keeps the filter in the request', async () => {
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -171,7 +183,11 @@ describe('LibraryDetailPage', () => {
   it('paginates with a page size selector and previous/next (task 13)', async () => {
     const all = Array.from({ length: 120 }, (_, i) => file(`f${i}`, 'new'))
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -226,7 +242,11 @@ describe('LibraryDetailPage', () => {
   it('retries every failed file once and toasts the count', async () => {
     const retried: string[] = []
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -270,7 +290,11 @@ describe('LibraryDetailPage', () => {
   it('cancels a running job only after the confirmation says what happens', async () => {
     let cancelled = false
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: libraryDoc() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1\/files$/,
@@ -307,7 +331,9 @@ describe('LibraryDetailPage', () => {
     // Keeping it running sends nothing.
     fireEvent.click(screen.getByTestId('confirm-cancel-job-no'))
     await waitFor(() =>
-      expect(screen.queryByTestId('confirm-cancel-job')).not.toBeInTheDocument(),
+      expect(
+        screen.queryByTestId('confirm-cancel-job'),
+      ).not.toBeInTheDocument(),
     )
     expect(cancelled).toBe(false)
 
@@ -315,7 +341,9 @@ describe('LibraryDetailPage', () => {
     fireEvent.click(screen.getByTestId('file-cancel-f1'))
     fireEvent.click(screen.getByTestId('confirm-cancel-job-yes'))
     await waitFor(() => expect(cancelled).toBe(true))
-    expect(mock.calls('POST', /\/api\/v1\/jobs\/job-7\/cancel$/)).toHaveLength(1)
+    expect(mock.calls('POST', /\/api\/v1\/jobs\/job-7\/cancel$/)).toHaveLength(
+      1,
+    )
     const toast = await screen.findByTestId('toast')
     expect(toast).toHaveTextContent('Job cancelled')
   })

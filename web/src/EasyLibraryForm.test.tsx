@@ -10,6 +10,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it } from 'vitest'
 import EasyLibraryForm from './EasyLibraryForm'
+import { ToastProvider } from './toast'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
 
 function renderForm() {
@@ -18,7 +19,9 @@ function renderForm() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <EasyLibraryForm />
+      <ToastProvider>
+        <EasyLibraryForm />
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -156,7 +159,9 @@ describe('EasyLibraryForm', () => {
     })
     render(
       <QueryClientProvider client={client}>
-        <EasyLibraryForm initial={{ path: '/media/movies' }} />
+        <ToastProvider>
+          <EasyLibraryForm initial={{ path: '/media/movies' }} />
+        </ToastProvider>
       </QueryClientProvider>,
     )
     fireEvent.click(screen.getByTestId('easy-start'))
