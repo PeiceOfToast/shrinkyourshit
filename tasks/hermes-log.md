@@ -33,3 +33,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T02:01:46Z ci: daily check gh run list still shows failure in 6s (run 40802511611, GitHub billing block); CI requirement stays suspended per Michael's standing exception of 2026-10-28
 - 2026-10-29T02:01:46Z task 06: started OpenCode session ses_e7a9bff43ffeRUIohkK8woDgIr (first-run setup, argon2id admin auth, hashed sessions, settings, setup wizard and route guards; dep 03 done)
 - 2026-10-29T02:01:46Z pm: stale local branches task/03, task/04, task/05 left in place (squash merged, remote copies already deleted); git branch -D is blocked in cron mode, so cleanup needs a manual run
+- 2026-10-29T02:33:00Z task 06: verified by PM: 8/8 acceptance boxes ticked, make test green (go + 20 vitest), make lint exit 0, DECISIONS.md identical to origin/main
+- 2026-10-29T02:33:00Z task 06: PR #6 merged squash 72c0a40, branch task/06-setup-and-auth deleted on the remote, main pulled on the VM fast forward cdd2113..72c0a40
