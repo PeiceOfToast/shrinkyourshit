@@ -45,3 +45,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T05:31:53Z task 08: verified by PM: STATUS done, 7/7 acceptance boxes ticked, DECISIONS.md identical to origin/main, make lint exit 0 (golangci 0 issues, eslint/prettier clean), make test exit 0 (9 Go packages ok, vitest 52 tests in 11 files)
 - 2026-10-29T05:31:53Z task 08: PR #8 merged squash ed90c4a, remote branch task/08-node-pairing deleted, main fast-forwarded on the VM to ed90c4a, no open PRs left
 - 2026-10-29T05:31:53Z task 09: dependencies satisfied (08 done); will start on the next tick
+- 2026-10-29T05:46:11Z task 09: started OpenCode session ses_e79ce47ebfferOnWcXo00EGGy2 (file transfer mode, access check, installers; dep 08 done)
