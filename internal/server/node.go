@@ -94,6 +94,26 @@ func ResolveNodePath(node *store.Node, serverPath string) string {
 	return strings.TrimRight(mapped.NodePath, "/") + serverPath[best:]
 }
 
+// ResolveServerPath maps a node-side path back to the server-side library
+// path — the inverse of ResolveNodePath. A remote worker reports the
+// output path in its own view (it replaced the file at the path it was
+// given); the server must record and inspect the library-side path.
+// Without a matching mapping (the built-in node) the path is unchanged.
+func ResolveServerPath(node *store.Node, nodePath string) string {
+	best := -1
+	var mapped PathMapping
+	for _, m := range ParsePathMappings(node.PathMappings) {
+		if n := mappingPrefixLen(m.NodePath, nodePath); n > best {
+			best = n
+			mapped = m
+		}
+	}
+	if best < 0 {
+		return nodePath
+	}
+	return strings.TrimRight(mapped.ServerPath, "/") + nodePath[best:]
+}
+
 // mappingPrefixLen returns the length of root when path is root or lies
 // inside it, else -1. Path-boundary aware: /media must not match /media2.
 func mappingPrefixLen(root, path string) int {
