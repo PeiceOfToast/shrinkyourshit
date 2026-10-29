@@ -109,6 +109,46 @@ func TestLibraryCRUD(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
+// TestLibraryEasyRoundTrip covers the easy column (task 07): it persists on
+// create and update, and stays empty for target-only libraries. Existing
+// rows written before migration 0003 read back with an empty easy value.
+func TestLibraryEasyRoundTrip(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+
+	// An easy-mode library stores both the compiled target and the easy
+	// input that produced it.
+	lib := validLibrary()
+	lib.EasyJSON = `{"quality":3,"remove_subtitles":true,"audio":2}`
+	require.NoError(t, s.CreateLibrary(ctx, lib))
+	got, err := s.GetLibrary(ctx, lib.ID)
+	require.NoError(t, err)
+	assert.Equal(t, lib.EasyJSON, got.EasyJSON)
+
+	// Saving new easy state overwrites it.
+	got.EasyJSON = `{"quality":5,"remove_subtitles":false,"audio":4}`
+	require.NoError(t, s.UpdateLibrary(ctx, got))
+	updated, err := s.GetLibrary(ctx, lib.ID)
+	require.NoError(t, err)
+	assert.Equal(t, `{"quality":5,"remove_subtitles":false,"audio":4}`, updated.EasyJSON)
+
+	// A target-only library (advanced editor) has an empty easy value.
+	plain := validLibrary()
+	require.NoError(t, s.CreateLibrary(ctx, plain))
+	got, err = s.GetLibrary(ctx, plain.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.EasyJSON)
+
+	// A row written before migration 0003 (easy column default '') lists
+	// with an empty easy value rather than failing the scan.
+	libs, err := s.ListLibraries(ctx)
+	require.NoError(t, err)
+	require.Len(t, libs, 2)
+	for _, l := range libs {
+		assert.NotNil(t, l)
+	}
+}
+
 func TestFileCRUDAndUpsert(t *testing.T) {
 	s := openTemp(t)
 	ctx := context.Background()

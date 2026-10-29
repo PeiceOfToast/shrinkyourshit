@@ -29,13 +29,16 @@ const (
 	FileStatusMissing    = "missing"
 )
 
-// Library is a folder plus a Target and watch/schedule settings. Target is
-// opaque JSON validated by internal/flow.
+// Library is a folder plus a Target and watch/schedule settings. Target and
+// easy are opaque JSON validated by internal/flow (easy is the easy-screen
+// input that compiled to Target; empty when the library was created from a
+// full Target).
 type Library struct {
 	ID           string
 	Name         string
 	Path         string
 	TargetJSON   string
+	EasyJSON     string
 	Watch        bool
 	Schedule     string // cron string or empty
 	ResultPolicy string // replace_if_smaller | replace | keep_both
