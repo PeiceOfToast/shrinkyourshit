@@ -187,7 +187,7 @@ func (a *API) completeSetupJoin(w http.ResponseWriter, r *http.Request, body set
 		writeError(w, http.StatusInternalServerError, "internal", "joining is not wired into this process")
 		return
 	}
-	if err := a.join(target); err != nil {
+	if err := a.join(target, strings.TrimSpace(body.Token)); err != nil {
 		a.internal(w, err)
 		return
 	}

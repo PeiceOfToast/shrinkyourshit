@@ -26,16 +26,16 @@ type API struct {
 	logins *loginLimiter
 	// join records a setup "join" decision (task 08); main owns the
 	// persistence and the role switch. Nil → joining is refused with 500.
-	join func(serverURL string) error
+	join func(serverURL, token string) error
 }
 
 // Option customizes New.
 type Option func(*API)
 
 // WithJoin wires the setup "join an existing server" callback (task 08):
-// persist role=worker and the server URL, then hand the URL back to the
-// process so it can switch to worker mode.
-func WithJoin(fn func(serverURL string) error) Option {
+// persist role=worker and the server URL, then hand the URL and optional
+// token back to the process so it can switch to worker mode.
+func WithJoin(fn func(serverURL, token string) error) Option {
 	return func(a *API) { a.join = fn }
 }
 

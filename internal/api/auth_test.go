@@ -362,8 +362,8 @@ func TestSetupModeJoin(t *testing.T) {
 	// With the callback wired the join records the decision and completes
 	// setup (task 08).
 	var joined []string
-	joinMux := New("v0.0.0", testStatic(), h.svc, WithJoin(func(serverURL string) error {
-		joined = append(joined, serverURL)
+	joinMux := New("v0.0.0", testStatic(), h.svc, WithJoin(func(serverURL, token string) error {
+		joined = append(joined, serverURL+"|"+token)
 		return nil
 	}))
 	do := func(method, path string, body any) *httptest.ResponseRecorder {
@@ -376,7 +376,7 @@ func TestSetupModeJoin(t *testing.T) {
 	}
 	rec = do(http.MethodPost, "/api/v1/setup", map[string]any{"mode": "join", "server": "http://10.0.0.5:8765"})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	require.Equal(t, []string{"http://10.0.0.5:8765"}, joined)
+	require.Equal(t, []string{"http://10.0.0.5:8765|"}, joined)
 	var status server.Status
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &status))
 	require.True(t, status.SetupComplete)
