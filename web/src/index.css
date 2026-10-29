@@ -18,3 +18,21 @@ body {
 html {
   color-scheme: dark;
 }
+
+/*
+ * One visible keyboard focus ring for every interactive element (task 13
+ * accessibility pass): a single rule here instead of a focus utility on
+ * every button, link and input.
+ */
+:focus-visible {
+  outline: 2px solid theme('colors.emerald.400');
+  outline-offset: 2px;
+}
+
+/*
+ * The backdrop behind native <dialog> elements (task 13). The dialogs'
+ * own dismiss-on-backdrop click uses the element, not this layer.
+ */
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
