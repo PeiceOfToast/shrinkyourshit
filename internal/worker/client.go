@@ -359,9 +359,9 @@ func (c *Client) putChunk(ctx context.Context, jobID, path string, start, end, t
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
 		return 0, fmt.Errorf("worker: seek result: %w", err)
 	}
-	var body io.Reader = io.LimitReader(f, length)
+	body := io.Reader(io.LimitReader(f, length))
 	if limitMBs > 0 {
-		body = &pacedReader{r: body, bytesPerSec: limitMBs * 1_000_000, ctx: ctx}
+		body = newPacedReader(body, limitMBs*1_000_000, ctx)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
