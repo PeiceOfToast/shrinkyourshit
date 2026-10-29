@@ -227,8 +227,6 @@ export default function DashboardPage() {
 
   return (
     <PageContainer className="space-y-6" data-testid="dashboard">
-      {/* SCRATCH (task 12 acceptance): deliberately broken layout. */}
-      <div className="h-4 w-[900px] bg-red-500" />
       <h1 className="text-2xl font-bold">Dashboard</h1>
 
       <Warnings warnings={warnings} />
