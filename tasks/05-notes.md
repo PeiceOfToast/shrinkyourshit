@@ -105,9 +105,22 @@ Files touched, in order:
   Progress/Complete/Fail, output verification in encoders, and the full
   worker (client, claim slots, runner with fallback + progress + extracts,
   verify, result policies, scratch lifecycle, cancel).
+- Hardening found by the integration tests: worker-API state writes use a
+  detached context (a disconnecting worker must not leave a file stuck in
+  processing); job transitions use `UpdateJobIfActive` so a late report can
+  never resurrect a cancelled/finished job; the progress endpoint answers
+  200 with the terminal status once a job leaves the active state (or the
+  worker would encode forever); the runner sends its first progress report
+  immediately so a claimed job flips to running before the sweeper's
+  timeout window closes.
 - Skipped: transfer mode, pairing, UI, shared-storage access check.
 - Next task should know: node auth middleware lives in `internal/api`
   (`nodeAuth`), the built-in node is created by
   `server.NodeRegistry.EnsureBuiltinNode` at serve start, workers learn
   concurrency from the heartbeat response, and `server.Config.Inspect`
-  overrides output fingerprinting/probing in tests.
+  overrides output fingerprinting/probing in tests. Integration fixtures:
+  plain testsrc re-encodes in under a second at 640x360 — cancel/kill tests
+  need 1080p + temporal noise (`makeLongFixture`) for a ~7s encode window,
+  and every test must `scanSync` after copying fixtures in (the create
+  hook's async scan can fire before the file lands).
+

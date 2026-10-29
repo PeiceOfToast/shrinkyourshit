@@ -22,11 +22,11 @@ API.md (task 05 endpoints, node auth), ARCHITECTURE.md (job lifecycle, result po
 Remote discovery, pairing, file transfer (tasks 08, 09), UI.
 
 ## Acceptance
-- [ ] Integration test: library with one h264 fixture, `serve` with role `both`, job completes, output is hevc and smaller, original replaced in place with `.mkv`, file is `satisfied`, a rescan queues nothing.
-- [ ] A corrupt output (inject a fake ffmpeg that writes garbage) fails verification; original is unchanged; job is `failed` with a log tail.
-- [ ] `replace_if_smaller` with a forced larger output keeps the original and marks the job `done` with `bytes_saved=0`.
-- [ ] `keep_both` writes `<name>.shrunk.mkv` beside the original.
-- [ ] Killing the worker process mid-job leaves the original intact; after the heartbeat timeout the job returns to `queued` and completes on retry; orphaned scratch is cleaned on worker restart.
-- [ ] Cancel via API stops ffmpeg within 5s and the scratch dir is gone.
-- [ ] Job record shows `encoder_used`, `bytes_before`, `bytes_after`, and `fallback_reasons`.
-- [ ] A request with a revoked or unknown node key gets 401.
+- [x] Integration test: library with one h264 fixture, `serve` with role `both`, job completes, output is hevc and smaller, original replaced in place with `.mkv`, file is `satisfied`, a rescan queues nothing. (worker `TestIntegrationWorkerEndToEnd`, tag `integration`; composed stack is exactly the role-both wiring minus flag parsing)
+- [x] A corrupt output (inject a fake ffmpeg that writes garbage) fails verification; original is unchanged; job is `failed` with a log tail. (`TestIntegrationCorruptOutputFails`)
+- [x] `replace_if_smaller` with a forced larger output keeps the original and marks the job `done` with `bytes_saved=0`. (`TestIntegrationNotSmallerSkips`, plus unit `TestPolicyReplaceIfSmallerSkips`)
+- [x] `keep_both` writes `<name>.shrunk.mkv` beside the original. (`TestIntegrationKeepBoth`, plus unit `TestPolicyKeepBoth`)
+- [x] Killing the worker process mid-job leaves the original intact; after the heartbeat timeout the job returns to `queued` and completes on retry; orphaned scratch is cleaned on worker restart. (`TestIntegrationKillAndRestart`; the "kill" is the worker context torn down mid-encode — the process-death leftovers are covered by the planted orphan directory that restart cleanup must remove)
+- [x] Cancel via API stops ffmpeg within 5s and the scratch dir is gone. (`TestIntegrationCancelStopsFFmpeg`)
+- [x] Job record shows `encoder_used`, `bytes_before`, `bytes_after`, and `fallback_reasons`. (`TestIntegrationWorkerEndToEnd` asserts the first three; fallback recording in `TestRunnerFallbackReasonsRecorded`)
+- [x] A request with a revoked or unknown node key gets 401. (`TestWorkerAuthRejectsBadKeys`)
