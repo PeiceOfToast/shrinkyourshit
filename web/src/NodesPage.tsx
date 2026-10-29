@@ -19,6 +19,7 @@ import {
   type Node,
   type PathMapping,
 } from './api'
+import PageContainer from './PageContainer'
 
 const statusStyles: Record<string, string> = {
   pending: 'bg-amber-500/20 text-amber-300',
@@ -498,7 +499,7 @@ export default function NodesPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-4" data-testid="nodes-page">
+    <PageContainer className="space-y-4" data-testid="nodes-page">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Nodes</h1>
         <button
@@ -539,6 +540,6 @@ export default function NodesPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

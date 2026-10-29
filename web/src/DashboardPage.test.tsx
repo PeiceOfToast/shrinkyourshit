@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Dashboard tests (task 07): live job progress updating from SSE events
- * (fake EventSource) and the "Add your first folder" empty state.
+ * Dashboard tests (task 07 live progress, task 10 read-only + warnings):
+ * live job progress updating from SSE events (fake EventSource), the
+ * one-line empty state with no form and no create button, and the
+ * warning surface driven by real node and job state.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -79,34 +81,23 @@ const zeros = {
   ],
 }
 
-const nodes = {
-  items: [
-    {
-      id: 'node-1',
-      name: 'media-box (built-in)',
-      os: 'linux',
-      arch: 'amd64',
-      capabilities: { encoders: [{ name: 'cpu', codecs: ['hevc'] }] },
-      access_mode: 'shared',
-      path_mappings: [],
-      status: 'approved',
-      enabled: true,
-      created_at: '2026-10-29T00:00:00Z',
-    },
-    {
-      id: 'node-2',
-      name: 'attic-box',
-      os: 'linux',
-      arch: 'arm64',
-      capabilities: null,
-      access_mode: 'auto',
-      path_mappings: [],
-      status: 'pending',
-      enabled: true,
-      created_at: '2026-10-29T01:00:00Z',
-    },
-  ],
-  total: 2,
+/** A node fixture; heartbeats by default so only targeted tests warn. */
+function nodeFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'node-1',
+    name: 'media-box (built-in)',
+    os: 'linux',
+    arch: 'amd64',
+    capabilities: { encoders: [{ name: 'cpu', codecs: ['hevc'] }] },
+    access_mode: 'shared',
+    path_mappings: [],
+    throughput_limit_mbps: 0,
+    status: 'approved',
+    enabled: true,
+    last_heartbeat_at: new Date(Date.now() - 30_000).toISOString(),
+    created_at: '2026-10-29T00:00:00Z',
+    ...overrides,
+  }
 }
 
 function renderDashboard(withEvents = false) {
@@ -146,6 +137,11 @@ describe('DashboardPage', () => {
         match: /\/api\/v1\/jobs$/,
         bodyFn: () => jobs,
       },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
     ])
 
     renderDashboard(true)
@@ -175,7 +171,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText(/1m 30s left/)).toBeInTheDocument()
   })
 
-  it('lands on the easy-mode form when there are no libraries', async () => {
+  it('shows a one-line empty state that links to /libraries/new, with no form and no create button', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -192,6 +188,11 @@ describe('DashboardPage', () => {
         match: /\/api\/v1\/jobs$/,
         body: { items: [], total: 0 },
       },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderDashboard()
@@ -199,10 +200,19 @@ describe('DashboardPage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('empty-dashboard')).toBeInTheDocument(),
     )
+    const empty = screen.getByTestId('empty-dashboard')
+    expect(empty).toHaveTextContent('No libraries yet.')
+    expect(screen.getByRole('link', { name: 'Add one' })).toHaveAttribute(
+      'href',
+      '/libraries/new',
+    )
+    // Read only (task 10): nothing to fill in, nothing to create here.
+    expect(empty.querySelector('form')).toBeNull()
+    expect(screen.queryByTestId('easy-form')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: 'Add your first folder' }),
-    ).toBeInTheDocument()
-    expect(screen.getByTestId('easy-form')).toBeInTheDocument()
+      screen.queryByTestId('dashboard-add-library'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument()
   })
 
   it('shows recent history with sizes and per-node activity', async () => {
@@ -213,14 +223,37 @@ describe('DashboardPage', () => {
         body: { items: [library], total: 1 },
       },
       { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
-      { method: 'GET', match: /\/api\/v1\/nodes$/, body: nodes },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            nodeFixture(),
+            nodeFixture({
+              id: 'node-2',
+              name: 'attic-box',
+              os: 'linux',
+              arch: 'arm64',
+              capabilities: null,
+              access_mode: 'auto',
+              status: 'pending',
+            }),
+          ],
+          total: 2,
+        },
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/jobs$/,
         body: {
           items: [
             { ...job(100, 'done'), id: 'done-1' },
-            { ...job(40, 'failed'), id: 'fail-1', error: 'encoder exploded' },
+            {
+              ...job(40, 'failed'),
+              id: 'fail-1',
+              error: 'encoder exploded',
+              created_at: new Date(Date.now() - 3_600_000).toISOString(),
+            },
             { ...job(60), id: 'run-2', node_id: 'node-2' },
           ],
           total: 3,
@@ -239,13 +272,9 @@ describe('DashboardPage', () => {
       '4.0 GB → 2.0 GB',
     )
     expect(screen.getByTestId('history-job-fail-1')).toHaveTextContent('failed')
-    expect(screen.getByTestId('dashboard-add-library')).toHaveAttribute(
-      'href',
-      '/libraries/new',
-    )
 
     // The Nodes card is live: each node with its state, and the working
-    // node's progress bar (task 08 replaces the placeholder).
+    // node's progress bar.
     await waitFor(() =>
       expect(screen.getByTestId('nodes-activity')).toBeInTheDocument(),
     )
@@ -264,6 +293,173 @@ describe('DashboardPage', () => {
         '60',
       ),
     )
+  })
+
+  it('warns when every node is stopped or disabled while files wait', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture({ enabled: false })], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderDashboard()
+    const warning = await waitFor(() =>
+      screen.getByTestId('warning-nodes-unavailable'),
+    )
+    // The wording names the cause.
+    expect(warning).toHaveTextContent(
+      'Every node is stopped or disabled, so nothing is being processed',
+    )
+    expect(warning).toHaveTextContent('3 files are waiting')
+    // ...and links to the fix.
+    expect(screen.getByRole('link', { name: 'Go to Nodes' })).toHaveAttribute(
+      'href',
+      '/nodes',
+    )
+  })
+
+  it('does not warn about a stopped queue while a job is still running', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture({ enabled: false })], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [job(50)], total: 1 },
+      },
+    ])
+
+    renderDashboard()
+    await waitFor(() => expect(screen.getByTestId('dashboard')).toBeTruthy())
+    expect(
+      screen.queryByTestId('warning-nodes-unavailable'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('warns when an approved, enabled node stops checking in', async () => {
+    const stale = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [nodeFixture({ last_heartbeat_at: stale })],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderDashboard()
+    const warning = await waitFor(() =>
+      screen.getByTestId('warning-node-heartbeat-node-1'),
+    )
+    expect(warning).toHaveTextContent('media-box (built-in) has not checked in')
+    expect(screen.getByRole('link', { name: 'Go to Nodes' })).toHaveAttribute(
+      'href',
+      '/nodes',
+    )
+  })
+
+  it('warns about jobs that failed in the last 24 hours', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: {
+          items: [
+            {
+              ...job(40, 'failed'),
+              id: 'fail-1',
+              error: 'encoder exploded',
+              created_at: new Date(Date.now() - 3_600_000).toISOString(),
+            },
+          ],
+          total: 1,
+        },
+      },
+    ])
+
+    renderDashboard()
+    const warning = await waitFor(() =>
+      screen.getByTestId('warning-failed-jobs'),
+    )
+    expect(warning).toHaveTextContent('failed in the last 24 hours')
+    expect(
+      screen.getByRole('link', { name: 'Go to Libraries' }),
+    ).toHaveAttribute('href', '/libraries')
+  })
+
+  it('shows no warnings on a healthy state', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: { ...zeros, queued: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderDashboard()
+    await waitFor(() => expect(screen.getByTestId('dashboard')).toBeTruthy())
+    expect(screen.queryByTestId('dashboard-warnings')).not.toBeInTheDocument()
   })
 
   it('does not open a stream when the page fails to load', async () => {

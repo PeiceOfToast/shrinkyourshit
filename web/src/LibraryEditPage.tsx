@@ -19,6 +19,7 @@ import {
 } from './easyControls'
 import { parseEasy } from './easyModel'
 import FolderPickerModal from './FolderPickerModal'
+import PageContainer from './PageContainer'
 
 const CODEC_CHOICES = [
   { value: 'hevc', label: 'HEVC (H.265) — recommended' },
@@ -114,7 +115,7 @@ export default function LibraryEditPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6" data-testid="library-edit">
+    <PageContainer className="space-y-6" data-testid="library-edit">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Edit “{lib.name}”</h1>
         <Link
@@ -400,6 +401,6 @@ export default function LibraryEditPage() {
           }}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

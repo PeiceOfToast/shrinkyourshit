@@ -17,6 +17,7 @@ import {
   type LibraryStats,
 } from './api'
 import { formatBytes } from './easyModel'
+import PageContainer from './PageContainer'
 
 function ConfirmDelete({
   lib,
@@ -102,7 +103,7 @@ export default function LibrariesPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-4" data-testid="libraries-page">
+    <PageContainer className="space-y-4" data-testid="libraries-page">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Libraries</h1>
         <Link
@@ -196,6 +197,6 @@ export default function LibrariesPage() {
           onCancel={() => setToDelete(null)}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

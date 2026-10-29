@@ -32,11 +32,11 @@ UI review at `docs/ui-review-2026-10-29.md` sections 2, 4 and 5. ARCHITECTURE.md
 Table and card responsive layouts (task 12), toasts and dialogs (task 13), node start and stop controls (task 11), any change to encoding behaviour.
 
 ## Acceptance
-- [ ] `html` and `body` carry the background colour; on a 390 px viewport no region of the page renders white below or beside the shell. (`App.test.tsx` asserts the background class is present on `document.documentElement` or body, plus the Playwright check in task 12)
-- [ ] At 390 px the main content column is at least 340 px wide and the nav is reachable by opening the drawer. (`AppShell` test with a mocked narrow matchMedia, or Playwright at 390 in task 12)
-- [ ] Five nav entries exist with the labels Dash, Library, Nodes, Encode settings, App settings, and each route renders its page. (`App.test.tsx`)
-- [ ] `/settings` returns a redirect to `/app`. (`App.test.tsx`)
-- [ ] The dashboard renders no form element and no create button; the empty state links to `/libraries/new`. (`DashboardPage.test.tsx`)
-- [ ] The dashboard warning surface renders when every node is stopped or disabled and links to `/nodes`. (`DashboardPage.test.tsx`)
-- [ ] `make lint` and `make test` pass, and `npm run build` succeeds with no TypeScript errors.
-- [ ] Manual check at 390 px and 1280 px recorded in `tasks/hermes-log.md`.
+- [x] `html` and `body` carry the background colour; on a 390 px viewport no region of the page renders white below or beside the shell. (`App.test.tsx` asserts the background class is present on `document.documentElement` or body, plus the Playwright check in task 12)
+- [x] At 390 px the main content column is at least 340 px wide and the nav is reachable by opening the drawer. (`AppShell` test with a mocked narrow matchMedia, or Playwright at 390 in task 12)
+- [x] Five nav entries exist with the labels Dash, Library, Nodes, Encode settings, App settings, and each route renders its page. (`App.test.tsx`)
+- [x] `/settings` returns a redirect to `/app`. (`App.test.tsx`)
+- [x] The dashboard renders no form element and no create button; the empty state links to `/libraries/new`. (`DashboardPage.test.tsx`)
+- [x] The dashboard warning surface renders when every node is stopped or disabled and links to `/nodes`. (`DashboardPage.test.tsx`)
+- [x] `make lint` and `make test` pass, and `npm run build` succeeds with no TypeScript errors.
+- [x] Manual check at 390 px and 1280 px recorded in `tasks/hermes-log.md`.
