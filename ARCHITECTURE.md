@@ -180,6 +180,55 @@ queued -> claimed (atomic, one worker) -> running -> done | failed | cancelled
 - Result policies: `replace_if_smaller` (default), `replace`, `keep_both` (writes `<name>.shrunk.<ext>` beside the original).
 - Replacement is atomic: write to a temp name in the destination directory, fsync, rename over the original. Original is never deleted before the verified output exists in place.
 
+## Worker lifecycle (v1.1)
+
+Operator intent lives in `nodes.desired_state`, separate from the hard `enabled` switch that gates node auth.
+
+```
+stopped --start--> running --stop(drain)--> draining --idle--> stopped
+                      \--stop(now)-------------------------------^
+                      \--error--> error --start--> running
+```
+
+- `desired_state` is `stopped`, `running` or `draining`; `concurrency` (1 to 16) caps parallel jobs.
+- The instruction reaches the worker on the heartbeat it already sends. No new port, no push channel, no long poll.
+- `stopped` makes no claim calls, only heartbeats, so a stopped node costs one small request per interval.
+- `draining` claims nothing new and finishes what it holds, then reports `stopped`.
+- `enabled=false` remains the hard off switch enforced by node auth; `desired_state` is the day to day control. Both must be satisfied for a claim to succeed.
+- A fresh install and a completed setup wizard leave the built in node `stopped`. Encoding never starts because a wizard was finished.
+- Stopping never deletes a job. A claimed job whose worker stops returns to `queued` after the heartbeat timeout, unchanged on disk.
+
+## Flow schema (v1.2)
+
+The canonical rule object is a graph. `Target` remains as the compiled easy mode shape and is always accompanied by the generated flow.
+
+```
+Graph{ schema, nodes: [Step], edges: [Edge] }
+Step{ id, type, params }
+Edge{ from, to, when }
+```
+
+- Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`, `transcode_video`, `remux_container`, `convert_audio`, `subtitles`, `rename`, `skip_if_smaller`.
+- The server validates: unique ids, existing edge endpoints, acyclic, exactly one entry step, and per type parameters. `POST /api/v1/flows/validate` exposes the same checks so the UI never reimplements them.
+- `flow.Compile(Graph)` produces the ordered plan the worker runs. Parity with the pre-flow command builder is a test gate, not an aspiration.
+- Library rows carry `flow_json` plus `source` of `easy`, `steps` or `advanced`. When both `target` and `flow` exist, `flow` wins and a mismatch is logged.
+- The step palette ships from `GET /api/v1/flows/step-types` so the UI holds no second copy of the step list.
+
+## UI routes (v1.1)
+
+| Route | Page | Notes |
+|-------|------|-------|
+| `/` | Dash | read only: stats, live jobs, node health, activity, warnings |
+| `/libraries` | Library | list, add, detail, files |
+| `/libraries/:id/edit` | Library | target and easy mode |
+| `/libraries/:id/rules` | Library | tier selector, step stack (task 14) |
+| `/libraries/:id/flow` | Library | canvas (task 15) |
+| `/nodes` | Nodes | lifecycle controls, pairing, concurrency |
+| `/encode` | Encode settings | codec, quality, container, audio, subtitles, result policy |
+| `/app` | App settings | server, auth, paths, logs, about |
+
+Shell rules: under `md` the nav is a drawer behind a top bar, at `md` and up it is the left rail. The page background is painted on `html, body` so no region outside the shell renders white. Every page uses one container, `mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8`. `settings` redirects to `app`.
+
 ## Security
 
 - Node pairing needs an admin approval click or a one-time token (expires in 24h, single use).

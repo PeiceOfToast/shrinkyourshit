@@ -289,3 +289,56 @@ Request/response details beyond the table:
   server URL (`X-Forwarded-Proto` aware, same as the pairing commands) and
   the server's version substituted, so a node downloads the release binary
   matching the server it joins.
+
+### Task 10
+
+No new endpoints. Route and shell changes only:
+
+- The settings endpoints stay the same; the UI splits them across `/encode` and `/app`.
+- `GET /api/v1/stats` and `GET /api/v1/jobs` gain nothing; the dashboard now also reads `GET /api/v1/nodes` to decide whether to show the "nothing can run" warning.
+
+### Task 11
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/v1/nodes/{id}/start` | admin | set `desired_state=running` |
+| POST | `/api/v1/nodes/{id}/stop` | admin | body `{drain: bool}`; `drain=true` sets `draining`, `false` sets `stopped` |
+| POST | `/api/v1/nodes/{id}/drain` | admin | set `desired_state=draining` |
+| POST | `/api/v1/nodes/pause-all` | admin | stop every node now, remember prior intent |
+| POST | `/api/v1/nodes/resume-all` | admin | restore the remembered intent per node |
+
+Details:
+
+- `POST /api/v1/worker/heartbeat` responses gain `desired_state`, `concurrency`, and `effective_state`. This is how a worker learns it was started or stopped, so a stopped node makes no claim calls at all.
+- `GET /api/v1/nodes` responses gain `desired_state`, `effective_state`, `concurrency`, and `current_job_id`.
+- `PUT /api/v1/nodes/{id}` accepts `concurrency` (integer 1 to 16; anything else is `400 {"code":"invalid_request"}`).
+- `enabled` stays the hard off switch enforced by node auth. `desired_state` is the operator control. A claim needs `status=approved`, `enabled=true` and `desired_state=running`.
+- A fresh install, and any completed setup wizard that did not explicitly start the node, leaves `desired_state=stopped`.
+
+### Task 12
+
+No new endpoints. The Playwright suite drives the built web app through the Go server, so it uses the same routes as a browser.
+
+### Task 13
+
+- Error responses keep their shape, and every 4xx and 5xx path must carry a stable `code` field. The UI renders the status plus `code` plus the message, so a missing `code` is a bug.
+- No other contract change.
+
+### Task 14
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/libraries/{id}/flow` | admin | the stored graph plus its `source` |
+| PUT | `/api/v1/libraries/{id}/flow` | admin | body `{source, graph}`; validates before saving |
+| POST | `/api/v1/flows/validate` | admin | body `{graph}`; `200 {"valid":true}` or `400 {"code":"invalid_flow","errors":[{path,message}]}` |
+| GET | `/api/v1/flows/step-types` | admin | the palette: step type id, label, description, parameter schema |
+
+Details:
+
+- Library responses gain `flow` and `flow_source` alongside the existing `target` and `easy`.
+- An invalid graph never saves; validation errors name the field path so the UI can attach them to a row or a node.
+- When a library has both `target` and `flow`, `flow` is authoritative and a mismatch is logged at warn level. `target` remains for compatibility with easy mode clients.
+
+### Task 15
+
+No new endpoints. The canvas uses `GET` and `PUT /api/v1/libraries/{id}/flow`, `POST /api/v1/flows/validate` and `GET /api/v1/flows/step-types`, so the server stays the only place that decides whether a graph is valid.

@@ -31,8 +31,8 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 | Routing | `react-router-dom` v6 |
 | Data | `@tanstack/react-query` v5. One `api.ts` client that wraps `fetch` and throws on non-2xx. |
 | Events | native `EventSource` against `/api/v1/events` |
-| Flow editor (post-MVP) | `@xyflow/react` (React Flow 12) |
-| Tests | Vitest plus React Testing Library |
+| Flow editor (task 15) | `@xyflow/react` (React Flow 12) |
+| Tests | Vitest plus React Testing Library for components, Playwright for layout and end to end (task 12) |
 | Lint/format | ESLint plus Prettier, defaults |
 | Embedding | `web/dist` embedded into the Go binary with `go:embed`; Go serves `index.html` for unknown paths so client routing works. |
 
