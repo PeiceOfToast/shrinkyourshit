@@ -105,7 +105,7 @@ if ($ServiceDir -ne '') {
         "StartType: auto"
     ) -Encoding Ascii
     Write-Output "Wrote $desc (service not installed)"
-    exit 0
+    return
 }
 
 if ($NoService) {
@@ -118,10 +118,10 @@ else {
     if (-not $isAdmin) {
         Write-Warning 'Not administrator: register the service from an elevated prompt, or start the worker manually:'
         Write-Output "    `"$exePath`" serve"
-        exit 0
+        return
     }
     $binPath = "`"$exePath`" serve"
-    $existing = sc.exe query shrinkyourshit 2>$null
+    sc.exe query shrinkyourshit 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         sc.exe stop shrinkyourshit | Out-Null
         sc.exe delete shrinkyourshit | Out-Null

@@ -75,19 +75,30 @@ Branch `task/09-file-transfer-installer` from `main`. Commits, in order:
 ## Acceptance → test mapping
 
 1. Transfer end-to-end → `internal/worker/transfer_e2e_test.go`
-   (full HTTP stack, fake encoders — runs without ffmpeg).
-2. Correct mapping → shared, no source bytes → same file, source-endpoint
-   call counter asserted 0.
-3. Resume at 50% + corrupted upload → downloader resume test (flaky proxy
-   drops mid-response) + e2e corrupted-checksum test (job failed, original
-   untouched).
-4. Same-size different file → access-check mismatch test → transfer mode.
-5. `installer.sh` shellcheck → `make installer-check` + CI job; container
-   install test → CI job running the script in `debian:bookworm-slim`
-   against a fake release server, unit file validated structurally.
-6. `installer.ps1` PSScriptAnalyzer → CI job on windows-latest
-   (`Invoke-ScriptAnalyzer`); no local pwsh available to pre-verify.
-7. `GET /install.sh` contains the server URL → API test.
+   (`TestE2ETransferModeReplacesOriginalOnServer`; full HTTP stack, fake
+   encoders — runs without ffmpeg).
+2. Correct mapping → shared, no source bytes → same file,
+   `TestE2ESharedModeTransfersNothing` (source-endpoint call counter 0).
+3. Resume at 50% + corrupted upload → `TestE2EDownloadResumesAfterInterrupt`
+   (the test wire aborts mid-body; the worker resumes via Range) and
+   `TestE2ECorruptedUploadFailsAndKeepsOriginal` (a byte flipped in flight
+   fails the checksum, the job fails, the original is untouched).
+4. Same-size different file → `TestE2ESameSizeDecoyFailsAccessCheck` →
+   transfer mode.
+5. `installer.sh` shellcheck → `make installer-check` + CI `installer` job;
+   container install → CI runs `scripts/test-installer.sh` inside
+   `debian:bookworm-slim` against a fake release server; unit file verified
+   with `systemd-analyze verify` on the runner (also verified locally).
+6. `installer.ps1` PSScriptAnalyzer → CI job `installer-powershell` on
+   windows-latest (`Invoke-ScriptAnalyzer -Severity Error -EnableExit`);
+   no local pwsh to pre-verify, so CI is the check.
+7. `GET /install.sh` contains the server URL →
+   `TestInstallShellContainsServerURL` (+ reverse-proxy and .ps1 variants).
+
+Wizard/Add-node "real /install.sh URL" item: both flows already render the
+server-generated commands (task 08), so no UI change was needed — the URLs
+became real when the endpoints landed. The wizard's join path pairs this
+machine directly (POST /setup mode=join) and never shows an install URL.
 
 ## Out of scope (recorded, not built)
 
@@ -106,7 +117,9 @@ Branch `task/09-file-transfer-installer` from `main`. Commits, in order:
   jobs (notes above), no UI for the throughput limit beyond the node edit
   dialog field.
 - Next task should know: `effectiveAccessMode` no longer forces auto→shared —
-  anything reading `JobSpec.AccessMode` must handle `auto`. The server now
-  owns a scratch dir for uploads (`server.Config.ScratchDir`, wired in main);
+  anything reading `JobSpec.AccessMode` must handle `auto` (the task-08
+  path-mapping integration test was updated for this). The server now owns a
+  scratch dir for uploads (`server.Config.ScratchDir`, wired in main);
   `Queue.Complete` stays "record only" — transfer disk work happens in the
-  API layer before it is called.
+  API layer before it is called. New node field `throughput_limit_mbps`
+  travels on the job spec; the complete/progress bodies carry `access_mode`.
