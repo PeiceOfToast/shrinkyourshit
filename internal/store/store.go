@@ -143,6 +143,9 @@ const (
 	SettingDefaultResultPol  = "default_result_policy"
 	SettingScratchDir        = "scratch_dir"
 	SettingSetupComplete     = "setup_complete"
+	// Task 06 additions: easy-mode defaults (task 07 reads these).
+	SettingPreferredLanguages = "preferred_languages"
+	SettingDefaultVideoCodec  = "default_video_codec"
 )
 
 // Result policies (ARCHITECTURE.md; do not add values without updating it).

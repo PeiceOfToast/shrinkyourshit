@@ -9,7 +9,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 03 | 03-library-scanner-queue.md | done | PR #3 https://github.com/PeiceOfToast/shrinkyourshit/pull/3 |
 | 04 | 04-encoders.md | done | PR #4 https://github.com/PeiceOfToast/shrinkyourshit/pull/4 |
 | 05 | 05-worker-job-runner.md | done | PR #5 https://github.com/PeiceOfToast/shrinkyourshit/pull/5 |
-| 06 | 06-setup-and-auth.md | todo | |
+| 06 | 06-setup-and-auth.md | in_progress | |
 | 07 | 07-easy-mode-ui.md | todo | |
 | 08 | 08-node-pairing.md | todo | |
 | 09 | 09-file-transfer-and-installer.md | todo | |
