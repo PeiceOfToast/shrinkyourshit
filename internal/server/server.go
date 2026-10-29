@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/discovery"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
@@ -41,6 +42,14 @@ type Config struct {
 	// fingerprint + ffprobe (the server reads the library directly in
 	// shared mode; transfer mode arrives with task 09).
 	Inspect ResultInspector
+
+	// Discover finds servers on the LAN for the setup wizard's join card
+	// (task 08). Nil → the wizard list stays empty. Wired by main to
+	// discovery.Discover.
+	Discover func(ctx context.Context, timeout time.Duration) []discovery.ServerInfo
+	// SelfID is this server's instance id (its built-in node id); entries
+	// with the same id are hidden from the wizard's server list.
+	SelfID string
 }
 
 // ResultInfo is what job completion records about the produced file.
@@ -98,6 +107,11 @@ type Server struct {
 	wg      sync.WaitGroup
 	started bool
 	mu      sync.Mutex
+
+	// Discovered-servers cache (setup wizard, task 08).
+	discMu    sync.Mutex
+	discCache []discovery.ServerInfo
+	discAt    time.Time
 }
 
 // New builds the services. Call Start to begin scanning and watching.
@@ -118,6 +132,7 @@ func New(cfg Config) *Server {
 	libs := NewLibraryManager(cfg.Store, queue, events, watcher, cfg.Log)
 	libs.SetScanHook(scanner.ScanAsync)
 	nodes := NewNodeRegistry(cfg.Store, events, cfg.Log)
+	nodes.SetQueue(queue)
 	auth := NewAuth(cfg.Store, cfg.Log)
 	settings := NewSettings(cfg.Store, cfg.Log)
 	stats := NewStats(cfg.Store)
@@ -129,6 +144,15 @@ func New(cfg Config) *Server {
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
 func (s *Server) Events() *EventBus { return s.events }
+
+// SetDiscover wires the LAN discovery hook after construction (main sets
+// it from config; tests inject fakes). discover is called with the scan
+// timeout; selfID hides the server's own announcement.
+func (s *Server) SetDiscover(discover func(ctx context.Context, timeout time.Duration) []discovery.ServerInfo, selfID string) {
+	s.cfg.Discover = discover
+	s.cfg.SelfID = selfID
+	s.discCache, s.discAt = nil, time.Time{} // drop any cached scan
+}
 
 // Nodes exposes the node registry (worker auth, heartbeat, task 08 pairing).
 func (s *Server) Nodes() *NodeRegistry { return s.nodes }
@@ -153,6 +177,34 @@ func (s *Server) Settings() *Settings { return s.settings }
 
 // Stats exposes the stats service (GET /stats; task 07).
 func (s *Server) Stats() *StatsService { return s.stats }
+
+// discoveredTTL is how long Discovered reuses the last LAN scan.
+const discoveredTTL = 10 * time.Second
+
+// Discovered lists the servers found on the LAN for the setup wizard's
+// join card, hiding this server itself (Config.SelfID). Results are
+// cached for discoveredTTL so a wizard refresh does not rescan. Without
+// Config.Discover the list is always empty.
+func (s *Server) Discovered(ctx context.Context) []discovery.ServerInfo {
+	if s.cfg.Discover == nil {
+		return nil
+	}
+	s.discMu.Lock()
+	defer s.discMu.Unlock()
+	if s.discCache != nil && time.Since(s.discAt) < discoveredTTL {
+		return s.discCache
+	}
+	found := s.cfg.Discover(ctx, 2*time.Second)
+	var out []discovery.ServerInfo
+	for _, info := range found {
+		if s.cfg.SelfID != "" && info.ID == s.cfg.SelfID {
+			continue // that is us
+		}
+		out = append(out, info)
+	}
+	s.discCache, s.discAt = out, time.Now()
+	return out
+}
 
 // Start launches the background loops: an initial scan per library, a
 // watcher for every watched library, the schedule loop and the stale-job

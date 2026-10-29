@@ -352,14 +352,14 @@ func (s *SQLite) DeleteJob(ctx context.Context, id string) error {
 }
 
 // nodeColumns is the column list shared by every node query.
-const nodeColumns = `id, name, key_hash, os, arch, capabilities, access_mode, path_mappings, status, enabled, last_heartbeat_at, created_at`
+const nodeColumns = `id, name, key_hash, key_once, os, arch, capabilities, access_mode, path_mappings, status, enabled, last_heartbeat_at, created_at`
 
 // scanNode reads one node row.
 func scanNode(rows *sql.Rows) (*Node, error) {
 	var n Node
 	var enabled string
 	var heartbeat, created sql.NullString
-	if err := rows.Scan(&n.ID, &n.Name, &n.KeyHash, &n.OS, &n.Arch, &n.Capabilities, &n.AccessMode, &n.PathMappings, &n.Status, &enabled, &heartbeat, &created); err != nil {
+	if err := rows.Scan(&n.ID, &n.Name, &n.KeyHash, &n.KeyOnce, &n.OS, &n.Arch, &n.Capabilities, &n.AccessMode, &n.PathMappings, &n.Status, &enabled, &heartbeat, &created); err != nil {
 		return nil, err
 	}
 	n.Enabled = parseBool(enabled)
@@ -382,8 +382,8 @@ func (s *SQLite) CreateNode(ctx context.Context, n *Node) error {
 	if n.CreatedAt.IsZero() {
 		n.CreatedAt = nowUTC()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		n.ID, n.Name, n.KeyHash, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), fmtTime(n.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO nodes (`+nodeColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), fmtTime(n.CreatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create node: %w", err)
 	}
@@ -438,8 +438,8 @@ func (s *SQLite) UpdateNode(ctx context.Context, n *Node) error {
 	if err := validateNodeAccessMode(n.AccessMode); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET name = ?, key_hash = ?, os = ?, arch = ?, capabilities = ?, access_mode = ?, path_mappings = ?, status = ?, enabled = ?, last_heartbeat_at = ? WHERE id = ?`,
-		n.Name, n.KeyHash, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), n.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET name = ?, key_hash = ?, key_once = ?, os = ?, arch = ?, capabilities = ?, access_mode = ?, path_mappings = ?, status = ?, enabled = ?, last_heartbeat_at = ? WHERE id = ?`,
+		n.Name, n.KeyHash, n.KeyOnce, n.OS, n.Arch, n.Capabilities, n.AccessMode, n.PathMappings, n.Status, fmtBool(n.Enabled), fmtTime(n.LastHeartbeatAt), n.ID)
 	if err != nil {
 		return fmt.Errorf("store: update node: %w", err)
 	}
@@ -459,6 +459,42 @@ func (s *SQLite) DeleteNode(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ConsumeNodeKeyOnce atomically returns and clears the node's one-time raw
+// key: exactly one caller gets it, everyone after gets "". The guarded
+// UPDATE (matching the stored value) makes the two racing polls safe even
+// without a transaction; the transaction keeps the read and the wipe
+// consistent on the single connection anyway.
+func (s *SQLite) ConsumeNodeKeyOnce(ctx context.Context, nodeID string) (string, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("store: consume key begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var key string
+	err = tx.QueryRowContext(ctx, `SELECT key_once FROM nodes WHERE id = ?`, nodeID).Scan(&key)
+	if err != nil {
+		if isNotFound(err) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("store: consume key select: %w", err)
+	}
+	if key == "" {
+		return "", nil
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE nodes SET key_once = '' WHERE id = ? AND key_once = ?`, nodeID, key)
+	if err != nil {
+		return "", fmt.Errorf("store: consume key update: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return "", nil // another caller consumed it first
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("store: consume key commit: %w", err)
+	}
+	return key, nil
 }
 
 // tokenColumns is the column list shared by every pairing token query.

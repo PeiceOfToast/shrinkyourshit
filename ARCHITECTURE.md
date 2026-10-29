@@ -24,6 +24,19 @@
 
 First launch with no data dir: try to discover a server on the LAN (mDNS, UDP broadcast fallback). Found one: offer to join as a worker. None found: run first-run server setup in the browser.
 
+## Discovery
+
+`internal/discovery`. A server advertises itself two ways, both best effort:
+mDNS service `_shrinkyourshit._tcp` with TXT records `version`, `name` and
+`id` (the built-in node id, so a server can hide itself from its own wizard
+list), and a UDP broadcast responder on port 8766 that answers the probe
+magic `SYS-DISCOVER` with a JSON `{id, name, url, version}` reply — the URL
+is the answer, the rest feeds the wizard's server list. A worker (or a
+fresh role-both install) probes broadcast addresses plus loopback and
+browses mDNS; both transports can be disabled independently
+(`SHRINK_DISCOVERY_MDNS`, `SHRINK_DISCOVERY_BROADCAST`) which is how CI
+tests each path in isolation.
+
 ## Components
 
 ```
@@ -53,10 +66,11 @@ Status enums are fixed strings; do not add values without updating this file.
 **Job:** `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons (JSON), percent, speed, eta_seconds, bytes_before, bytes_after, log (text, capped at 64KiB tail), error, claimed_at, started_at, finished_at, heartbeat_at, created_at`
 - `status`: `queued | claimed | running | done | failed | cancelled`
 
-**Node:** `id, name, key_hash, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), status, enabled, last_heartbeat_at, created_at`
+**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), status, enabled, last_heartbeat_at, created_at`
 - `status`: `pending | approved | revoked`
 - `access_mode`: `auto | shared | transfer`
 - `capabilities`: `{encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}`
+- `key_once`: the raw key between admin approval and the node's first retrieval; wiped on retrieval, revoke and delete (only the hash remains afterwards).
 
 **PairingToken:** `id, token_hash, expires_at, used_at`
 
@@ -166,7 +180,7 @@ queued -> claimed (atomic, one worker) -> running -> done | failed | cancelled
 
 - Node pairing needs an admin approval click or a one-time token (expires in 24h, single use).
 - Admin password optional (off allowed), set in first-run setup. Argon2id.
-- Worker API authenticated with per-node keys; keys stored hashed on the server.
+- Worker API authenticated with per-node keys; keys stored hashed on the server. Keys are 32 random bytes, base64url; only the SHA-256 is stored (high-entropy key, so the fast hash is enough — task 08).
 - Unpaired or revoked nodes cannot claim jobs or read files.
 - TLS: optional manual cert and key paths; reverse proxy is the expected setup.
 

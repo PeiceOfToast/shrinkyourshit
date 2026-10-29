@@ -73,6 +73,10 @@ type Store interface {
 	ListNodes(ctx context.Context) ([]*Node, error)
 	UpdateNode(ctx context.Context, n *Node) error
 	DeleteNode(ctx context.Context, id string) error
+	// ConsumeNodeKeyOnce atomically returns and clears the node's one-time
+	// raw key (pairing, task 08): the first caller gets the key, later
+	// callers get "". Empty result also means "nothing stored".
+	ConsumeNodeKeyOnce(ctx context.Context, nodeID string) (string, error)
 
 	// Pairing tokens. GetPairingTokenByHash looks up by the SHA-256 of
 	// the raw token; raw tokens are never stored.

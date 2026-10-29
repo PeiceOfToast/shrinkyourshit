@@ -24,6 +24,19 @@ type API struct {
 	log *slog.Logger
 	// logins rate-limits failed login attempts per IP (task 06).
 	logins *loginLimiter
+	// join records a setup "join" decision (task 08); main owns the
+	// persistence and the role switch. Nil → joining is refused with 500.
+	join func(serverURL, token string) error
+}
+
+// Option customizes New.
+type Option func(*API)
+
+// WithJoin wires the setup "join an existing server" callback (task 08):
+// persist role=worker and the server URL, then hand the URL and optional
+// token back to the process so it can switch to worker mode.
+func WithJoin(fn func(serverURL, token string) error) Option {
+	return func(a *API) { a.join = fn }
 }
 
 // New builds the root HTTP handler. version is reported by /api/v1/health;
@@ -31,8 +44,11 @@ type API struct {
 // fallback for unknown non-API paths so client-side routing works. svc holds
 // the server services; requireAdmin enforces session auth (open when login
 // is disabled).
-func New(version string, static fs.FS, svc *server.Server) http.Handler {
+func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.Handler {
 	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter()}
+	for _, o := range opts {
+		o(a)
+	}
 	if svc != nil {
 		a.st = svc.Store()
 	}
@@ -42,8 +58,10 @@ func New(version string, static fs.FS, svc *server.Server) http.Handler {
 
 	if svc != nil {
 		// First-run setup and login stay open; requireAdmin is applied to
-		// every other admin route (task 06).
+		// every other admin route (task 06). /setup/servers stays open so
+		// the wizard can list discovered servers before an account exists.
 		mux.HandleFunc("GET /api/v1/setup/status", a.setupStatus)
+		mux.HandleFunc("GET /api/v1/setup/servers", a.setupServers)
 		mux.HandleFunc("POST /api/v1/setup", a.completeSetup)
 		mux.HandleFunc("POST /api/v1/auth/login", a.login)
 		mux.HandleFunc("POST /api/v1/auth/logout", a.requireAdmin(a.logout))
@@ -65,6 +83,18 @@ func New(version string, static fs.FS, svc *server.Server) http.Handler {
 		mux.HandleFunc("GET /api/v1/events", a.requireAdmin(a.events))
 		mux.HandleFunc("GET /api/v1/fs/browse", a.requireAdmin(a.browse))
 		mux.HandleFunc("GET /api/v1/stats", a.requireAdmin(a.getStats))
+
+		// Node administration (task 08).
+		mux.HandleFunc("GET /api/v1/nodes", a.requireAdmin(a.listNodes))
+		mux.HandleFunc("POST /api/v1/nodes/tokens", a.requireAdmin(a.createNodeToken))
+		mux.HandleFunc("POST /api/v1/nodes/{id}/approve", a.requireAdmin(a.approveNode))
+		mux.HandleFunc("POST /api/v1/nodes/{id}/revoke", a.requireAdmin(a.revokeNode))
+		mux.HandleFunc("PUT /api/v1/nodes/{id}", a.requireAdmin(a.updateNode))
+		mux.HandleFunc("DELETE /api/v1/nodes/{id}", a.requireAdmin(a.deleteNode))
+
+		// Pairing (task 08): open — an unpaired node has no key yet.
+		mux.HandleFunc("POST /api/v1/pair", a.pair)
+		mux.HandleFunc("GET /api/v1/pair/{id}", a.pairPoll)
 
 		// Worker API (task 05): bearer node-key auth, never session cookies.
 		mux.HandleFunc("POST /api/v1/worker/heartbeat", a.nodeAuth(a.workerHeartbeat))

@@ -72,48 +72,6 @@ func (a *API) setupStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-// setupBody is the POST /setup request (API.md).
-type setupBody struct {
-	Mode         string `json:"mode"`
-	LoginEnabled bool   `json:"login_enabled"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-}
-
-// completeSetup answers POST /setup. Only accepted while setup is
-// incomplete; afterwards 409 (task 06). Joining an existing server is a
-// task 08 concern and is rejected with 400 until then.
-func (a *API) completeSetup(w http.ResponseWriter, r *http.Request) {
-	body, err := decode[setupBody](r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	err = a.svc.Auth().CompleteSetup(r.Context(), server.SetupParams{
-		Mode:         body.Mode,
-		LoginEnabled: body.LoginEnabled,
-		Username:     body.Username,
-		Password:     body.Password,
-	})
-	if errors.Is(err, server.ErrSetupComplete) {
-		writeError(w, http.StatusConflict, "setup_complete", "setup has already been completed")
-		return
-	}
-	if errors.Is(err, server.ErrBadRequest) {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	if err != nil {
-		a.internal(w, err)
-		return
-	}
-	status := server.Status{SetupComplete: true, LoginEnabled: body.LoginEnabled}
-	if body.LoginEnabled {
-		status.Username = body.Username
-	}
-	writeJSON(w, http.StatusCreated, status)
-}
-
 // loginBody is the POST /auth/login request.
 type loginBody struct {
 	Username string `json:"username"`

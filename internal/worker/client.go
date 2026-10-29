@@ -52,8 +52,9 @@ func NewClient(base, key string) *Client {
 	}
 }
 
-// do performs one authenticated request. out is filled from a 200 body; 204
-// leaves it untouched.
+// do performs one request. out is filled from a 200 body; 204 leaves it
+// untouched. The node key header is only sent when a key exists — the
+// pairing calls run before the node has one.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -67,7 +68,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if err != nil {
 		return fmt.Errorf("worker: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.key)
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -80,7 +83,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if resp.StatusCode >= 400 {
 		return parseAPIError(resp)
 	}
-	if out != nil && resp.StatusCode == http.StatusOK {
+	// Decode any 2xx that carries a body; 204/205 have none (claim's
+	// empty-queue answer is a 204).
+	if out != nil && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusResetContent {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 			return fmt.Errorf("worker: decode response from %s: %w", path, err)
 		}
@@ -207,4 +212,34 @@ func fallbackStrings(res encoders.Result) []string {
 		out = append(out, f.Encoder+": "+f.Error)
 	}
 	return out
+}
+
+// PairInput is the POST /pair body (API.md, task 08). Token is optional.
+type PairInput struct {
+	Token        string          `json:"token,omitempty"`
+	Name         string          `json:"name"`
+	OS           string          `json:"os"`
+	Arch         string          `json:"arch"`
+	Capabilities json.RawMessage `json:"capabilities,omitempty"`
+}
+
+// Pair asks the server to join. With a valid token the node is approved
+// immediately and PairResponse.NodeKey carries the key. Without one the
+// node is pending and the caller polls PairPoll until approval.
+func (c *Client) Pair(ctx context.Context, in PairInput) (*server.PairResponse, error) {
+	var out server.PairResponse
+	if err := c.do(ctx, http.MethodPost, "/api/v1/pair", in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// PairPoll asks about a pending node: pending (keep polling), approved
+// (NodeKey set on the first retrieval only) or revoked (give up).
+func (c *Client) PairPoll(ctx context.Context, nodeID string) (*server.PairResponse, error) {
+	var out server.PairResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/pair/"+nodeID, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

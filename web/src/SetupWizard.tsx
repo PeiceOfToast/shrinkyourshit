@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * First-run setup wizard (task 06): three steps.
- * 1. Make this the server, or join an existing one (disabled until the
- *    node-pairing task ships).
+ * First-run setup wizard (task 06, join card from task 08): three steps.
+ * 1. Make this the server, or join an existing one (the card lists the
+ *    servers discovered on the LAN and starts the pairing flow).
  * 2. Choose whether login is required, then create the account.
  * 3. Summary and finish.
  *
  * The state model and validation live in wizardModel.ts.
  */
 import { useState } from 'react'
-import type { SetupRequest } from './api'
+import type { DiscoveredServer, SetupRequest } from './api'
 import { validateAccountStep, type WizardState } from './wizardModel'
 
 interface SetupWizardProps {
   state: WizardState
   setState: (next: WizardState) => void
   onFinish: (request: SetupRequest) => Promise<void>
+  /** Servers found on the LAN; empty or missing keeps the card disabled. */
+  servers?: DiscoveredServer[]
+  /** Starts the pairing flow for the chosen server. */
+  onJoin?: (server: DiscoveredServer, token: string) => void
+  /** True while the join request is in flight. */
+  joining?: boolean
   submitting?: boolean
   submitError?: string | null
 }
@@ -25,10 +31,18 @@ export default function SetupWizard({
   state,
   setState,
   onFinish,
+  servers,
+  onJoin,
+  joining = false,
   submitting = false,
   submitError = null,
 }: SetupWizardProps) {
   const [errors, setErrors] = useState<string[]>([])
+  const [picking, setPicking] = useState(false)
+  const [selected, setSelected] = useState<DiscoveredServer | null>(null)
+  const [token, setToken] = useState('')
+
+  const joinable = (servers?.length ?? 0) > 0
 
   const next = () => {
     if (state.step === 2) {
@@ -97,16 +111,99 @@ export default function SetupWizard({
               </span>
             </button>
             <div
-              aria-disabled="true"
-              className="cursor-not-allowed rounded-xl border border-slate-800 p-4 text-left opacity-50"
+              className={`rounded-xl border p-4 text-left ${
+                joinable
+                  ? 'cursor-pointer border-slate-700 hover:border-slate-500'
+                  : 'cursor-not-allowed border-slate-800 opacity-50'
+              }`}
               data-testid="mode-join"
+              onClick={() => {
+                if (joinable && (servers?.length ?? 0) > 0) setPicking(true)
+              }}
             >
               <span className="block font-semibold">
                 Join an existing server
               </span>
               <span className="mt-1 block text-sm text-slate-400">
-                Coming soon.
+                {joinable
+                  ? picking
+                    ? 'Pick the server to join:'
+                    : (servers?.length ?? 0) > 0
+                      ? 'Servers were found on your network.'
+                      : 'Searching your network for a server…'
+                  : 'No other server was found on your network.'}
               </span>
+              {joinable && picking && (
+                <ul className="mt-3 space-y-2" data-testid="join-servers">
+                  {(servers ?? []).map((server) => (
+                    <li key={server.id}>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg bg-slate-950 px-3 py-2 text-left text-sm hover:bg-slate-800"
+                        data-testid={`join-server-${server.id}`}
+                        onClick={() => {
+                          setSelected(server)
+                          setPicking(false)
+                        }}
+                      >
+                        <span className="font-medium text-slate-100">
+                          {server.name || server.url}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {server.url}
+                          {server.version ? ` · ${server.version}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {selected && (
+                <div className="mt-3 rounded-lg bg-slate-950 p-3">
+                  <p className="text-sm text-slate-300">
+                    Joining{' '}
+                    <span className="font-medium">
+                      {selected.name || selected.url}
+                    </span>
+                    . This machine becomes a helper; you approve it in that
+                    server's Nodes page.
+                  </p>
+                  <label className="mt-2 block">
+                    <span className="text-xs text-slate-500">
+                      Pairing code (optional, if the server gave you one)
+                    </span>
+                    <input
+                      type="text"
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      className="mt-1 w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                      data-testid="join-token"
+                    />
+                  </label>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onJoin?.(selected, token.trim())}
+                      disabled={joining}
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                      data-testid="join-confirm"
+                    >
+                      {joining ? 'Joining…' : 'Join this server'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelected(null)
+                        setToken('')
+                      }}
+                      className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                      data-testid="join-cancel"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>

@@ -205,6 +205,24 @@ func NewNodeDTO(n *store.Node) NodeDTO {
 	}
 }
 
+// DiscoveredServer is one server found on the LAN (GET /setup/servers,
+// task 08). The id lets the wizard hide this server's own announcement.
+type DiscoveredServer struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Version string `json:"version"`
+}
+
+// PairResponse is the POST /pair and GET /pair/{id} body (task 08). The
+// node key is only ever set on the response that first delivers it; it
+// never appears in any other payload or event.
+type PairResponse struct {
+	NodeID  string `json:"node_id"`
+	Status  string `json:"status"`
+	NodeKey string `json:"node_key,omitempty"`
+}
+
 // rfc3339 formats a time for JSON output; zero times become empty strings
 // (omitted by omitempty where it matters).
 func rfc3339(t time.Time) string {

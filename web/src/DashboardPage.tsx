@@ -8,7 +8,14 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { getJobs, getLibraries, getStats, type Job } from './api'
+import {
+  getJobs,
+  getLibraries,
+  getNodes,
+  getStats,
+  type Job,
+  type Node,
+} from './api'
 import { formatBytes, formatEta, statusLabel } from './easyModel'
 import EasyLibraryForm from './EasyLibraryForm'
 
@@ -62,6 +69,86 @@ function ActiveJobs({ jobs }: { jobs: Job[] }) {
             <SpeedEta job={job} />
           </div>
         </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * One node's live activity: name, state and what it is working on right
+ * now (SSE node.updated / job.updated refresh both queries).
+ */
+function NodeActivity({ node, job }: { node: Node; job?: Job }) {
+  const stateLabels: Record<string, string> = {
+    pending: 'waiting for approval',
+    approved: node.enabled ? 'ready' : 'paused',
+    revoked: 'revoked',
+  }
+  return (
+    <li className="space-y-1" data-testid={`node-activity-${node.id}`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-sm font-medium text-slate-200">
+          {node.name}
+        </span>
+        <span className="text-xs text-slate-500">
+          {stateLabels[node.status] ?? node.status}
+          {job ? ` · working on ${job.file_id.slice(0, 8)}` : ''}
+        </span>
+      </div>
+      {job && (
+        <div
+          className="h-2 overflow-hidden rounded-full bg-slate-800"
+          role="progressbar"
+          aria-valuenow={Math.round(job.percent)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          data-testid={`node-progress-${node.id}`}
+        >
+          <div
+            className="h-full rounded-full bg-sky-500 transition-all"
+            style={{ width: progressWidth(job.percent) }}
+          />
+        </div>
+      )}
+    </li>
+  )
+}
+
+/**
+ * The Nodes card: every registered machine with its live progress. The
+ * built-in node is listed like any other.
+ */
+function NodeActivityList({ jobs }: { jobs: Job[] }) {
+  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
+  if (nodes.isPending) {
+    return <p className="text-sm text-slate-400">Loading…</p>
+  }
+  const items = nodes.data?.items ?? []
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-slate-400" data-testid="nodes-empty">
+        This machine is doing the work. Add other machines on the{' '}
+        <Link to="/nodes" className="text-emerald-400 underline">
+          Nodes
+        </Link>{' '}
+        page.
+      </p>
+    )
+  }
+  const activeByNode = new Map<string, Job>()
+  for (const j of jobs) {
+    if ((j.status === 'running' || j.status === 'claimed') && j.node_id) {
+      activeByNode.set(j.node_id, j)
+    }
+  }
+  return (
+    <ul className="space-y-4" data-testid="nodes-activity">
+      {items.map((node) => (
+        <NodeActivity
+          key={node.id}
+          node={node}
+          job={activeByNode.get(node.id)}
+        />
       ))}
     </ul>
   )
@@ -167,12 +254,9 @@ export default function DashboardPage() {
 
         <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
           <h2 className="font-semibold">Nodes</h2>
-          <p
-            className="mt-4 text-sm text-slate-400"
-            data-testid="nodes-placeholder"
-          >
-            Other machines that help process files will appear here.
-          </p>
+          <div className="mt-4">
+            <NodeActivityList jobs={active} />
+          </div>
         </section>
       </div>
 

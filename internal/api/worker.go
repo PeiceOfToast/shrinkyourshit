@@ -129,6 +129,43 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 	})
 }
 
+// completeBody is the POST .../complete request (API.md). output_path is
+// the final path of the produced file in the library. skipped_reason is set
+// when the result policy kept the original (replace_if_smaller with a
+// not-smaller output); log_tail is stored for the UI.
+type completeBody struct {
+	OutputPath      string   `json:"output_path"`
+	BytesAfter      int64    `json:"bytes_after"`
+	Encoder         string   `json:"encoder"`
+	FallbackReasons []string `json:"fallback_reasons"`
+	SkippedReason   string   `json:"skipped_reason"`
+	LogTail         string   `json:"log_tail"`
+}
+
+// workerComplete records a successful job. The worker reports the output
+// path in its own view (it replaced the file where it was told the source
+// was); the server maps it back through the node's path mappings so the
+// library row and the output inspection always use the library-side path.
+func (a *API) workerComplete(w http.ResponseWriter, r *http.Request, node *store.Node) {
+	body, err := decode[completeBody](r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	job, err := a.svc.Queue().Complete(workerCtx(r), r.PathValue("id"), node.ID, server.CompleteParams{
+		OutputPath:      server.ResolveServerPath(node, body.OutputPath),
+		BytesAfter:      body.BytesAfter,
+		Encoder:         body.Encoder,
+		FallbackReasons: body.FallbackReasons,
+		SkippedReason:   body.SkippedReason,
+		LogTail:         body.LogTail,
+	})
+	if a.queueError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+}
+
 // progressBody is the POST .../progress request (API.md).
 type progressBody struct {
 	Percent    float64 `json:"percent"`
@@ -164,40 +201,6 @@ func (a *API) workerProgress(w http.ResponseWriter, r *http.Request, node *store
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": job.Status})
-}
-
-// completeBody is the POST .../complete request (API.md). output_path is
-// the final path of the produced file in the library. skipped_reason is set
-// when the result policy kept the original (replace_if_smaller with a
-// not-smaller output); log_tail is stored for the UI.
-type completeBody struct {
-	OutputPath      string   `json:"output_path"`
-	BytesAfter      int64    `json:"bytes_after"`
-	Encoder         string   `json:"encoder"`
-	FallbackReasons []string `json:"fallback_reasons"`
-	SkippedReason   string   `json:"skipped_reason"`
-	LogTail         string   `json:"log_tail"`
-}
-
-// workerComplete records a successful job.
-func (a *API) workerComplete(w http.ResponseWriter, r *http.Request, node *store.Node) {
-	body, err := decode[completeBody](r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	job, err := a.svc.Queue().Complete(workerCtx(r), r.PathValue("id"), node.ID, server.CompleteParams{
-		OutputPath:      body.OutputPath,
-		BytesAfter:      body.BytesAfter,
-		Encoder:         body.Encoder,
-		FallbackReasons: body.FallbackReasons,
-		SkippedReason:   body.SkippedReason,
-		LogTail:         body.LogTail,
-	})
-	if a.queueError(w, err) {
-		return
-	}
-	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
 }
 
 // failBody is the POST .../fail request (API.md).

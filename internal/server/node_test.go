@@ -214,6 +214,25 @@ func TestResolveNodePath(t *testing.T) {
 	require.Equal(t, "/media/a.mkv", ResolveNodePath(broken, "/media/a.mkv"))
 }
 
+func TestResolveServerPathIsTheInverse(t *testing.T) {
+	mapped := &store.Node{PathMappings: `[{"server_path": "/media", "node_path": "/mnt/nas"}]`}
+	require.Equal(t, "/media/Movies/a.mkv", ResolveServerPath(mapped, "/mnt/nas/Movies/a.mkv"))
+	// The node side may report its sidecar next to the source (keep_both).
+	require.Equal(t, "/media/Movies/a.shrunk.mkv", ResolveServerPath(mapped, "/mnt/nas/Movies/a.shrunk.mkv"))
+	// Unmapped paths pass through unchanged.
+	require.Equal(t, "/somewhere/else.mkv", ResolveServerPath(mapped, "/somewhere/else.mkv"))
+	// No mappings: identity (the built-in node).
+	identity := &store.Node{PathMappings: "[]"}
+	require.Equal(t, "/media/Movies/a.mkv", ResolveServerPath(identity, "/media/Movies/a.mkv"))
+	// Longest node-side prefix wins, symmetric to the forward mapping.
+	nested := &store.Node{PathMappings: `[
+		{"server_path": "/media", "node_path": "/mnt/nas"},
+		{"server_path": "/media/kids", "node_path": "/srv/kids"}
+	]`}
+	require.Equal(t, "/media/kids/cartoons/a.mkv", ResolveServerPath(nested, "/srv/kids/cartoons/a.mkv"))
+	require.Equal(t, "/media/adults/a.mkv", ResolveServerPath(nested, "/mnt/nas/adults/a.mkv"))
+}
+
 func TestHashKeyIsSha256Hex(t *testing.T) {
 	// A stable, verifiable hash so keys cannot collide across formats.
 	require.Equal(t, HashKey("abc"), HashKey("abc"))

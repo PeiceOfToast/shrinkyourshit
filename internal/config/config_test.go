@@ -240,3 +240,43 @@ func TestFFprobePathEmptyWhenAutoDetect(t *testing.T) {
 	cfg := Config{}
 	assert.Equal(t, "", cfg.FFprobePath())
 }
+
+func TestDiscoveryDefaultsAndToggles(t *testing.T) {
+	testHome(t)
+	cfg, err := Load(Options{})
+	require.NoError(t, err)
+	assert.Equal(t, 8766, cfg.DiscoveryPort)
+	assert.True(t, cfg.DiscoveryMDNS)
+	assert.True(t, cfg.DiscoveryBroadcast)
+
+	cfg, err = Load(Options{Environ: []string{
+		"SHRINK_DISCOVERY_PORT=9001",
+		"SHRINK_DISCOVERY_MDNS=0",
+		"SHRINK_DISCOVERY_BROADCAST=false",
+	}})
+	require.NoError(t, err)
+	assert.Equal(t, 9001, cfg.DiscoveryPort)
+	assert.False(t, cfg.DiscoveryMDNS)
+	assert.False(t, cfg.DiscoveryBroadcast)
+}
+
+func TestJoinExistingWritesWorkerConfig(t *testing.T) {
+	testHome(t)
+	dir := t.TempDir()
+
+	require.NoError(t, JoinExisting(dir, "http://192.168.1.10:8765"))
+	cfg, err := Load(Options{FileOverride: filepath.Join(dir, "config.yaml")})
+	require.NoError(t, err)
+	assert.Equal(t, RoleWorker, cfg.Role)
+	assert.Equal(t, "http://192.168.1.10:8765", cfg.Server)
+
+	// A second join overwrites, existing keys survive.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("node_name: second-box\nrole: both\n"), 0o600))
+	require.NoError(t, JoinExisting(dir, "http://10.0.0.2:8765"))
+	cfg, err = Load(Options{FileOverride: filepath.Join(dir, "config.yaml")})
+	require.NoError(t, err)
+	assert.Equal(t, RoleWorker, cfg.Role)
+	assert.Equal(t, "http://10.0.0.2:8765", cfg.Server)
+	assert.Equal(t, "second-box", cfg.NodeName)
+}

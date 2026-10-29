@@ -14,12 +14,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/api"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/config"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/discovery"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/webui"
@@ -63,19 +63,59 @@ func run(args []string, version string) error {
 	}
 }
 
+// discoverFn builds the LAN discovery function for a config.
+func discoverFn(cfg config.Config) func(ctx context.Context, timeout time.Duration) []discovery.ServerInfo {
+	return func(ctx context.Context, timeout time.Duration) []discovery.ServerInfo {
+		return discovery.Discover(ctx, timeout, discovery.Options{
+			MDNS:      cfg.DiscoveryMDNS,
+			Broadcast: cfg.DiscoveryBroadcast,
+			Port:      cfg.DiscoveryPort,
+		})
+	}
+}
+
+// announce starts LAN advertising for a server (mDNS + broadcast probe
+// answer). It runs until its context is done; failures are logged, never
+// fatal (the API works without discovery).
+func announce(ctx context.Context, cfg config.Config, selfID, v string, log *slog.Logger) {
+	err := discovery.Announce(ctx, discovery.Announcement{
+		ID:      selfID,
+		Name:    cfg.NodeName,
+		Version: v,
+		Port:    cfg.Port,
+		Options: discovery.Options{
+			MDNS:      cfg.DiscoveryMDNS,
+			Broadcast: cfg.DiscoveryBroadcast,
+			Port:      cfg.DiscoveryPort,
+		},
+		Log: log,
+	})
+	if err != nil && ctx.Err() == nil {
+		log.Warn("server: discovery announce stopped", "err", err)
+	}
+}
+
 // serve starts the HTTP server on the configured port. Role both also runs
 // the built-in worker in-process, through the same worker API a remote
-// worker uses (ARCHITECTURE.md).
+// worker uses (ARCHITECTURE.md). A role of worker turns serve into the
+// worker flow only: that is how a machine that joined a server keeps
+// working when the same container or systemd unit starts it again.
 func serve(args []string, version string) error {
 	cfg, err := config.Load(config.Options{Args: args})
 	if err != nil {
 		return err
 	}
-	if cfg.Role == config.RoleWorker {
-		return errors.New("serve does not run worker-only mode; use 'shrinkyourshit worker' with --server")
-	}
 	logger := newLogger(cfg)
 	slog.SetDefault(logger)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Role worker: no local server, just the worker against SHRINK_SERVER
+	// (or a discovered one).
+	if cfg.Role == config.RoleWorker {
+		return runWorkerFlow(ctx, cfg, logger)
+	}
 
 	static, err := fs.Sub(webui.Dist, "dist")
 	if err != nil {
@@ -96,21 +136,37 @@ func serve(args []string, version string) error {
 		FFprobePath: cfg.FFprobePath(),
 	})
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	// First serve start creates the built-in node and its key file; later
 	// starts reuse both (server.NodeRegistry.EnsureBuiltinNode).
-	nodeKey, _, err := svc.Nodes().EnsureBuiltinNode(ctx, cfg.DataDir, server.BuiltinNodeName(cfg.NodeName))
+	nodeKey, builtin, err := svc.Nodes().EnsureBuiltinNode(ctx, cfg.DataDir, server.BuiltinNodeName(cfg.NodeName))
 	if err != nil {
 		return err
 	}
 
 	svc.Start(ctx)
 
+	// LAN discovery: advertise this server and answer probes; the setup
+	// wizard's join card reads the discovered list (own id hidden).
+	announceCtx, stopAnnounce := context.WithCancel(ctx)
+	defer stopAnnounce()
+	go announce(announceCtx, cfg, builtin.ID, version, logger)
+	svc.SetDiscover(discoverFn(cfg), builtin.ID)
+
+	// The setup wizard's "join" choice: persist role=worker, then switch
+	// this process over (HTTP down, pairing flow, worker loop).
+	type joinChoice struct{ url, token string }
+	joined := make(chan joinChoice, 1)
+	handler := api.New(version, static, svc, api.WithJoin(func(serverURL, token string) error {
+		if err := config.JoinExisting(cfg.DataDir, serverURL); err != nil {
+			return err
+		}
+		joined <- joinChoice{url: serverURL, token: token}
+		return nil
+	}))
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           api.New(version, static, svc),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -125,7 +181,10 @@ func serve(args []string, version string) error {
 	)
 
 	// Role both starts the built-in worker against this server through the
-	// same HTTP API a remote worker uses.
+	// same HTTP API a remote worker uses. It has its own context so a
+	// mid-run join can stop it before the worker switch.
+	workerCtx, cancelBuiltin := context.WithCancel(ctx)
+	defer cancelBuiltin()
 	if cfg.Role == config.RoleBoth {
 		go func() {
 			wcfg := workerpkg.Config{
@@ -136,7 +195,7 @@ func serve(args []string, version string) error {
 				FFprobePath: cfg.FFprobePath(),
 				Log:         logger,
 			}
-			if err := workerpkg.Run(ctx, wcfg); err != nil {
+			if err := workerpkg.Run(workerCtx, wcfg); err != nil && workerCtx.Err() == nil {
 				logger.Error("built-in worker stopped", "err", err)
 			}
 		}()
@@ -157,12 +216,63 @@ func serve(args []string, version string) error {
 		}
 		svc.Stop()
 		return nil
+	case join := <-joined:
+		// The wizard joined a server: this machine becomes a worker.
+		logger.Info("joining server; this machine is switching to worker mode", "server", join.url)
+		cancelBuiltin()
+		stopAnnounce()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown of local server during join", "err", err)
+		}
+		svc.Stop()
+		joinCfg := cfg
+		joinCfg.Server = join.url
+		return runWorkerFlow(ctx, joinCfg, logger, join.token)
 	}
 }
 
-// worker runs a remote worker: it claims jobs from SHRINK_SERVER and encodes
-// locally. Pairing arrives in task 08; for now the node key must already
-// exist at <data-dir>/node.key.
+// runWorkerFlow pairs (when needed) and runs the worker loop until ctx is
+// done. It blocks, so a docker or systemd unit that starts the default
+// subcommand keeps a joined machine working across restarts. token, when
+// given, overrides cfg.Token (the join request carries it explicitly).
+func runWorkerFlow(ctx context.Context, cfg config.Config, logger *slog.Logger, token ...string) error {
+	pairToken := cfg.Token
+	if len(token) > 0 && token[0] != "" {
+		pairToken = token[0]
+	}
+	serverURL, key, err := workerpkg.EnsurePaired(ctx, workerpkg.PairConfig{
+		ServerURL: cfg.Server,
+		Token:     pairToken,
+		NodeName:  cfg.NodeName,
+		DataDir:   cfg.DataDir,
+		Discover:  discoverFn(cfg),
+		Log:       logger,
+	})
+	if err != nil {
+		return err
+	}
+	if serverURL == "" {
+		return errors.New("worker: no server URL resolved; set SHRINK_SERVER")
+	}
+	logger.Info("worker starting",
+		"server", serverURL,
+		"node_name", cfg.NodeName,
+		"scratch_dir", cfg.ScratchDir,
+	)
+	return workerpkg.Run(ctx, workerpkg.Config{
+		ServerURL:   serverURL,
+		Key:         key,
+		ScratchDir:  cfg.ScratchDir,
+		FFmpegPath:  cfg.FFmpegPath,
+		FFprobePath: cfg.FFprobePath(),
+		Log:         logger,
+	})
+}
+
+// worker runs a remote worker: it pairs on first run (task 08) and then
+// claims jobs from the server and encodes locally.
 func worker(args []string) error {
 	cfg, err := config.Load(config.Options{Args: args})
 	if err != nil {
@@ -174,35 +284,9 @@ func worker(args []string) error {
 	logger := newLogger(cfg)
 	slog.SetDefault(logger)
 
-	if cfg.Server == "" {
-		return errors.New("worker mode needs a server: set SHRINK_SERVER or --server, e.g. http://192.168.1.10:8765")
-	}
-	keyPath := filepath.Join(cfg.DataDir, server.NodeKeyFile)
-	key, err := os.ReadFile(keyPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("no node key at %s: join a server first (pairing arrives with task 08)", keyPath)
-		}
-		return err
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	logger.Info("worker starting",
-		"server", cfg.Server,
-		"node_name", cfg.NodeName,
-		"scratch_dir", cfg.ScratchDir,
-		"concurrency_hint", "from server settings",
-	)
-	return workerpkg.Run(ctx, workerpkg.Config{
-		ServerURL:   cfg.Server,
-		Key:         strings.TrimSpace(string(key)),
-		ScratchDir:  cfg.ScratchDir,
-		FFmpegPath:  cfg.FFmpegPath,
-		FFprobePath: cfg.FFprobePath(),
-		Log:         logger,
-	})
+	return runWorkerFlow(ctx, cfg, logger)
 }
 
 func newLogger(cfg config.Config) *slog.Logger {
