@@ -87,3 +87,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T23:08:00Z task 12: build session ses_e763604daffe6crN11MAa7gsPs finished succeeded; PM verified PR #13 at head e37ea46 — STATUS row done, all 5 task-file acceptance boxes ticked, DECISIONS.md unchanged vs origin/main, make test and make lint exit 0 on the VM, CI run 40970239280 green on all seven jobs
 - 2026-10-29T23:08:13Z task 12: PR #13 merged squash c7a116f, branch task/12-responsive-playwright deleted, main pulled on the VM to c7a116f
 - 2026-10-29T23:08:20Z task 12: the new layout suite caught a real 99px overflow on /encode at 390px (a select sized to its longest option), fixed with w-full on full-width controls; next task is 13 (deps 10 and 12 both done)
+- 2026-10-29T23:16:10Z task 13: started build session ses_e760d0102ffeJG6kl1K6MGeTiS (feedback, confirmations, error detail, empty states; deps 10 and 12 both done, no session was running)
