@@ -12,6 +12,6 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 06 | 06-setup-and-auth.md | done | PR https://github.com/PeiceOfToast/shrinkyourshit/pull/6 |
 | 07 | 07-easy-mode-ui.md | done | PR https://github.com/PeiceOfToast/shrinkyourshit/pull/7 |
 | 08 | 08-node-pairing.md | done | PR https://github.com/PeiceOfToast/shrinkyourshit/pull/8 |
-| 09 | 09-file-transfer-and-installer.md | todo | |
+| 09 | 09-file-transfer-and-installer.md | in_progress | branch task/09-file-transfer-installer |
 
 Dependencies are listed in ROADMAP.md. Do not start a task whose dependencies are not `done`.
