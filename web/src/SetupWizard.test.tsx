@@ -2,44 +2,128 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import SetupWizard from './SetupWizard'
+import type { DiscoveredServer } from './api'
 import {
   initialWizardState,
   validateAccountStep,
   type WizardState,
 } from './wizardModel'
 
-function renderWizard(state?: Partial<WizardState>) {
+function renderWizard(
+  state?: Partial<WizardState>,
+  opts?: {
+    servers?: DiscoveredServer[]
+    onJoin?: (server: DiscoveredServer, token: string) => void
+    joining?: boolean
+  },
+) {
   let current: WizardState = { ...initialWizardState, ...state }
   const setState = vi.fn((next: WizardState) => {
     current = next
   })
   const onFinish = vi.fn(() => Promise.resolve())
-  const utils = render(
-    <SetupWizard state={current} setState={setState} onFinish={onFinish} />,
-  )
+  const props = {
+    state: current,
+    setState,
+    onFinish,
+    servers: opts?.servers,
+    onJoin: opts?.onJoin,
+    joining: opts?.joining,
+  }
+  const utils = render(<SetupWizard {...props} />)
   const rerenderWith = (next: WizardState) => {
     current = next
-    utils.rerender(
-      <SetupWizard state={current} setState={setState} onFinish={onFinish} />,
-    )
+    utils.rerender(<SetupWizard {...props} state={current} />)
   }
   return { setState, onFinish, rerenderWith, get: () => current }
 }
 
 describe('SetupWizard', () => {
-  it('starts on the server step with join disabled', () => {
+  it('starts on the server step; without servers the join card is inert', () => {
     renderWizard()
     expect(screen.getByTestId('wizard-step-1')).toBeInTheDocument()
     expect(screen.getByTestId('mode-server')).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    expect(screen.getByTestId('mode-join')).toHaveAttribute(
-      'aria-disabled',
-      'true',
+    expect(screen.getByTestId('mode-join')).toHaveTextContent(
+      'No other server was found on your network.',
     )
-    expect(screen.getByText('Coming soon.')).toBeInTheDocument()
+    expect(screen.queryByTestId('join-servers')).not.toBeInTheDocument()
+    // Clicking an inert card opens nothing.
+    fireEvent.click(screen.getByTestId('mode-join'))
+    expect(screen.queryByTestId('join-servers')).not.toBeInTheDocument()
     expect(screen.getByTestId('wizard-back')).toBeDisabled()
+  })
+
+  it('lists discovered servers and starts the pairing flow (task 08)', () => {
+    const onJoin = vi.fn()
+    renderWizard(undefined, {
+      servers: [
+        {
+          id: 'srv-1',
+          name: 'media-box',
+          url: 'http://10.0.0.5:8765',
+          version: 'v1.2.3',
+        },
+      ],
+      onJoin,
+    })
+    expect(screen.getByTestId('mode-join')).toHaveTextContent(
+      'Servers were found on your network.',
+    )
+
+    // Open the picker and choose the server.
+    fireEvent.click(screen.getByTestId('mode-join'))
+    expect(screen.getByTestId('join-servers')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('join-server-srv-1'))
+
+    // The join panel explains what happens next; the token is optional.
+    expect(screen.getByText(/Joining/)).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('join-confirm'))
+    expect(onJoin).toHaveBeenCalledWith(
+      {
+        id: 'srv-1',
+        name: 'media-box',
+        url: 'http://10.0.0.5:8765',
+        version: 'v1.2.3',
+      },
+      '',
+    )
+
+    // With a token typed, it rides along.
+    fireEvent.change(screen.getByTestId('join-token'), {
+      target: { value: 'one-time-code' },
+    })
+    fireEvent.click(screen.getByTestId('join-confirm'))
+    expect(onJoin).toHaveBeenLastCalledWith(
+      {
+        id: 'srv-1',
+        name: 'media-box',
+        url: 'http://10.0.0.5:8765',
+        version: 'v1.2.3',
+      },
+      'one-time-code',
+    )
+  })
+
+  it('shows the joining state while the request runs', () => {
+    renderWizard(undefined, {
+      servers: [
+        {
+          id: 'srv-1',
+          name: 'media-box',
+          url: 'http://10.0.0.5:8765',
+          version: '',
+        },
+      ],
+      onJoin: () => {},
+      joining: true,
+    })
+    fireEvent.click(screen.getByTestId('mode-join'))
+    fireEvent.click(screen.getByTestId('join-server-srv-1'))
+    expect(screen.getByTestId('join-confirm')).toHaveTextContent('Joining…')
+    expect(screen.getByTestId('join-confirm')).toBeDisabled()
   })
 
   it('walks forward through all three steps and back again', () => {

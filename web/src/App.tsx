@@ -8,7 +8,7 @@ import LibraryDetailPage from './LibraryDetailPage'
 import LibraryEditPage from './LibraryEditPage'
 import LoginPage from './LoginPage'
 import NewLibraryPage from './NewLibraryPage'
-import PlaceholderPage from './PlaceholderPage'
+import NodesPage from './NodesPage'
 import SettingsPage from './SettingsPage'
 import SetupPage from './SetupPage'
 
@@ -25,15 +25,7 @@ export default function App() {
           <Route path="libraries/new" element={<NewLibraryPage />} />
           <Route path="libraries/:id" element={<LibraryDetailPage />} />
           <Route path="libraries/:id/edit" element={<LibraryEditPage />} />
-          <Route
-            path="nodes"
-            element={
-              <PlaceholderPage
-                title="Nodes"
-                message="Other machines that help out arrive with the next update."
-              />
-            }
-          />
+          <Route path="nodes" element={<NodesPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>

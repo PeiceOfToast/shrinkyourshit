@@ -56,6 +56,9 @@ export interface SetupStatus {
   setup_complete: boolean
   login_enabled: boolean
   username?: string
+  /** Present in the POST /setup response for a join (task 08). */
+  mode?: 'server' | 'join'
+  server?: string
 }
 
 export function getSetupStatus(): Promise<SetupStatus> {
@@ -64,10 +67,13 @@ export function getSetupStatus(): Promise<SetupStatus> {
 
 /** POST /setup — first-run setup. Only works while setup is incomplete. */
 export interface SetupRequest {
-  mode: 'server'
-  login_enabled: boolean
+  mode: 'server' | 'join'
+  login_enabled?: boolean
   username?: string
   password?: string
+  /** Join target and optional one-time pairing token (mode join). */
+  server?: string
+  token?: string
 }
 
 export function completeSetup(body: SetupRequest): Promise<SetupStatus> {
@@ -346,4 +352,92 @@ export function browse(path = '/'): Promise<BrowseResponse> {
   return api<BrowseResponse>(
     `/api/v1/fs/browse?path=${encodeURIComponent(path)}`,
   )
+}
+
+/**
+ * Nodes (task 08): registered worker machines, pairing tokens and the
+ * discovered-server list for the setup wizard's join card.
+ */
+export interface NodeCapabilities {
+  encoders?: { name: string; codecs: string[] }[]
+  cpu_cores?: number
+  ffmpeg_version?: string
+}
+
+export interface PathMapping {
+  server_path: string
+  node_path: string
+}
+
+export interface Node {
+  id: string
+  name: string
+  os: string
+  arch: string
+  capabilities: NodeCapabilities | null
+  access_mode: string
+  path_mappings: PathMapping[] | null
+  status: string
+  enabled: boolean
+  last_heartbeat_at?: string
+  created_at: string
+}
+
+export function getNodes(): Promise<ListResponse<Node>> {
+  return api<ListResponse<Node>>('/api/v1/nodes')
+}
+
+/** The one-time token and the ready-to-copy install commands. */
+export interface InstallCommands {
+  docker: string
+  shell: string
+  powershell: string
+}
+
+export interface PairingToken {
+  token: string
+  expires_at: string
+  commands: InstallCommands
+}
+
+export function createNodeToken(): Promise<PairingToken> {
+  return api<PairingToken>('/api/v1/nodes/tokens', { method: 'POST' })
+}
+
+export function approveNode(id: string): Promise<Node> {
+  return api<Node>(`/api/v1/nodes/${id}/approve`, { method: 'POST' })
+}
+
+export function revokeNode(id: string): Promise<Node> {
+  return api<Node>(`/api/v1/nodes/${id}/revoke`, { method: 'POST' })
+}
+
+export function deleteNode(id: string): Promise<void> {
+  return api<void>(`/api/v1/nodes/${id}`, { method: 'DELETE' })
+}
+
+export interface NodeUpdate {
+  name?: string
+  enabled?: boolean
+  access_mode?: string
+  path_mappings?: PathMapping[]
+}
+
+export function updateNode(id: string, body: NodeUpdate): Promise<Node> {
+  return api<Node>(`/api/v1/nodes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** A server found on the LAN (setup wizard join card). */
+export interface DiscoveredServer {
+  id: string
+  name: string
+  url: string
+  version: string
+}
+
+export function getSetupServers(): Promise<{ servers: DiscoveredServer[] }> {
+  return api<{ servers: DiscoveredServer[] }>('/api/v1/setup/servers')
 }

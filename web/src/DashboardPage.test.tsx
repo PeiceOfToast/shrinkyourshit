@@ -79,6 +79,36 @@ const zeros = {
   ],
 }
 
+const nodes = {
+  items: [
+    {
+      id: 'node-1',
+      name: 'media-box (built-in)',
+      os: 'linux',
+      arch: 'amd64',
+      capabilities: { encoders: [{ name: 'cpu', codecs: ['hevc'] }] },
+      access_mode: 'shared',
+      path_mappings: [],
+      status: 'approved',
+      enabled: true,
+      created_at: '2026-10-29T00:00:00Z',
+    },
+    {
+      id: 'node-2',
+      name: 'attic-box',
+      os: 'linux',
+      arch: 'arm64',
+      capabilities: null,
+      access_mode: 'auto',
+      path_mappings: [],
+      status: 'pending',
+      enabled: true,
+      created_at: '2026-10-29T01:00:00Z',
+    },
+  ],
+  total: 2,
+}
+
 function renderDashboard(withEvents = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -175,7 +205,7 @@ describe('DashboardPage', () => {
     expect(screen.getByTestId('easy-form')).toBeInTheDocument()
   })
 
-  it('shows recent history with sizes and the node placeholder', async () => {
+  it('shows recent history with sizes and per-node activity', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -183,6 +213,7 @@ describe('DashboardPage', () => {
         body: { items: [library], total: 1 },
       },
       { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      { method: 'GET', match: /\/api\/v1\/nodes$/, body: nodes },
       {
         method: 'GET',
         match: /\/api\/v1\/jobs$/,
@@ -190,8 +221,9 @@ describe('DashboardPage', () => {
           items: [
             { ...job(100, 'done'), id: 'done-1' },
             { ...job(40, 'failed'), id: 'fail-1', error: 'encoder exploded' },
+            { ...job(60), id: 'run-2', node_id: 'node-2' },
           ],
-          total: 2,
+          total: 3,
         },
       },
     ])
@@ -207,10 +239,30 @@ describe('DashboardPage', () => {
       '4.0 GB → 2.0 GB',
     )
     expect(screen.getByTestId('history-job-fail-1')).toHaveTextContent('failed')
-    expect(screen.getByTestId('nodes-placeholder')).toBeInTheDocument()
     expect(screen.getByTestId('dashboard-add-library')).toHaveAttribute(
       'href',
       '/libraries/new',
+    )
+
+    // The Nodes card is live: each node with its state, and the working
+    // node's progress bar (task 08 replaces the placeholder).
+    await waitFor(() =>
+      expect(screen.getByTestId('nodes-activity')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('node-activity-node-1')).toHaveTextContent(
+      'media-box (built-in)',
+    )
+    expect(screen.getByTestId('node-activity-node-1')).toHaveTextContent(
+      'ready',
+    )
+    expect(screen.getByTestId('node-activity-node-2')).toHaveTextContent(
+      'waiting for approval · working on',
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('node-progress-node-2')).toHaveAttribute(
+        'aria-valuenow',
+        '60',
+      ),
     )
   })
 
