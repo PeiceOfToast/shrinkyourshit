@@ -68,3 +68,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-29T13:12:00Z ci: post-merge main run 40877041605 green (2m22s, all six jobs) - the fix-ci unit resolved both defects on main; branch protection now enforces green PRs
 - 2026-10-29T20:04:02Z docs: added the UI review at docs/ui-review-2026-10-29.md and scheduled it as tasks 10 to 15 (v1.1 UI and control, v1.2 rule tiers); updated ROADMAP, API, ARCHITECTURE, STACK and STATUS on the owner's instruction
 - 2026-10-29T20:04:02Z docs: DECISIONS.md deliberately untouched; the flow schema is already covered by decision 6 and B3, so no new decision entry was needed
+- 2026-10-29T20:07:59Z docs: added the update path as tasks 16 (release artifacts and self update) and 17 (in app update UI), scheduled as v1.3; ROADMAP, API, ARCHITECTURE and STACK updated

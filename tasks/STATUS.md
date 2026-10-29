@@ -19,5 +19,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 13 | 13-feedback-and-safety.md | todo | v1.1 |
 | 14 | 14-flow-schema-and-step-stack.md | todo | v1.2 |
 | 15 | 15-visual-flow-editor.md | todo | v1.2 |
+| 16 | 16-release-and-self-update.md | todo | v1.3 |
+| 17 | 17-update-ui.md | todo | v1.3 |
 
 Dependencies are listed in ROADMAP.md. Do not start a task whose dependencies are not `done`.

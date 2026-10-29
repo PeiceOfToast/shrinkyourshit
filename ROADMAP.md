@@ -38,6 +38,15 @@ Source: `docs/ui-review-2026-10-29.md`, written after the owner ran the MVP on a
 | 14 | Flow graph schema, easy mode preview, step stack editor | 02, 04, 10 |
 | 15 | Visual flow editor on the canvas, read only then editing | 14 |
 
+## v1.3: Ship and update (scheduled)
+
+The release workflow already builds five binaries and a container image on a `v*` tag, but no tag has ever been cut, so nothing is published and every test run today means a full rebuild. These two tasks make updating a pull or a click instead.
+
+| Task | Summary | Depends on |
+|------|---------|------------|
+| 16 | Release artifacts with checksums, self update command, rollback, container refusal | 12 |
+| 17 | In app update check and update UI | 16, 10 |
+
 ## After v1.2 (order flexible)
 
 1. Remux-only, audio-only conversion, subtitle extract, health check, rename/move as first-class actions with UI.

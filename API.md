@@ -342,3 +342,28 @@ Details:
 ### Task 15
 
 No new endpoints. The canvas uses `GET` and `PUT /api/v1/libraries/{id}/flow`, `POST /api/v1/flows/validate` and `GET /api/v1/flows/step-types`, so the server stays the only place that decides whether a graph is valid.
+
+### Task 16
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/version` | none | `{version, commit, date, runtime}` where runtime is `binary` or `container` |
+
+- CLI only beyond that endpoint: `shrink version`, `shrink update --check`, `shrink update`, `shrink update --rollback`.
+- Releases publish `checksums.txt` beside the archives. The updater refuses any asset whose sha256 does not match or is missing from that file.
+- Settings added: `update_check` (bool, default true), `update_channel` (`stable` or `prerelease`, default `stable`), `backup_before_update` (bool, default true).
+
+### Task 17
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/version` | none | extended with `update_check_enabled` and `channel` |
+| GET | `/api/v1/update/status` | admin | `{current, latest, update_available, release_url, release_notes, published_at, self_update_supported, reason}` |
+| POST | `/api/v1/update/check` | admin | force a refresh, rate limited to once a minute, `429 {"code":"rate_limited"}` beyond it |
+| POST | `/api/v1/update/apply` | admin | binary installs only; `409 {"code":"self_update_unsupported"}` with the pull instructions in a container |
+
+Details:
+
+- Progress streams on the existing events channel as `update.progress`, `update.succeeded` and `update.failed`.
+- The status endpoint never blocks on the network at startup; the first answer may be `{update_available: false, reason: "not checked yet"}`.
+- Nothing in this API applies an update on its own. There is no auto apply endpoint and none is planned.

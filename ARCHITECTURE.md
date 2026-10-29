@@ -229,6 +229,22 @@ Edge{ from, to, when }
 
 Shell rules: under `md` the nav is a drawer behind a top bar, at `md` and up it is the left rail. The page background is painted on `html, body` so no region outside the shell renders white. Every page uses one container, `mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8`. `settings` redirects to `app`.
 
+## Update path
+
+Three install shapes, three update paths, and the app always says which one applies.
+
+- **Container.** The image is published to `ghcr.io/peiceoftoast/shrinkyourshit` on every `v*` tag, tagged with the version and `latest`. Updating is `docker compose pull` then `docker compose up -d`. The app never tries to update itself from inside a container; it detects `/.dockerenv` or `SHRINK_IN_CONTAINER=1` and shows the commands instead.
+- **Binary.** `shrink update` asks GitHub for the latest release, picks the asset for `GOOS`/`GOARCH`, verifies the sha256 from the release `checksums.txt`, writes the new binary beside the old one, keeps `<binary>.prev`, and renames over it. Restart is a systemd `Restart=always` bounce or an exec. `shrink update --rollback` restores the previous binary.
+- **Source.** `git pull` plus the normal build, documented and never automated.
+
+Rules that apply to all three:
+
+- No update applies itself by default. Checking is on, applying is always a human click or an explicit command.
+- The SQLite database is backed up to `<data-dir>/backups/pre-update-<version>.db` before any update, last three kept.
+- A download that fails checksum verification aborts with the running binary untouched.
+- The version string is injected at build time (`main.version`, `main.commit`, `main.date`); a build without it reports `v0.0.0` and cannot self update safely, so releases always inject it.
+- Schema migrations run on start and only move forward. A failed migration leaves the backup as the recovery point.
+
 ## Security
 
 - Node pairing needs an admin approval click or a one-time token (expires in 24h, single use).
