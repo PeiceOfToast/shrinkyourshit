@@ -74,6 +74,7 @@ Request/response details beyond the table:
   {
     "id": "…", "file_id": "…", "library_id": "…", "attempt": 0,
     "target": { …Target… },
+    "flow": { …Graph… }, "flow_source": "steps",
     "source_path": "/node/side/path.mkv",
     "source_size": 123, "source_mtime": 1700000000,
     "fingerprint": "123:1700000000:abc…",
@@ -87,7 +88,9 @@ Request/response details beyond the table:
   mappings (`[{"server_path": "/media", "node_path": "/mnt/nas"}]`,
   longest prefix wins, identity when empty). `access_mode` is the node's
   configured mode; in task 09 `auto` is passed through and the worker
-  resolves it with the shared-storage access check.
+  resolves it with the shared-storage access check. `flow` (task 14) is
+  the library's rule graph; the worker compiles it and resolves it against
+  the probed source, and the resolved Target drives the encode.
 - `POST /api/v1/worker/jobs/{id}/progress` — response
   `{"status": "<job status>"}`; the worker polls it and stops the encode
   when the status is terminal (`cancelled`, `failed`, `done`). A job that
@@ -337,12 +340,43 @@ No new endpoints. The Playwright suite drives the built web app through the Go s
 | PUT | `/api/v1/libraries/{id}/flow` | admin | body `{source, graph}`; validates before saving |
 | POST | `/api/v1/flows/validate` | admin | body `{graph}`; `200 {"valid":true}` or `400 {"code":"invalid_flow","errors":[{path,message}]}` |
 | GET | `/api/v1/flows/step-types` | admin | the palette: step type id, label, description, parameter schema |
+| POST | `/api/v1/flows/preview` | admin | body `{easy}` or `{graph}`; returns `{graph, steps:[{id,type,plain}]}` — one plain-language line per compiled step, nothing saved |
 
 Details:
 
-- Library responses gain `flow` and `flow_source` alongside the existing `target` and `easy`.
-- An invalid graph never saves; validation errors name the field path so the UI can attach them to a row or a node.
-- When a library has both `target` and `flow`, `flow` is authoritative and a mismatch is logged at warn level. `target` remains for compatibility with easy mode clients.
+- Library responses gain `flow` and `flow_source` alongside the existing
+  `target` and `easy`. Legacy rows without a stored flow get the graph
+  compiled from their Target (`source` `easy` when an easy input is
+  stored, else `advanced`), and the startup backfill persists it.
+- `GET /libraries/{id}/flow` → `{"library_id", "source", "graph"}`; unknown
+  library is 404. The graph round trips byte identical: the server stores
+  the canonical JSON and re-marshals it on read.
+- `PUT /libraries/{id}/flow` validates first (`400 invalid_flow` with the
+  field errors, nothing saved) and accepts `source` of `easy`, `steps` or
+  `advanced` (anything else is `400 invalid_request`). On success the
+  stored Target is re-synced from the compiled flow, files are
+  re-evaluated, and the reply is the same shape as GET.
+- `POST /flows/validate` never saves. Field errors name the path
+  (`nodes[2].params.codec`, `edges[0].to`, `schema`, `graph`) so the UI can
+  attach them to a row or a node.
+- `POST /flows/preview` is the easy screen's live "what this does" source:
+  sending `{easy}` compiles with the current settings (`default_video_codec`,
+  `preferred_languages`); sending `{graph}` renders an existing graph.
+  Sending both is `400 invalid_request`.
+- `GET /flows/step-types` → standard list envelope of `{type, label,
+  description, condition, params:[{name,label,kind,options?,min?,max?,
+  required?,default?,help?}]}`; `condition: true` marks guard steps
+  (`if_codec_not`, `if_bitrate_above`).
+- `JobSpec` (task 05) gains `flow` and `flow_source`: the worker compiles
+  the graph and resolves it against the probed source; the resolved Target
+  drives the encode, a `skip_if_smaller` step overrides the result policy
+  with `replace_if_smaller`, and a `rename` step names the keep-both
+  output (`{name}`, `{ext}` tokens). The `target` field stays for
+  compatibility; the flow wins when they disagree and the mismatch is
+  logged server-side.
+- The easy screen never names codecs (AGENTS.md rule 14); its "what this
+  does" panel renders one plain-language line per compiled step from
+  `/flows/preview`.
 
 ### Task 15
 

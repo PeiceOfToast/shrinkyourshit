@@ -229,6 +229,10 @@ func (s *Server) Start(ctx context.Context) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.scanner.setContext(s.ctx)
 
+	// Libraries created before the flow columns exist get their canonical
+	// rule graph compiled and stored once (task 14, no manual migration).
+	s.libs.backfillFlows(ctx)
+
 	libs, err := s.libs.List(ctx)
 	if err != nil {
 		s.log.Error("server: list libraries at startup", "err", err)

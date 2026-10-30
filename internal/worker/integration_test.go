@@ -272,6 +272,62 @@ esac
 	return path
 }
 
+// TestLegacyTargetStillRuns is acceptance item 4: a library written before
+// task 14 (Target only, empty flow columns) still encodes correctly with no
+// manual migration — the job spec builder compiles the flow from the stored
+// Target on read.
+func TestLegacyTargetStillRuns(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	target := flow.Default()
+	target.Video.Quality = flow.QualityMin
+	lib := s.createLibraryTarget(target, store.ResultPolicyReplaceIfSmaller)
+
+	// Simulate a legacy row: strip the flow columns the manager wrote.
+	row, err := s.st.GetLibrary(context.Background(), lib.ID)
+	require.NoError(t, err)
+	row.FlowJSON = ""
+	row.FlowSource = ""
+	require.NoError(t, s.st.UpdateLibrary(context.Background(), row))
+
+	origPath := s.copyFixtureIn(makeFatH264(t, s.ffmpeg), "movie.mkv")
+	origSize := int64(len(s.fileHash(origPath)))
+
+	_ = s.scanSync(lib.ID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job done", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone
+	})
+	s.waitFor("file settled", func() bool {
+		f := s.fileRow(lib.ID)
+		return f.Status != store.FileStatusProcessing && f.Status != store.FileStatusQueued
+	})
+
+	job := s.jobFor(lib.ID)
+	require.Greater(t, job.BytesAfter, int64(0))
+	require.Less(t, job.BytesAfter, job.BytesBefore, "output must be smaller")
+
+	// The original is replaced in place with hevc video.
+	info, err := probe.Probe(context.Background(), "", origPath)
+	require.NoError(t, err)
+	require.Equal(t, flow.CodecHEVC, info.Video[0].Codec)
+	st, err := os.Stat(origPath)
+	require.NoError(t, err)
+	require.Less(t, st.Size(), origSize)
+
+	row2 := s.fileRow(lib.ID)
+	require.Equal(t, store.FileStatusSatisfied, row2.Status)
+
+	// A rescan queues nothing: the legacy library reached the same settled
+	// state a task-14 library would.
+	res := s.scanSync(lib.ID)
+	require.Equal(t, 0, res.Queued)
+}
+
 // TestIntegrationWorkerEndToEnd is acceptance item 1: a library with one
 // h264 fixture, role-both stack, job completes, output is hevc and smaller,
 // the original is replaced in place, the file is satisfied and a rescan

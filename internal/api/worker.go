@@ -123,12 +123,19 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		a.internal(w, err) // stored targets are validated on write
 		return
 	}
+	graph, source, err := server.LibraryFlow(lib)
+	if err != nil {
+		a.internal(w, err) // stored flows are validated on write
+		return
+	}
 	writeJSON(w, http.StatusOK, server.JobSpec{
 		ID:                 job.ID,
 		FileID:             f.ID,
 		LibraryID:          lib.ID,
 		Attempt:            job.Attempt,
 		Target:             target,
+		Flow:               &graph,
+		FlowSource:         source,
 		SourcePath:         server.ResolveNodePath(node, f.Path),
 		SourceSize:         f.Size,
 		SourceMtime:        f.Mtime,

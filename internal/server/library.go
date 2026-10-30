@@ -19,7 +19,10 @@ import (
 // and update. TargetJSON may be nil on create (the default Target applies);
 // on update it must be present (PUT semantics). EasyJSON is the easy-screen
 // input that compiled to TargetJSON (task 07); empty means the library was
-// not saved from the easy screen.
+// not saved from the easy screen. The flow graph (task 14) is always
+// generated from the compiled Target here; a hand-edited flow is stored
+// through UpdateFlow instead. On update an unchanged Target keeps the
+// stored flow, so a name/watch-only save cannot destroy manual steps.
 type LibraryParams struct {
 	Name         string
 	Path         string
@@ -194,22 +197,58 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 	if old != nil {
 		lib.ID = old.ID
 		lib.CreatedAt = old.CreatedAt
+		lib.FlowJSON = old.FlowJSON
+		lib.FlowSource = old.FlowSource
+	}
+	// The flow must match the rule this save produced: regenerate it from
+	// the compiled Target when the rule changed. An easy save always
+	// regenerates (the easy tier owns the flow then); a target-only save
+	// keeps the stored flow when the Target is unchanged, so a name or
+	// watch-only update never destroys hand-built steps.
+	switch {
+	case p.EasyJSON != nil || old == nil || old.TargetJSON != string(canonical):
+		graph, err := flow.TargetToFlow(target)
+		if err != nil {
+			return nil, fmt.Errorf("library: %w", err)
+		}
+		raw, err := json.Marshal(graph)
+		if err != nil {
+			return nil, fmt.Errorf("library: marshal flow: %w", err)
+		}
+		lib.FlowJSON = string(raw)
+		if p.EasyJSON != nil {
+			lib.FlowSource = flow.FlowSourceEasy
+		} else {
+			lib.FlowSource = flow.FlowSourceAdvanced
+		}
+	case old.FlowJSON == "":
+		// Legacy row kept but never backfilled: store the generated flow.
+		graph, err := flow.TargetToFlow(target)
+		if err == nil {
+			if raw, err := json.Marshal(graph); err == nil {
+				lib.FlowJSON = string(raw)
+				lib.FlowSource = flow.FlowSourceAdvanced
+			}
+		}
 	}
 	return lib, nil
 }
 
-// reevaluate applies the library's Target to every file from its cached
+// reevaluate applies the library's flow to every file from its cached
 // probe, queueing or satisfying as needed. Serialized against scans of the
-// same library.
+// same library. Each file is resolved against the flow with its own probe,
+// so a guarded encode (for example "only when the video is not HEVC")
+// satisfies files that already match without queueing them.
 func (m *LibraryManager) reevaluate(ctx context.Context, lib *store.Library) {
 	unlock := m.locks.lock(lib.ID)
 	defer unlock()
 
-	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
+	plan, _, err := LibraryPlan(lib)
 	if err != nil {
-		m.log.Error("library: re-evaluate target", "library", lib.ID, "err", err)
+		m.log.Error("library: re-evaluate flow", "library", lib.ID, "err", err)
 		return
 	}
+	logFlowTargetMismatch(m.log, lib, plan)
 	files, err := m.st.ListFiles(ctx, lib.ID)
 	if err != nil {
 		m.log.Error("library: re-evaluate list", "library", lib.ID, "err", err)
@@ -231,7 +270,12 @@ func (m *LibraryManager) reevaluate(ctx context.Context, lib *store.Library) {
 			m.log.Error("library: re-evaluate probe", "file", f.Path, "err", err)
 			continue
 		}
-		decision := flow.Evaluate(info, target)
+		eff, err := flow.ResolvePlan(plan, info)
+		if err != nil {
+			m.log.Error("library: re-evaluate resolve", "file", f.Path, "err", err)
+			continue
+		}
+		decision := flow.Evaluate(info, eff.Target)
 
 		if decision.Needs {
 			if _, queued, err := m.queue.QueueJob(ctx, lib, f, decision.Reasons); err != nil {

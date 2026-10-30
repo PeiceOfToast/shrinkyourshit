@@ -20,12 +20,18 @@ import (
 // Easy is the easy-screen state: the stored easy input when the library was
 // saved from the easy screen, the described state when the Target is
 // easy-shaped, or null when the library has no easy-mode representation.
+// Flow is the canonical rule graph (ARCHITECTURE.md flow schema) and
+// FlowSource records who owns it: easy, steps or advanced. The flow wins
+// when it disagrees with the Target; legacy rows without a stored flow
+// get the flow compiled from their Target.
 type LibraryDTO struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
 	Path         string          `json:"path"`
 	Target       flow.Target     `json:"target"`
 	Easy         json.RawMessage `json:"easy"`
+	Flow         *flow.Graph     `json:"flow"`
+	FlowSource   string          `json:"flow_source"`
 	Watch        bool            `json:"watch"`
 	Schedule     string          `json:"schedule"`
 	ResultPolicy string          `json:"result_policy"`
@@ -87,18 +93,32 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 	if err != nil {
 		target = flow.Target{}
 	}
+	graph, source := libraryFlowOrNull(l)
 	return LibraryDTO{
 		ID:           l.ID,
 		Name:         l.Name,
 		Path:         l.Path,
 		Target:       target,
 		Easy:         easyFromLibrary(l, target),
+		Flow:         graph,
+		FlowSource:   source,
 		Watch:        l.Watch,
 		Schedule:     l.Schedule,
 		ResultPolicy: l.ResultPolicy,
 		CreatedAt:    rfc3339(l.CreatedAt),
 		UpdatedAt:    rfc3339(l.UpdatedAt),
 	}
+}
+
+// libraryFlowOrNull returns the library's rule graph for the DTO. A legacy
+// row (no stored flow) gets the flow compiled from its Target so every
+// library always carries a flow; an unparsable Target yields a null flow.
+func libraryFlowOrNull(l *store.Library) (*flow.Graph, string) {
+	g, source, err := LibraryFlow(l)
+	if err != nil {
+		return nil, ""
+	}
+	return &g, source
 }
 
 // easyFromLibrary picks the easy-screen state of a library (task 07): the
@@ -270,17 +290,19 @@ type ListResponse[T any] struct {
 }
 
 // JobSpec is the GET /api/v1/worker/jobs/{id} response (API.md, task 05):
-// everything a worker needs to run one job. source_path is the node-side
-// path (path mappings applied; identity for the built-in node). access_mode
-// is the node's configured mode; for auto the worker resolves it with the
-// shared-storage check and reports the choice (task 09). ThroughputLimitMBs
-// caps transfer speed in MB/s (0 = unlimited).
+// everything a worker needs to run one job. Task 14 adds the library's
+// rule graph (Flow) and its source (easy, steps or advanced): the worker
+// compiles it and resolves it against the probed source to get the
+// effective Target, and flow wins over the Target field when they disagree
+// (a mismatch is logged server-side).
 type JobSpec struct {
 	ID                 string      `json:"id"`
 	FileID             string      `json:"file_id"`
 	LibraryID          string      `json:"library_id"`
 	Attempt            int         `json:"attempt"`
 	Target             flow.Target `json:"target"`
+	Flow               *flow.Graph `json:"flow,omitempty"`
+	FlowSource         string      `json:"flow_source,omitempty"`
 	SourcePath         string      `json:"source_path"`
 	SourceSize         int64       `json:"source_size"`
 	SourceMtime        int64       `json:"source_mtime"`

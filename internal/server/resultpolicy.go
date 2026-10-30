@@ -26,20 +26,34 @@ type ApplyResult struct {
 	SkipReason string
 }
 
+// expandRename fills a rename template (task 14): {name} is the original
+// base name, {ext} the output extension. Unknown tokens are left alone; a
+// template that does not mention {name} cannot be validated (the step
+// validation rejects it), so every output keeps its own name.
+func expandRename(template, origBase, ext string) string {
+	out := strings.ReplaceAll(template, "{name}", origBase)
+	out = strings.ReplaceAll(out, "{ext}", strings.TrimPrefix(ext, "."))
+	return out
+}
+
 // ApplyResultPolicy moves the verified output to its final place
 // (ARCHITECTURE.md result policies and replacement rules):
 //
 //   - replace_if_smaller: replace only when the output is strictly smaller,
 //     otherwise keep the original and report why;
 //   - replace: always replace;
-//   - keep_both: write <name>.shrunk.<ext> beside the untouched original.
+//   - keep_both: write <name>.shrunk.<ext> beside the untouched original —
+//     or, when renameTemplate is set (task 14: a rename step in the flow),
+//     under the template-expanded name. Tokens: {name} is the original base
+//     name, {ext} the output extension. Templates never hold a path
+//     separator (validated on save), so the output stays beside the original.
 //
 // Replacement is atomic: copy to <dest-dir>/.<name>.shrink-tmp, fsync, then
 // rename over the destination. The original is removed only after the
 // verified output exists in place, and only when the extension changed.
 // Extracted subtitle files move beside the final output; extracts are
 // dropped when the original is kept (it still holds the embedded tracks).
-func ApplyResultPolicy(ctx context.Context, policy, output, original string, outSize, originalSize int64, extracts []string) (ApplyResult, error) {
+func ApplyResultPolicy(ctx context.Context, policy, output, original string, outSize, originalSize int64, extracts []string, renameTemplate string) (ApplyResult, error) {
 	ext := filepath.Ext(output)
 	dir := filepath.Dir(original)
 	origBase := strings.TrimSuffix(filepath.Base(original), filepath.Ext(original))
@@ -56,6 +70,9 @@ func ApplyResultPolicy(ctx context.Context, policy, output, original string, out
 		return replace(ctx, output, original, dir, origBase, ext, extracts)
 	case store.ResultPolicyKeepBoth:
 		base := origBase + ".shrunk"
+		if renameTemplate != "" {
+			base = expandRename(renameTemplate, origBase, ext)
+		}
 		dest := filepath.Join(dir, base+ext)
 		if err := copyFile(ctx, output, dest); err != nil {
 			return ApplyResult{}, fmt.Errorf("write %s: %w", dest, err)

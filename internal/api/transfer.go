@@ -223,11 +223,15 @@ func (a *API) transferComplete(w http.ResponseWriter, r *http.Request, node *sto
 		return transferCompleteResult{}, false
 	}
 
-	policy := lib.ResultPolicy
-	if policy == "" {
-		policy = store.ResultPolicyReplaceIfSmaller
+	// The library's flow decides the result policy and rename template
+	// (task 14): a skip_if_smaller step makes the job behave like
+	// replace_if_smaller, and a rename step names the keep-both output.
+	policy, rename, err := server.EffectivePolicy(lib)
+	if err != nil {
+		a.internal(w, err)
+		return transferCompleteResult{}, false
 	}
-	applied, err := server.ApplyResultPolicy(ctx, policy, upload, f.Path, size, f.Size, nil)
+	applied, err := server.ApplyResultPolicy(ctx, policy, upload, f.Path, size, f.Size, nil, rename)
 	if err != nil {
 		a.internal(w, err)
 		return transferCompleteResult{}, false

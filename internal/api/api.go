@@ -105,6 +105,16 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("GET /api/v1/fs/browse", a.requireAdmin(a.browse))
 		mux.HandleFunc("GET /api/v1/stats", a.requireAdmin(a.getStats))
 
+		// Flow API (task 14): the rule graph of a library, the shared
+		// validator and the step palette. The preview endpoint (added per
+		// AGENTS rule 4) compiles an easy input or a graph to plain
+		// language so the UI never duplicates the compiler.
+		mux.HandleFunc("GET /api/v1/libraries/{id}/flow", a.requireAdmin(a.getLibraryFlow))
+		mux.HandleFunc("PUT /api/v1/libraries/{id}/flow", a.requireAdmin(a.putLibraryFlow))
+		mux.HandleFunc("POST /api/v1/flows/validate", a.requireAdmin(a.validateFlow))
+		mux.HandleFunc("GET /api/v1/flows/step-types", a.requireAdmin(a.stepTypes))
+		mux.HandleFunc("POST /api/v1/flows/preview", a.requireAdmin(a.previewFlow))
+
 		// Node administration (task 08) plus lifecycle controls (task 11).
 		// The lifecycle endpoints move desired_state only: start sets
 		// running, stop chooses stopped or draining, pause-all/resume-all
