@@ -47,10 +47,10 @@ horizontal overflow or sub 44px control at 320, 390, 414 and 768 px.
 Mobile flow editing with a different interaction model. That is a product decision and is not in this task. No API changes.
 
 ## Acceptance
-- [ ] Below `md` the canvas page shows `flow-mobile-notice` with the desktop wording, and the palette and inspector are absent from the DOM, proven by a test.
-- [ ] Pan and zoom still work below `md`, and the node count is still displayed.
-- [ ] Every canvas chrome control is at least 44 px tall and has an `aria-label`.
-- [ ] The mobile audit covers `/libraries/{id}` and `/libraries/{id}/flow` at 320, 390, 414 and 768 px, and passes.
-- [ ] `docs/ui-review-2026-10-29.md` has the mobile pass section and `ARCHITECTURE.md` has the layout rules block.
-- [ ] `DECISIONS.md` is unchanged versus `origin/main`.
-- [ ] `make test`, `make lint`, `cd web && npm run build` and `cd web && npx playwright test` all exit 0.
+- [x] Below `md` the canvas page shows `flow-mobile-notice` with the desktop wording, and the palette and inspector are absent from the DOM, proven by a test. (`FlowCanvas.test.tsx`, narrow matchMedia stub; audit leg in `mobile.spec.ts`)
+- [x] Pan and zoom still work below `md`, and the node count is still displayed. (e2e: Zoom In moves the viewport at every width, `flow-summary` asserted)
+- [x] Every canvas chrome control is at least 44 px tall and has an `aria-label`. (`index.css` sizes them under `main`; React Flow 12.12 ships Zoom In/Out/Fit View labels; audit passes all widths)
+- [x] The mobile audit covers `/libraries/{id}` and `/libraries/{id}/flow` at 320, 390, 414 and 768 px, and passes. (61 passed / 3 by-design skips)
+- [x] `docs/ui-review-2026-10-29.md` has the mobile pass section and `ARCHITECTURE.md` has the layout rules block.
+- [x] `DECISIONS.md` is unchanged versus `origin/main`. (`git diff origin/main -- DECISIONS.md` empty)
+- [x] `make test`, `make lint`, `cd web && npm run build` and `cd web && npx playwright test` all exit 0. (`make test-integration` also exit 0)

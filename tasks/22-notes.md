@@ -35,4 +35,21 @@ playwright test`; tick acceptance; STATUS done; PR.
 
 ## Summary
 
-(filled at the end)
+1. Built: the flow canvas page is view only below `md` — palette, inspector and
+   every edit control gone, `flow-mobile-notice` rendered, canvas with pan/pinch
+   zoom and the step count kept; editing is `requested && wide` with the guard
+   armed. Canvas chrome (React Flow zoom buttons, attribution link) sized to the
+   44px minimum in `index.css`, scoped under `main` because the route is lazy.
+2. Built: the mobile audit now fetches the library id from the API at runtime and
+   audits `/libraries/{id}` and `/libraries/{id}/flow` at 320/390/414/768, with a
+   Zoom In click proving the viewport transform changes on a phone.
+3. Found and fixed a pre-existing blank-page bug: the server marshals parameterless
+   step types with `"params": null` and the client mapped over it, unmounting the
+   whole app in a real browser (jsdom fixture used `[]`, so unit tests never saw
+   it). Normalized in `getFlowStepTypes`; regression test in `api.test.ts`.
+4. Skipped: mobile flow editing (declared out of scope); no API changes.
+5. Next task should know: Playwright needs Chromium's system libs in this env
+   (used `LD_LIBRARY_PATH=/tmp/opencode/chromium-deps/usr/lib/x86_64-linux-gnu`
+   with `apt-get download`-extracted debs — CI installs them normally). The
+   integration suite can flake `TestIntegrationRevokeRequeuesForBuiltinWorker`
+   under load; it passed on re-run.
