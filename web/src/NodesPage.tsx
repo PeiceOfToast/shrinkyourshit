@@ -553,7 +553,9 @@ function NodeRow({
           <Switch
             checked={running}
             onChange={(on) =>
-              on ? start.mutate(node.id) : stop.mutate({ id: node.id, drain: true })
+              on
+                ? start.mutate(node.id)
+                : stop.mutate({ id: node.id, drain: true })
             }
             label={`Encoding on ${node.name}`}
             testId={`node-switch-${node.id}`}

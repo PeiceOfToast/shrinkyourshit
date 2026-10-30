@@ -605,7 +605,11 @@ describe('NodesPage', () => {
         method: 'GET',
         match: /\/api\/v1\/nodes$/,
         body: {
-          items: [nodeFixture({ stats: { files_done: 2, bytes_saved: 1_500_000_000 } })],
+          items: [
+            nodeFixture({
+              stats: { files_done: 2, bytes_saved: 1_500_000_000 },
+            }),
+          ],
           total: 1,
         },
       },
@@ -702,7 +706,9 @@ describe('NodesPage', () => {
         mock.calls('POST', /\/api\/v1\/nodes\/pause-all$/).length,
       ).toBeGreaterThan(0),
     )
-    await waitFor(() => expect(screen.getByTestId('nodes-pause-all')).toBeDisabled())
+    await waitFor(() =>
+      expect(screen.getByTestId('nodes-pause-all')).toBeDisabled(),
+    )
     const resumeAfterPause = await screen.findByTestId('nodes-resume-all')
     await waitFor(() => expect(resumeAfterPause).toBeEnabled())
 
@@ -714,8 +720,8 @@ describe('NodesPage', () => {
     )
     // Both actions announced themselves (pause + resume).
     const toasts = await screen.findAllByTestId('toast')
-    expect(toasts.some((t) => t.textContent?.includes('Resumed 2 nodes.'))).toBe(
-      true,
-    )
+    expect(
+      toasts.some((t) => t.textContent?.includes('Resumed 2 nodes.')),
+    ).toBe(true)
   })
 })

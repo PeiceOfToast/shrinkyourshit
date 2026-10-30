@@ -41,9 +41,7 @@ export default function NodeJobLine({ job }: { job: Job }) {
               {job.speed.toFixed(1)}x
             </span>
           )}
-          {eta && (
-            <span data-testid="node-job-line-eta">{eta} left</span>
-          )}
+          {eta && <span data-testid="node-job-line-eta">{eta} left</span>}
           <span data-testid="node-job-line-size">
             {formatBytes(job.bytes_before)} → {formatBytes(job.bytes_so_far)}
           </span>
