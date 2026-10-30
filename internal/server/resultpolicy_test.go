@@ -54,7 +54,7 @@ func writeTestFile(t *testing.T, path, content string) int64 {
 func TestPolicyReplaceIfSmallerSkips(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
 	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
-		p.output, p.original, p.outSize, p.origSize, nil)
+		p.output, p.original, p.outSize, p.origSize, nil, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, res.SkipReason)
 	require.Empty(t, res.FinalPath)
@@ -68,7 +68,7 @@ func TestPolicyReplaceIfSmallerSkips(t *testing.T) {
 func TestPolicyReplaceIfSmallerReplaces(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
 	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
-		p.output, p.original, p.origSize-1, p.origSize, nil)
+		p.output, p.original, p.origSize-1, p.origSize, nil, "")
 	require.NoError(t, err)
 	require.Empty(t, res.SkipReason)
 	require.Equal(t, filepath.Join(p.dir, "library", "movie.mkv"), res.FinalPath)
@@ -89,7 +89,7 @@ func TestPolicyReplaceIfSmallerReplaces(t *testing.T) {
 func TestPolicyReplaceSameExtensionRemovesNothing(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mkv")
 	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplace,
-		p.output, p.original, p.outSize, p.origSize, nil)
+		p.output, p.original, p.outSize, p.origSize, nil, "")
 	require.NoError(t, err)
 	require.Equal(t, p.original, res.FinalPath) // replaced in place
 	content, err := os.ReadFile(p.original)
@@ -100,7 +100,7 @@ func TestPolicyReplaceSameExtensionRemovesNothing(t *testing.T) {
 func TestPolicyKeepBoth(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
 	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyKeepBoth,
-		p.output, p.original, p.outSize, p.origSize, []string{p.extract})
+		p.output, p.original, p.outSize, p.origSize, []string{p.extract}, "")
 	require.NoError(t, err)
 	require.Empty(t, res.SkipReason)
 
@@ -122,7 +122,7 @@ func TestPolicyKeepBoth(t *testing.T) {
 func TestPolicyExtractsFollowRenamedOutput(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
 	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplace,
-		p.output, p.original, p.outSize, p.origSize, []string{p.extract})
+		p.output, p.original, p.outSize, p.origSize, []string{p.extract}, "")
 	require.NoError(t, err)
 	extracted, err := os.ReadFile(filepath.Join(p.dir, "library", "movie.eng.srt"))
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestPolicyExtractsFollowRenamedOutput(t *testing.T) {
 func TestPolicyExtractsDroppedWhenSkipped(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
 	res, err := ApplyResultPolicy(context.Background(), store.ResultPolicyReplaceIfSmaller,
-		p.output, p.original, p.origSize+5, p.origSize, []string{p.extract})
+		p.output, p.original, p.origSize+5, p.origSize, []string{p.extract}, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, res.SkipReason)
 	// The original kept its embedded subtitle: the extract is scratch only.
@@ -146,6 +146,6 @@ func TestPolicyExtractsDroppedWhenSkipped(t *testing.T) {
 
 func TestPolicyUnknownPolicy(t *testing.T) {
 	p := newPolicyFS(t, "movie", ".mp4")
-	_, err := ApplyResultPolicy(context.Background(), "wat", p.output, p.original, 1, 1, nil)
+	_, err := ApplyResultPolicy(context.Background(), "wat", p.output, p.original, 1, 1, nil, "")
 	require.ErrorContains(t, err, "unknown result policy")
 }

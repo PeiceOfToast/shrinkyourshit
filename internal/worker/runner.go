@@ -108,9 +108,33 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		return fail("probe source: %v", err)
 	}
 
+	// The flow is the rule (task 14): compile the graph the spec carries
+	// and resolve it against the probed source. The resolved Target drives
+	// the encode; the resolved policy and rename override the spec's
+	// library-level values. A spec without a flow (pre-task-14 server)
+	// falls back to the spec's Target.
+	target := spec.Target
+	policy := spec.ResultPolicy
+	rename := ""
+	if spec.Flow != nil {
+		plan, err := flow.Compile(*spec.Flow)
+		if err != nil {
+			return fail("invalid flow: %v", err)
+		}
+		eff, err := flow.ResolvePlan(plan, srcInfo)
+		if err != nil {
+			return fail("resolve flow: %v", err)
+		}
+		target = eff.Target
+		if eff.SkipIfSmaller {
+			policy = store.ResultPolicyReplaceIfSmaller
+		}
+		rename = eff.Rename
+	}
+
 	// Encode with fallback while a ticker reports -progress every interval.
-	output := filepath.Join(dir, "output."+containerExt(spec.Target.Container))
-	sp := encoders.NewSpec(local, output, srcInfo, spec.Target)
+	output := filepath.Join(dir, "output."+containerExt(target.Container))
+	sp := encoders.NewSpec(local, output, srcInfo, target)
 	state := newProgressState()
 
 	runCtx, cancelRun := context.WithCancel(ctx)
@@ -122,7 +146,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		r.reportLoop(stopReport, runCtx, spec, state, srcInfo.DurationSeconds, cancelled, cancelRun, mode)
 	}()
 
-	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(spec.Target), sp,
+	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(target), sp,
 		func(ctx context.Context, args []string) error {
 			return r.execEncode(ctx, args, state, tail)
 		})
@@ -174,8 +198,8 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		return r.completeTransfer(ctx, spec, output, st.Size(), res, tail, cancelled)
 	}
 
-	applied, err := server.ApplyResultPolicy(ctx, spec.ResultPolicy, output, spec.SourcePath,
-		st.Size(), spec.BytesBefore, r.sc.extractFiles(dir, "output"))
+	applied, err := server.ApplyResultPolicy(ctx, policy, output, spec.SourcePath,
+		st.Size(), spec.BytesBefore, r.sc.extractFiles(dir, "output"), rename)
 	if err != nil {
 		if cancelled.Load() || ctx.Err() != nil {
 			return nil

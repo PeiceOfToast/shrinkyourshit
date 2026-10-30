@@ -136,21 +136,30 @@ func (t *Transfer) verifiedOutputPath(jobID, ext string) string {
 	return filepath.Join(t.jobUploadDir(jobID), "output"+ext)
 }
 
-// outputExt resolves the target container extension of a job's library.
+// outputExt resolves the output container of a job's library: the flow's
+// remux_container step decides (the flow is the rule), falling back to the
+// stored Target. This keeps the upload path consistent with what the worker
+// actually encoded even when the flow changes the container.
 func (t *Transfer) outputExt(ctx context.Context, job *store.Job) (string, error) {
 	lib, err := t.st.GetLibrary(ctx, job.LibraryID)
 	if err != nil {
 		return "", fmt.Errorf("transfer: library lookup: %w", err)
 	}
-	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
-	if err != nil {
-		return "", fmt.Errorf("transfer: stored target: %w", err)
+	container := ""
+	if plan, _, err := LibraryPlan(lib); err == nil {
+		container = plan.Target().Container
 	}
-	ext := ".mkv"
-	if target.Container == flow.ContainerMP4 {
-		ext = ".mp4"
+	if container == "" {
+		target, err := flow.ParseTarget([]byte(lib.TargetJSON))
+		if err != nil {
+			return "", fmt.Errorf("transfer: stored target: %w", err)
+		}
+		container = target.Container
 	}
-	return ext, nil
+	if container == flow.ContainerMP4 {
+		return ".mp4", nil
+	}
+	return ".mkv", nil
 }
 
 // PutChunk writes one upload chunk (API.md task 09). start/end/total come
