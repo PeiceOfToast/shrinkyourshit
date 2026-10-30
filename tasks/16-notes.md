@@ -135,3 +135,7 @@ self updating a container image from inside the container, update UI
 - The v* tag itself is the owner's cut: the next tag runs the new
   pipeline (binaries + checksums + docker in dependency order); the
   workflow_dispatch dry run can prove it any time without publishing.
+- The dispatch attempt from the VM failed with HTTP 403: the PAT has no
+  actions scope (same block the PM logged on 2026-10-29T02:46:14Z), so
+  the dry run needs one click from the owner/PM (Actions tab → release →
+  Run workflow, on main after merge, or on this branch before it).
