@@ -9,6 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,6 +37,29 @@ func TestHealth(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "ok", body.Status)
 	assert.Equal(t, "v1.2.3", body.Version)
+}
+
+// TestVersionEndpoint covers /api/v1/version (API.md, task 16): the full
+// build identity plus the runtime, open like /health (no admin auth,
+// works without a wired server).
+func TestVersionEndpoint(t *testing.T) {
+	h := New("v1.2.3", testStatic(), nil, WithBuild("abc1234", "2026-01-02T03:04:05Z"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body versionResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "v1.2.3", body.Version)
+	assert.Equal(t, "abc1234", body.Commit)
+	assert.Equal(t, "2026-01-02T03:04:05Z", body.Date)
+	// The test VM is not a container; pin the runtime without guessing
+	// what environment a future containerized CI may add.
+	if update.IsContainer() {
+		assert.Equal(t, update.RuntimeContainer, body.Runtime)
+	} else {
+		assert.Equal(t, update.RuntimeBinary, body.Runtime)
+	}
 }
 
 func TestServesIndexAtRoot(t *testing.T) {

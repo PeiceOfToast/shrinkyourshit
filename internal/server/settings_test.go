@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +22,10 @@ func TestSettingsDefaults(t *testing.T) {
 	assert.False(t, vals.LoginEnabled)
 	assert.Equal(t, []string{"eng"}, vals.PreferredLanguages)
 	assert.Equal(t, VideoCodecHEVC, vals.DefaultVideoCodec)
+	// Self update (task 16): checks on, stable channel, backups on.
+	assert.True(t, vals.UpdateCheck)
+	assert.Equal(t, update.ChannelStable, vals.UpdateChannel)
+	assert.True(t, vals.BackupBeforeUpdate)
 }
 
 func TestSettingsUpdateValidation(t *testing.T) {
@@ -57,6 +62,30 @@ func TestSettingsUpdateValidation(t *testing.T) {
 	assert.Equal(t, VideoCodecAV1, vals.DefaultVideoCodec)
 	assert.Equal(t, []string{"deu", "eng"}, vals.PreferredLanguages)
 	assert.Equal(t, "/scratch", vals.ScratchDir)
+}
+
+func TestSettingsUpdatePreferences(t *testing.T) {
+	h := newAuthHarness(t)
+	ctx := context.Background()
+	s := NewSettings(h.st, nil)
+
+	// Unknown channel.
+	bad := "beta"
+	require.ErrorIs(t, s.Update(ctx, h.auth, Update{UpdateChannel: &bad}), ErrBadRequest)
+
+	// Valid round-trip, including turning the toggles off.
+	channel := update.ChannelPrerelease
+	check, backup := false, false
+	require.NoError(t, s.Update(ctx, h.auth, Update{
+		UpdateChannel:      &channel,
+		UpdateCheck:        &check,
+		BackupBeforeUpdate: &backup,
+	}))
+	vals, err := s.Get(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, update.ChannelPrerelease, vals.UpdateChannel)
+	assert.False(t, vals.UpdateCheck)
+	assert.False(t, vals.BackupBeforeUpdate)
 }
 
 func TestSettingsLoginToggle(t *testing.T) {

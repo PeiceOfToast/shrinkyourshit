@@ -139,12 +139,19 @@ func NewFlags(name string) *pflag.FlagSet {
 // sets data_dir (and no flag or env does), the new value wins but the file is
 // not re-read at the new location.
 func Load(opts Options) (Config, error) {
-	env := envMap(opts.Environ)
-
 	flags := NewFlags("shrinkyourshit")
 	if err := flags.Parse(opts.Args); err != nil {
 		return Config{}, err
 	}
+	return FromFlags(flags, opts.Environ, opts.FileOverride)
+}
+
+// FromFlags resolves the configuration from an already parsed flag set
+// (built by NewFlags, possibly with extra subcommand flags added —
+// `shrink update` does this), the environment and the config file, in
+// that order of precedence. fileOverride mirrors Options.FileOverride.
+func FromFlags(flags *pflag.FlagSet, environ []string, fileOverride string) (Config, error) {
+	env := envMap(environ)
 	src := sources{flags: flags, env: env}
 
 	// Locate the config file using the data dir before the file is applied:
@@ -159,7 +166,11 @@ func Load(opts Options) (Config, error) {
 	if expanded, expandErr := expandHome(dataDir); expandErr == nil {
 		dataDir = expanded
 	}
-	if err := readConfigFile(opts.fileLocation(dataDir), &src.file); err != nil {
+	location := filepath.Join(dataDir, "config.yaml")
+	if fileOverride != "" {
+		location = fileOverride
+	}
+	if err := readConfigFile(location, &src.file); err != nil {
 		return Config{}, err
 	}
 
@@ -194,15 +205,6 @@ func Load(opts Options) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
-}
-
-// fileLocation resolves which config file to read: an explicit override, or
-// config.yaml inside the given data dir.
-func (o Options) fileLocation(dataDir string) string {
-	if o.FileOverride != "" {
-		return o.FileOverride
-	}
-	return filepath.Join(dataDir, "config.yaml")
 }
 
 // Validate reports values that are not usable.

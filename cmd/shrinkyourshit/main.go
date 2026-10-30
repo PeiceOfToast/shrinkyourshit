@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -22,28 +23,52 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/discovery"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/webui"
 	workerpkg "github.com/PeiceOfToast/shrinkyourshit/internal/worker"
 	"github.com/spf13/pflag"
 )
 
-// version is set at build time with -ldflags "-X main.version=<tag>".
-var version = "v0.0.0"
+// Build identity, injected at release time with
+// -ldflags "-X main.version=<tag> -X main.commit=<sha> -X main.date=<date>".
+// A build without them reports v0.0.0 and refuses to self update.
+var (
+	version = "v0.0.0"
+	commit  = "none"
+	date    = "unknown"
+)
+
+// buildInfo is the identity the subcommands print and embed.
+type buildInfo struct {
+	version string
+	commit  string
+	date    string
+}
+
+// dbFile is the SQLite file inside the data dir.
+const dbFile = "shrinkyourshit.db"
+
+// errExitZero ends the process with status 0 and no error line (the update
+// command's systemd bounce, see restart.go).
+var errExitZero = errors.New("exit zero")
 
 func main() {
-	if err := run(os.Args[1:], version); err != nil {
+	if err := run(os.Args[1:], buildInfo{version: version, commit: commit, date: date}, os.Stdout); err != nil {
+		if errors.Is(err, errExitZero) {
+			return
+		}
 		fmt.Fprintln(os.Stderr, "shrinkyourshit:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, version string) error {
+func run(args []string, info buildInfo, stdout io.Writer) error {
 	if len(args) == 0 {
 		args = []string{"serve"}
 	}
 	switch args[0] {
 	case "serve":
-		err := serve(args[1:], version)
+		err := serve(args[1:], info)
 		// pflag has already printed usage; --help is not an error.
 		if errors.Is(err, pflag.ErrHelp) {
 			return nil
@@ -56,11 +81,26 @@ func run(args []string, version string) error {
 		}
 		return err
 	case "version":
-		fmt.Println(version)
-		return nil
+		return versionCmd(info, stdout)
+	case "update":
+		err := updateCmd(args[1:], info, stdout)
+		if errors.Is(err, pflag.ErrHelp) {
+			return nil
+		}
+		return err
 	default:
-		return fmt.Errorf("unknown subcommand %q (want serve, worker or version)", args[0])
+		return fmt.Errorf("unknown subcommand %q (want serve, worker, version or update)", args[0])
 	}
+}
+
+// versionCmd prints the build identity and how this install runs
+// (binary or container). API.md task 16 documents the same shape at
+// /api/v1/version.
+func versionCmd(info buildInfo, stdout io.Writer) error {
+	_, err := fmt.Fprintf(stdout,
+		"version: %s\ncommit: %s\nbuild date: %s\nruntime: %s\n",
+		info.version, info.commit, info.date, update.Runtime())
+	return err
 }
 
 // discoverFn builds the LAN discovery function for a config.
@@ -100,7 +140,7 @@ func announce(ctx context.Context, cfg config.Config, selfID, v string, log *slo
 // worker uses (ARCHITECTURE.md). A role of worker turns serve into the
 // worker flow only: that is how a machine that joined a server keeps
 // working when the same container or systemd unit starts it again.
-func serve(args []string, version string) error {
+func serve(args []string, info buildInfo) error {
 	cfg, err := config.Load(config.Options{Args: args})
 	if err != nil {
 		return err
@@ -124,7 +164,7 @@ func serve(args []string, version string) error {
 
 	// The store lives in the data dir; everything else lands there too
 	// (settings, node key).
-	st, err := store.New(filepath.Join(cfg.DataDir, "shrinkyourshit.db"))
+	st, err := store.New(filepath.Join(cfg.DataDir, dbFile))
 	if err != nil {
 		return err
 	}
@@ -150,14 +190,14 @@ func serve(args []string, version string) error {
 	// wizard's join card reads the discovered list (own id hidden).
 	announceCtx, stopAnnounce := context.WithCancel(ctx)
 	defer stopAnnounce()
-	go announce(announceCtx, cfg, builtin.ID, version, logger)
+	go announce(announceCtx, cfg, builtin.ID, info.version, logger)
 	svc.SetDiscover(discoverFn(cfg), builtin.ID)
 
 	// The setup wizard's "join" choice: persist role=worker, then switch
 	// this process over (HTTP down, pairing flow, worker loop).
 	type joinChoice struct{ url, token string }
 	joined := make(chan joinChoice, 1)
-	handler := api.New(version, static, svc, api.WithJoin(func(serverURL, token string) error {
+	handler := api.New(info.version, static, svc, api.WithBuild(info.commit, info.date), api.WithJoin(func(serverURL, token string) error {
 		if err := config.JoinExisting(cfg.DataDir, serverURL); err != nil {
 			return err
 		}
@@ -177,7 +217,7 @@ func serve(args []string, version string) error {
 	logger.Info("server listening",
 		"addr", srv.Addr,
 		"role", cfg.Role,
-		"version", version,
+		"version", info.version,
 		"data_dir", cfg.DataDir,
 	)
 

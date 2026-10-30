@@ -15,7 +15,7 @@ CROSS_TARGETS := \
 
 .PHONY: all build dev web web-deps placeholder test test-go test-web \
 	test-integration e2e lint lint-go lint-web spdx installer-check docker \
-	cross clean
+	cross release-cross clean
 
 all: build
 
@@ -105,6 +105,15 @@ cross: placeholder
 			go build -trimpath -ldflags '$(LDFLAGS)' \
 			-o $(BIN_DIR)/$(BINARY)-$$os-$$arch$$ext ./cmd/shrinkyourshit; \
 	done
+
+# release-cross is the local release dry run (task 16): the same build,
+# packaging and verification the release workflow performs, without
+# uploading anything. `make release-cross VERSION=vX.Y.Z` pins the version.
+# Output lands in bin/release.
+release-cross: placeholder
+	./scripts/release.sh build "$(VERSION)" $(BIN_DIR)/release
+	./scripts/release.sh package $(BIN_DIR)/release
+	./scripts/release.sh verify $(BIN_DIR)/release
 
 clean:
 	rm -rf $(BIN_DIR) web/coverage

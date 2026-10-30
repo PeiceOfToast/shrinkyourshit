@@ -40,7 +40,9 @@ UNIT="$WORK/systemd/shrinkyourshit.service"
 grep -q '^\[Unit\]' "$UNIT"
 grep -q '^\[Service\]' "$UNIT"
 grep -q "ExecStart=$WORK/bin/shrinkyourshit serve" "$UNIT"
-grep -q '^Restart=on-failure$' "$UNIT"
+# Restart=always is the required setting (task 16): a self update exits 0
+# after the swap and expects systemd to bring the new binary right back.
+grep -q '^Restart=always$' "$UNIT"
 grep -q 'WantedBy=multi-user.target' "$UNIT"
 if command -v systemd-analyze >/dev/null 2>&1; then
 	systemd-analyze verify "$UNIT"

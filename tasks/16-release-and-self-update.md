@@ -35,12 +35,12 @@ ARCHITECTURE.md (update path). STACK.md (release, Docker). API.md (task 16). Dep
 Delta or binary diff updates, signing keys beyond GitHub artifact attestation, self updating a container image from inside the container.
 
 ## Acceptance
-- [ ] All five targets build, including `windows/amd64`, which fails on the current `main`. (`make release-cross` or the workflow's cross compile step run locally)
-- [ ] A release built from a `v*` tag contains five archives plus `checksums.txt`, and every checksum verifies. (`TestReleaseArtifacts` against the dry run output, or the run recorded in `tasks/hermes-log.md`)
-- [ ] `shrink version` prints the injected version, commit and date from a build made with the release flags. (`TestVersionOutput`)
-- [ ] `internal/update` selects the correct asset for linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darwin/arm64. (`TestAssetSelection`)
-- [ ] A tampered download fails verification and the running binary is untouched. (`TestChecksumMismatchAborts`)
-- [ ] A successful update swaps the binary, keeps `.prev`, and `--rollback` restores the previous version and runs it. (`TestSelfUpdateAndRollback`)
-- [ ] Inside a container the updater refuses with the pull instruction and never touches files. (`TestContainerRefusesSelfUpdate`)
-- [ ] The database is backed up before an update and at most three backups are kept. (`TestPreUpdateBackupRetention`)
-- [ ] README documents the systemd `Restart=always` requirement and the three update paths: binary self update, `docker compose pull`, and rebuilding from source.
+- [x] All five targets build, including `windows/amd64`, which fails on the current `main`. (`make release-cross` or the workflow's cross compile step run locally)
+- [x] A release built from a `v*` tag contains five archives plus `checksums.txt`, and every checksum verifies. (`TestReleaseArtifacts` against the dry run output, or the run recorded in `tasks/hermes-log.md`)
+- [x] `shrink version` prints the injected version, commit and date from a build made with the release flags. (`TestVersionOutput`)
+- [x] `internal/update` selects the correct asset for linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darwin/arm64. (`TestAssetSelection`)
+- [x] A tampered download fails verification and the running binary is untouched. (`TestChecksumMismatchAborts`)
+- [x] A successful update swaps the binary, keeps `.prev`, and `--rollback` restores the previous version and runs it. (`TestSelfUpdateAndRollback`)
+- [x] Inside a container the updater refuses with the pull instruction and never touches files. (`TestContainerRefusesSelfUpdate`)
+- [x] The database is backed up before an update and at most three backups are kept. (`TestPreUpdateBackupRetention`)
+- [x] README documents the systemd `Restart=always` requirement and the three update paths: binary self update, `docker compose pull`, and rebuilding from source.

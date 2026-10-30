@@ -81,7 +81,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Session:** `token_hash (PK), created_at, expires_at`. Admin login sessions (task 06): random 32-byte token, only the SHA-256 hex hash is stored, 30-day expiry checked on lookup. Stored in the `sessions` table (migration 0002).
 
-**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all).
+**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default).
 
 **Webhook:** `id, url, events (JSON list), enabled` (task post-MVP; schema can wait).
 

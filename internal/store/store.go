@@ -206,6 +206,10 @@ const (
 	// Task 11 additions: pause-all remembers the per-node prior
 	// desired_state here until resume-all restores it.
 	SettingPausedNodes = "paused_nodes"
+	// Task 16 additions: self update (ARCHITECTURE.md update path).
+	SettingUpdateCheck        = "update_check"
+	SettingUpdateChannel      = "update_channel"
+	SettingBackupBeforeUpdate = "backup_before_update"
 )
 
 // Result policies (ARCHITECTURE.md; do not add values without updating it).

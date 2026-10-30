@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/grandcat/zeroconf"
@@ -303,18 +302,9 @@ func sendBroadcastProbes(ctx context.Context, port int, results chan<- ServerInf
 	}
 }
 
-// enableBroadcast sets SO_BROADCAST so datagrams may target interface
-// broadcast addresses. Unix only (Windows refuses it on a bound socket);
-// a failure is harmless — loopback probes never need the flag.
-func enableBroadcast(conn *net.UDPConn) {
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return
-	}
-	_ = raw.Control(func(fd uintptr) {
-		_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1)
-	})
-}
+// enableBroadcast lives in broadcast_unix.go (real setsockopt) and
+// broadcast_windows.go (no-op): the fd type differs per OS and one file
+// cannot compile for both.
 
 // broadcastAddrs lists the IPv4 broadcast address of every up, non-loopback
 // interface.
