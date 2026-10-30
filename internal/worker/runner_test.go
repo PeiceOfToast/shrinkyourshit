@@ -819,3 +819,48 @@ func (f *fakeAPI) progressStatusDebug() []string {
 	defer f.mu.Unlock()
 	return f.progressJobs
 }
+
+// TestWorkerReportsBytesSoFar covers the task-18 live output size: the
+// report loop stats the scratch output once per tick and sends its size as
+// bytes_so_far, so the node card can show the file growing. The fake run
+// writes the output and holds the encode for a couple of ticks, and the
+// recorded progress must carry the written size.
+func TestWorkerReportsBytesSoFar(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	_, spec := defaultSpec(t, dir, "job1")
+	api.enqueue("job1", spec)
+
+	const payload = "OUTPUT-DATA-GROWING"
+	// slowRun writes the scratch output, then keeps the encode alive long
+	// enough for at least one progress tick to see the file.
+	slowRun := func(ctx context.Context, args []string) error {
+		out := args[len(args)-1]
+		if err := os.WriteFile(out, []byte(payload), 0o644); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+			return nil
+		}
+	}
+
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run:      slowRun,
+		progress: 20 * time.Millisecond,
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	saw := int64(0)
+	api.mu.Lock()
+	for i, id := range api.progressJobs {
+		if id == "job1" {
+			saw = max(saw, api.progress[i].BytesSoFar)
+		}
+	}
+	api.mu.Unlock()
+	require.Equal(t, int64(len(payload)), saw,
+		"the tick after the output was written must report its size")
+}

@@ -31,6 +31,7 @@ function nodeFixture(overrides: Record<string, unknown> = {}) {
     desired_state: 'running',
     effective_state: 'running',
     concurrency: 1,
+    stats: { files_done: 2, bytes_saved: 1_500_000_000 },
     created_at: '2026-10-29T00:00:00Z',
     ...overrides,
   }
@@ -319,7 +320,7 @@ describe('NodesPage', () => {
     )
   })
 
-  it('renders the lifecycle pill and starts a stopped node (task 11)', async () => {
+  it('shows the lifecycle pill and a switch that starts a stopped node (tasks 11 and 18)', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -351,11 +352,12 @@ describe('NodesPage', () => {
     expect(screen.getByTestId('node-lifecycle-node-1')).toHaveTextContent(
       'Stopped',
     )
-    // The primary toggle is Start while stopped.
-    expect(screen.getByTestId('node-start-node-1')).toBeInTheDocument()
-    expect(screen.queryByTestId('node-stop-node-1')).not.toBeInTheDocument()
+    // The switch is the primary control: off while stopped, switch role.
+    const sw = screen.getByRole('switch', { name: 'Encoding on worker-a' })
+    expect(sw).toHaveAttribute('aria-checked', 'false')
+    expect(screen.queryByTestId('node-stop-now-node-1')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByTestId('node-start-node-1'))
+    fireEvent.click(sw)
     await waitFor(() =>
       expect(
         mock.calls('POST', /\/api\/v1\/nodes\/node-1\/start$/).length,
@@ -366,7 +368,47 @@ describe('NodesPage', () => {
     expect(toast).toHaveTextContent('worker-a started.')
   })
 
-  it('stops a running node, drain unchecked by default (task 11)', async () => {
+  it('switches a running node off with a graceful drain: true stop (task 18)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/node-1\/stop$/,
+        body: nodeFixture({
+          desired_state: 'draining',
+          effective_state: 'draining',
+        }),
+      },
+    ])
+
+    renderNodes()
+    const sw = await screen.findByRole('switch', {
+      name: 'Encoding on worker-a',
+    })
+    expect(sw).toHaveAttribute('aria-checked', 'true')
+
+    // Off means the graceful stop: drain true, no confirmation needed —
+    // the current file finishes.
+    fireEvent.click(sw)
+    await waitFor(() => {
+      const calls = mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)
+      expect(calls.length).toBeGreaterThan(0)
+      expect(calls[0].body).toEqual({ drain: true })
+    })
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('will stop after its current job.')
+  })
+
+  it('offers "Stop now" as the hard stop behind a confirmation (task 18)', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -389,17 +431,9 @@ describe('NodesPage', () => {
     ])
 
     renderNodes()
-    await waitFor(() => screen.getByTestId('node-lifecycle-node-1'))
-    expect(screen.getByTestId('node-lifecycle-node-1')).toHaveTextContent(
-      'Running',
-    )
-    expect(screen.getByTestId('node-drain-node-1')).not.toBeChecked()
-
-    // Stop now asks first; with no job running the dialog says the node
-    // simply stops and nothing is deleted (task 13).
-    fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    fireEvent.click(await screen.findByTestId('node-stop-now-node-1'))
     const dialog = screen.getByTestId('node-stop-dialog-node-1')
-    expect(dialog).toHaveTextContent('Stop worker-a?')
+    expect(dialog).toHaveTextContent('Stop worker-a now?')
     expect(dialog).toHaveTextContent('stops where it is')
     expect(mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)).toHaveLength(
       0,
@@ -432,6 +466,9 @@ describe('NodesPage', () => {
       eta_seconds: 0,
       bytes_before: 0,
       bytes_after: 0,
+      bytes_so_far: 0,
+      file_name: 'movie.mkv',
+      file_path: '/media/movie.mkv',
       log: '',
       error: '',
       created_at: '2026-10-29T00:00:00Z',
@@ -464,50 +501,12 @@ describe('NodesPage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('node-current-job-node-1')).toBeInTheDocument(),
     )
-    fireEvent.click(screen.getByTestId('node-stop-node-1'))
+    fireEvent.click(screen.getByTestId('node-stop-now-node-1'))
     const dialog = screen.getByTestId('node-stop-dialog-node-1')
     expect(dialog).toHaveTextContent('stops mid-way')
     expect(dialog).toHaveTextContent('temporary copy is thrown away')
     expect(dialog).toHaveTextContent('original file is never touched')
     expect(dialog).toHaveTextContent('returns to the queue')
-  })
-
-  it('sends drain: true when finishing the current job first is checked (task 11)', async () => {
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/nodes$/,
-        body: { items: [nodeFixture()], total: 1 },
-      },
-      {
-        method: 'GET',
-        match: /\/api\/v1\/jobs/,
-        body: { items: [], total: 0 },
-      },
-      {
-        method: 'POST',
-        match: /\/api\/v1\/nodes\/node-1\/stop$/,
-        body: nodeFixture({
-          desired_state: 'draining',
-          effective_state: 'draining',
-        }),
-      },
-    ])
-
-    renderNodes()
-    await waitFor(() => screen.getByTestId('node-drain-node-1'))
-    fireEvent.click(screen.getByTestId('node-drain-node-1'))
-    fireEvent.click(screen.getByTestId('node-stop-node-1'))
-    // With "finish the current job first" ticked the dialog says so.
-    expect(screen.getByTestId('node-stop-dialog-node-1')).toHaveTextContent(
-      'finishes the file it is working on first',
-    )
-    fireEvent.click(screen.getByTestId('node-stop-confirm-node-1'))
-    await waitFor(() => {
-      const calls = mock.calls('POST', /\/api\/v1\/nodes\/node-1\/stop$/)
-      expect(calls.length).toBeGreaterThan(0)
-      expect(calls[0].body).toEqual({ drain: true })
-    })
   })
 
   it('steps concurrency between 1 and 16 (task 11)', async () => {
@@ -598,5 +597,131 @@ describe('NodesPage', () => {
     expect(screen.getByTestId('nodes-empty')).toHaveTextContent(
       'No other machines yet',
     )
+  })
+
+  it('shows per node totals in the card footer (task 18)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            nodeFixture({
+              stats: { files_done: 2, bytes_saved: 1_500_000_000 },
+            }),
+          ],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    const first = renderNodes()
+    const footer = await screen.findByTestId('node-stats-node-1')
+    expect(footer).toHaveTextContent('2 files')
+    expect(footer).toHaveTextContent('1.5 GB saved')
+    first.unmount()
+
+    // A node with no finished jobs reports its zeros explicitly.
+    mock.restore()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [nodeFixture({ stats: { files_done: 0, bytes_saved: 0 } })],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderNodes()
+    const fresh = await screen.findByTestId('node-stats-node-1')
+    expect(fresh).toHaveTextContent('0 files')
+    expect(fresh).toHaveTextContent('0 B saved')
+  })
+
+  it('pause all and resume all call their endpoints and disable when redundant (task 18)', async () => {
+    // One running, one stopped: pausing means something, resuming does not
+    // (not every node is stopped — nothing was paused).
+    let running = true
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        bodyFn: () => ({
+          items: [
+            nodeFixture({
+              id: 'node-1',
+              name: 'worker-a',
+              desired_state: running ? 'running' : 'stopped',
+              effective_state: running ? 'running' : 'stopped',
+            }),
+            nodeFixture({
+              id: 'node-2',
+              name: 'worker-b',
+              desired_state: 'stopped',
+              effective_state: 'stopped',
+            }),
+          ],
+          total: 2,
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/pause-all$/,
+        bodyFn: () => {
+          running = false
+          return { paused: 2 }
+        },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/resume-all$/,
+        body: { resumed: 2 },
+      },
+    ])
+
+    renderNodes()
+    const pause = await screen.findByTestId('nodes-pause-all')
+    const resume = screen.getByTestId('nodes-resume-all')
+    expect(pause).toBeEnabled()
+    expect(resume).toBeDisabled()
+
+    fireEvent.click(pause)
+    await waitFor(() =>
+      expect(
+        mock.calls('POST', /\/api\/v1\/nodes\/pause-all$/).length,
+      ).toBeGreaterThan(0),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('nodes-pause-all')).toBeDisabled(),
+    )
+    const resumeAfterPause = await screen.findByTestId('nodes-resume-all')
+    await waitFor(() => expect(resumeAfterPause).toBeEnabled())
+
+    fireEvent.click(resumeAfterPause)
+    await waitFor(() =>
+      expect(
+        mock.calls('POST', /\/api\/v1\/nodes\/resume-all$/).length,
+      ).toBeGreaterThan(0),
+    )
+    // Both actions announced themselves (pause + resume).
+    const toasts = await screen.findAllByTestId('toast')
+    expect(
+      toasts.some((t) => t.textContent?.includes('Resumed 2 nodes.')),
+    ).toBe(true)
   })
 })

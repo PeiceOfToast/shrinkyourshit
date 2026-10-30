@@ -71,6 +71,10 @@ type Store interface {
 	// key; raw keys are never stored.
 	GetNodeByKeyHash(ctx context.Context, keyHash string) (*Node, error)
 	ListNodes(ctx context.Context) ([]*Node, error)
+	// NodeJobStats folds every node's finished-job totals (files done,
+	// bytes saved — positive savings only) into one grouped query (task
+	// 18). Nodes without finished jobs are absent from the result.
+	NodeJobStats(ctx context.Context) (map[string]NodeStat, error)
 	UpdateNode(ctx context.Context, n *Node) error
 	DeleteNode(ctx context.Context, id string) error
 	// ConsumeNodeKeyOnce atomically returns and clears the node's one-time

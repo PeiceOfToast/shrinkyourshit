@@ -264,3 +264,41 @@ func TestFailRejectsForeignJobs(t *testing.T) {
 	_, err := h.svc.Queue().Fail(context.Background(), job.ID, "node-2", FailParams{Error: "boom"})
 	require.ErrorIs(t, err, ErrJobNotClaimed)
 }
+
+// TestProgressStoresBytesSoFar covers the task-18 live output size: a
+// progress report carrying bytes_so_far stores it, the job DTO returns it,
+// and a requeued job starts clean again.
+func TestProgressStoresBytesSoFar(t *testing.T) {
+	h := newHarness(t)
+	_, _, job := claimJob(t, h, "node-1")
+	ctx := context.Background()
+
+	got, err := h.svc.Queue().Progress(ctx, job.ID, "node-1", ProgressParams{
+		Percent: 40, BytesSoFar: 12582912,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(12582912), got.BytesSoFar)
+
+	// The DTO the UI and events see carries it too.
+	dto := h.svc.Queue().jobDTO(ctx, got)
+	require.Equal(t, int64(12582912), dto.BytesSoFar)
+
+	// A report that could not stat (0) keeps the last known size.
+	got, err = h.svc.Queue().Progress(ctx, job.ID, "node-1", ProgressParams{Percent: 50})
+	require.NoError(t, err)
+	require.Equal(t, int64(12582912), got.BytesSoFar)
+
+	// A negative report is clamped, never stored.
+	got, err = h.svc.Queue().Progress(ctx, job.ID, "node-1", ProgressParams{Percent: 60, BytesSoFar: -5})
+	require.NoError(t, err)
+	require.Equal(t, int64(12582912), got.BytesSoFar)
+
+	// Back to the queue: the live size resets with the rest of the tick data.
+	got.Status = store.JobStatusRunning
+	got.HeartbeatAt = time.Now().UTC().Add(-2 * time.Minute)
+	require.NoError(t, h.st.UpdateJob(ctx, got))
+	moved, err := h.svc.Queue().Sweep(ctx, 0)
+	require.NoError(t, err)
+	require.Len(t, moved, 1)
+	require.Equal(t, int64(0), moved[0].BytesSoFar)
+}

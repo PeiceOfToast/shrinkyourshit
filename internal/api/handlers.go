@@ -176,6 +176,20 @@ func (a *API) listFiles(w http.ResponseWriter, r *http.Request) {
 	writePage(w, files, limit, offset, server.NewFileDTO)
 }
 
+// jobDTO maps a job to its DTO with the file identity resolved (task 18):
+// one best-effort file lookup, so responses carry the file's basename and
+// full path. An unknown file leaves the name fields empty rather than
+// failing the response.
+func (a *API) jobDTO(ctx context.Context, j *store.Job) server.JobDTO {
+	var f *store.File
+	if j.FileID != "" {
+		if got, err := a.st.GetFile(ctx, j.FileID); err == nil {
+			f = got
+		}
+	}
+	return server.NewJobDTO(j, f)
+}
+
 // listJobs returns jobs, paginated, optional ?status= filter.
 func (a *API) listJobs(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := pageParams(r, w)
@@ -204,7 +218,9 @@ func (a *API) listJobs(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	writePage(w, jobs, limit, offset, server.NewJobDTO)
+	writePage(w, jobs, limit, offset, func(j *store.Job) server.JobDTO {
+		return a.jobDTO(r.Context(), j)
+	})
 }
 
 // getJob returns one job including its log tail.
@@ -218,7 +234,7 @@ func (a *API) getJob(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+	writeJSON(w, http.StatusOK, a.jobDTO(r.Context(), job))
 }
 
 // cancelJob stops an active job. A transfer-mode upload (task 09) is
@@ -260,7 +276,7 @@ func (a *API) retryJob(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+	writeJSON(w, http.StatusOK, a.jobDTO(r.Context(), job))
 }
 
 // getStats answers GET /stats: totals plus the per-library breakdown

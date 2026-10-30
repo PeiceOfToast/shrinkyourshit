@@ -223,13 +223,13 @@ func (s *SQLite) DeleteFile(ctx context.Context, id string) error {
 }
 
 // jobColumns is the column list shared by every job query.
-const jobColumns = `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons, percent, speed, eta_seconds, bytes_before, bytes_after, log, error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
+const jobColumns = `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons, percent, speed, eta_seconds, bytes_before, bytes_after, bytes_so_far, log, error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
 
 // scanJob reads one job row.
 func scanJob(rows *sql.Rows) (*Job, error) {
 	var j Job
 	var claimed, started, finished, heartbeat, created sql.NullString
-	err := rows.Scan(&j.ID, &j.FileID, &j.LibraryID, &j.NodeID, &j.Status, &j.Priority, &j.Attempt, &j.EncoderUsed, &j.FallbackReasons, &j.Percent, &j.Speed, &j.ETASeconds, &j.BytesBefore, &j.BytesAfter, &j.Log, &j.Error, &j.AccessMode, &claimed, &started, &finished, &heartbeat, &created)
+	err := rows.Scan(&j.ID, &j.FileID, &j.LibraryID, &j.NodeID, &j.Status, &j.Priority, &j.Attempt, &j.EncoderUsed, &j.FallbackReasons, &j.Percent, &j.Speed, &j.ETASeconds, &j.BytesBefore, &j.BytesAfter, &j.BytesSoFar, &j.Log, &j.Error, &j.AccessMode, &claimed, &started, &finished, &heartbeat, &created)
 	if err != nil {
 		return nil, err
 	}
@@ -255,8 +255,8 @@ func (s *SQLite) CreateJob(ctx context.Context, j *Job) error {
 	if j.CreatedAt.IsZero() {
 		j.CreatedAt = nowUTC()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		j.ID, j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error, j.AccessMode,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO jobs (`+jobColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		j.ID, j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.BytesSoFar, j.Log, j.Error, j.AccessMode,
 		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt), fmtTime(j.CreatedAt))
 	if err != nil {
 		return fmt.Errorf("store: create job: %w", err)
@@ -327,8 +327,8 @@ func (s *SQLite) UpdateJob(ctx context.Context, j *Job) error {
 	if err := validateJobStatus(j.Status); err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, access_mode = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ? WHERE id = ?`,
-		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error, j.AccessMode,
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, bytes_so_far = ?, log = ?, error = ?, access_mode = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ? WHERE id = ?`,
+		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.BytesSoFar, j.Log, j.Error, j.AccessMode,
 		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt), j.ID)
 	if err != nil {
 		return fmt.Errorf("store: update job: %w", err)
@@ -485,6 +485,35 @@ func (s *SQLite) DeleteNode(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// NodeJobStats folds every node's finished-job totals into one grouped
+// query (task 18): files_done counts status='done' jobs per node and
+// bytes_saved sums the positive savings MAX(bytes_before - bytes_after, 0).
+// Nodes with no finished jobs are absent from the result (the caller shows
+// zeros). Never called per node — the whole registry is one query.
+func (s *SQLite) NodeJobStats(ctx context.Context) (map[string]NodeStat, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT node_id, COUNT(*), COALESCE(SUM(MAX(bytes_before - bytes_after, 0)), 0)
+		   FROM jobs WHERE status = ? AND node_id != '' GROUP BY node_id`,
+		JobStatusDone)
+	if err != nil {
+		return nil, fmt.Errorf("store: node job stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]NodeStat{}
+	for rows.Next() {
+		var nodeID string
+		var stat NodeStat
+		if err := rows.Scan(&nodeID, &stat.FilesDone, &stat.BytesSaved); err != nil {
+			return nil, fmt.Errorf("store: scan node job stats: %w", err)
+		}
+		out[nodeID] = stat
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: node job stats rows: %w", err)
+	}
+	return out, nil
 }
 
 // ConsumeNodeKeyOnce atomically returns and clears the node's one-time raw

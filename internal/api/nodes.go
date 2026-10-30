@@ -15,8 +15,11 @@ import (
 // approve, revoke, update, delete. The built-in node appears here too —
 // the admin can rename, disable or revoke it like any other node.
 
-// listNodes answers GET /nodes with the lifecycle fields (task 11) and
-// the id of each node's current (oldest claimed/running) job.
+// listNodes answers GET /nodes with the lifecycle fields (task 11), the
+// id of each node's current (oldest claimed/running) job and — task 18 —
+// each node's finished-job totals. The totals come from one grouped
+// store query for the whole registry, never one per node; a node with no
+// finished jobs reports zeros.
 func (a *API) listNodes(w http.ResponseWriter, r *http.Request) {
 	nodes, err := a.st.ListNodes(r.Context())
 	if err != nil {
@@ -24,10 +27,21 @@ func (a *API) listNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	current := a.svc.Nodes().CurrentJobIDs(r.Context())
+	stats, err := a.st.NodeJobStats(r.Context())
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
 	items := make([]server.NodeDTO, 0, len(nodes))
 	for _, n := range nodes {
 		dto := server.NewNodeDTO(n)
 		dto.CurrentJobID = current[n.ID]
+		// A node without finished jobs is absent from the aggregate;
+		// its card still shows an explicit zero pair.
+		dto.Stats = &server.NodeStatsDTO{
+			FilesDone:  stats[n.ID].FilesDone,
+			BytesSaved: stats[n.ID].BytesSaved,
+		}
 		items = append(items, dto)
 	}
 	writeJSON(w, http.StatusOK, server.ListResponse[server.NodeDTO]{Items: items, Total: len(items)})
