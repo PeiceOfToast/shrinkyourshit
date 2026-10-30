@@ -1,20 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Library detail (task 07): the file table with status, reasons and bytes
- * saved, a status filter and a retry-failed action. Task 13 adds server
- * side pagination (page size selector plus previous/next), a per-file
- * cancel for queued and processing files behind a confirmation, toasts for
- * every action, skeletons while loading and ErrorBox for failures.
+ * Library detail (tasks 07, 13 and 19): the header summarizes the
+ * library — file counts by status, bytes saved, the target in plain
+ * language (the server's easy-mode description path) and the last scan
+ * time. The file table shows before, after, ratio, the encoder that
+ * produced the file and a link to the per-file job history (the job log).
+ * Search, sort and filtering happen server side (q, sort, dir); the
+ * browser never re-sorts a page. Task 13 adds server side pagination, the
+ * cancel-job confirmation and toasts.
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { cancelJob, getFiles, getLibrary, retryJob, type FileItem } from './api'
+import {
+  cancelJob,
+  getFiles,
+  getLibrary,
+  getStats,
+  previewFlow,
+  retryJob,
+  type FileItem,
+} from './api'
 import ConfirmDialog from './ConfirmDialog'
 import { formatBytes, statusLabel, truncateMiddle } from './easyModel'
 import ErrorBox from './ErrorBox'
+import FileHistory from './FileHistory'
 import PageContainer from './PageContainer'
+import StatusChip from './StatusChip'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
 
@@ -26,9 +39,16 @@ const FILE_STATUSES = [
   'done',
   'failed',
   'missing',
-]
+] as const
 
 const PAGE_SIZES = [25, 50, 100, 200]
+
+/** The sorts the server knows (task 19); anything else is a 400. */
+const FILE_SORTS = [
+  { key: 'name', label: 'Name' },
+  { key: 'size', label: 'Size' },
+  { key: 'saved', label: 'Space saved' },
+] as const
 
 function statusColor(status: string): string {
   switch (status) {
@@ -53,6 +73,23 @@ function isCancellable(f: FileItem): boolean {
   )
 }
 
+/** "30 Oct 2026, 12:00" style timestamp for the header. */
+function formatScanTime(iso: string | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
+/** The shrink ratio as a multiplier, e.g. "1.7×". */
+function formatRatio(before: number, after: number): string {
+  if (after <= 0 || before <= 0) return '—'
+  return `${(before / after).toFixed(1)}×`
+}
+
 export default function LibraryDetailPage() {
   const { id = '' } = useParams()
   const client = useQueryClient()
@@ -61,19 +98,43 @@ export default function LibraryDetailPage() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(50)
   const [toCancel, setToCancel] = useState<FileItem | null>(null)
+  const [historyFile, setHistoryFile] = useState<FileItem | null>(null)
+  const [searchText, setSearchText] = useState('')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<'name' | 'size' | 'saved'>('name')
+  const [dir, setDir] = useState<'asc' | 'desc'>('asc')
+
+  // The search box debounces: typing stays responsive, the server sees
+  // one request per settled query.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(searchText.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [searchText])
 
   const library = useQuery({
     queryKey: ['library', id],
     queryFn: () => getLibrary(id),
   })
+  const stats = useQuery({ queryKey: ['stats'], queryFn: getStats })
   const files = useQuery({
-    queryKey: ['files', id, status, page, pageSize],
+    queryKey: ['files', id, status, page, pageSize, query, sort, dir],
     queryFn: () =>
       getFiles(id, {
         status: status || undefined,
+        q: query || undefined,
+        sort,
+        dir,
         limit: pageSize,
         offset: page * pageSize,
       }),
+  })
+  // The target in plain language: the same server-rendered lines the easy
+  // screen's "what this does" panel shows — the UI holds no second copy.
+  const plain = useQuery({
+    queryKey: ['target-plain', id],
+    // enabled guarantees the library and its flow exist when this runs.
+    queryFn: () => previewFlow({ graph: library.data!.flow! }),
+    enabled: !!library.data?.flow,
   })
 
   const refresh = () => {
@@ -152,6 +213,7 @@ export default function LibraryDetailPage() {
   const failedOnPage = (files.data?.items ?? []).filter(
     (f) => f.status === 'failed',
   )
+  const counts = stats.data?.libraries.find((s) => s.library_id === id)
 
   const changeStatus = (next: string) => {
     setStatus(next)
@@ -159,6 +221,14 @@ export default function LibraryDetailPage() {
   }
   const changePageSize = (next: number) => {
     setPageSize(next)
+    setPage(0)
+  }
+  const changeSort = (next: 'name' | 'size' | 'saved') => {
+    setSort(next)
+    setPage(0)
+  }
+  const flipDir = () => {
+    setDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     setPage(0)
   }
 
@@ -176,6 +246,20 @@ export default function LibraryDetailPage() {
         data-testid={`file-cancel-${f.id}${onCard ? '-card' : ''}`}
       >
         Cancel
+      </button>
+    )
+  }
+  const logButton = (f: FileItem, onCard: boolean) => {
+    const name = f.path.split('/').pop() ?? f.path
+    return (
+      <button
+        type="button"
+        onClick={() => setHistoryFile(f)}
+        className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+        aria-label={`Job history and log for ${name}`}
+        data-testid={`file-log-${f.id}${onCard ? '-card' : ''}`}
+      >
+        Log
       </button>
     )
   }
@@ -205,7 +289,60 @@ export default function LibraryDetailPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Header summary (task 19): counts by status, space saved, the
+          target in plain language and the last scan time. */}
+      <div
+        className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
+        data-testid="library-summary"
+      >
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div className="flex flex-wrap gap-1.5" data-testid="library-summary-chips">
+            {FILE_STATUSES.map((s) => (
+              <StatusChip
+                key={s}
+                status={s}
+                count={counts?.[s] ?? 0}
+                testId={`library-summary-${s}`}
+              />
+            ))}
+          </div>
+          <span
+            className="text-sm font-medium text-emerald-400"
+            data-testid="library-summary-saved"
+          >
+            {formatBytes(counts?.bytes_saved ?? 0)} saved
+          </span>
+          <span
+            className="text-sm text-slate-400"
+            data-testid="library-last-scan"
+          >
+            {lib.last_scan_at
+              ? `Last scan: ${formatScanTime(lib.last_scan_at)}`
+              : 'Not scanned yet.'}
+          </span>
+        </div>
+        {plain.data && plain.data.steps.length > 0 && (
+          <div className="mt-3 border-t border-slate-800 pt-3" data-testid="library-target-plain">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              What this library does
+            </p>
+            <ul className="mt-2 space-y-1">
+              {plain.data.steps.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex gap-2 text-sm text-slate-300"
+                  data-testid="target-plain-line"
+                >
+                  <span className="text-slate-500">•</span>
+                  <span>{s.plain}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm text-slate-400">
           Status
           <select
@@ -222,6 +359,42 @@ export default function LibraryDetailPage() {
             ))}
           </select>
         </label>
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-400 sm:max-w-xs">
+          <span className="shrink-0">Search</span>
+          <input
+            type="search"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="File name…"
+            className="w-full min-w-0 rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200 placeholder:text-slate-500"
+            aria-label="Search files by name"
+            data-testid="file-search"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-400">
+          Sort
+          <select
+            value={sort}
+            onChange={(e) => changeSort(e.target.value as typeof sort)}
+            className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+            data-testid="file-sort"
+          >
+            {FILE_SORTS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={flipDir}
+          className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-700"
+          aria-label="Flip the sort direction"
+          data-testid="file-sort-dir"
+        >
+          {dir === 'asc' ? '↑ Ascending' : '↓ Descending'}
+        </button>
         <button
           type="button"
           onClick={() => retry.mutate()}
@@ -240,9 +413,23 @@ export default function LibraryDetailPage() {
       ) : files.isError ? (
         <ErrorBox title="Cannot load the files." error={files.error} />
       ) : files.data.total === 0 ? (
-        <p className="text-slate-400" data-testid="files-empty">
-          No files here yet. Wait for a scan or add files to the folder.
-        </p>
+        query ? (
+          <p className="text-slate-400" data-testid="files-empty">
+            No files match “{query}”.{' '}
+            <button
+              type="button"
+              onClick={() => setSearchText('')}
+              className="text-emerald-400 underline"
+              data-testid="files-clear-search"
+            >
+              Clear the search.
+            </button>
+          </p>
+        ) : (
+          <p className="text-slate-400" data-testid="files-empty">
+            No files here yet. Wait for a scan or add files to the folder.
+          </p>
+        )
       ) : (
         <>
           {/* From `sm` up: the real table, scrollable so wide content
@@ -258,8 +445,10 @@ export default function LibraryDetailPage() {
                     <th className="px-4 py-3">File</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Why</th>
-                    <th className="px-4 py-3">Size</th>
-                    <th className="px-4 py-3">Saved</th>
+                    <th className="px-4 py-3">Before</th>
+                    <th className="px-4 py-3">After</th>
+                    <th className="px-4 py-3">Ratio</th>
+                    <th className="px-4 py-3">Encoder</th>
                     <th className="px-4 py-3">
                       <span className="sr-only">Actions</span>
                     </th>
@@ -288,14 +477,28 @@ export default function LibraryDetailPage() {
                         >
                           {f.satisfied_reason || '—'}
                         </td>
-                        <td className="px-4 py-2 text-slate-400">
-                          {formatBytes(f.size)}
+                        <td className="px-4 py-2 text-slate-400" data-testid={`file-before-${f.id}`}>
+                          {formatBytes(f.size + f.bytes_saved)}
                         </td>
-                        <td className="px-4 py-2 text-emerald-400">
-                          {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
+                        <td className="px-4 py-2 text-slate-300" data-testid={`file-after-${f.id}`}>
+                          {f.bytes_saved > 0 ? formatBytes(f.size) : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-emerald-400" data-testid={`file-ratio-${f.id}`}>
+                          {f.bytes_saved > 0
+                            ? formatRatio(f.size + f.bytes_saved, f.size)
+                            : '—'}
+                        </td>
+                        <td
+                          className="px-4 py-2 text-slate-400"
+                          data-testid={`file-encoder-${f.id}`}
+                        >
+                          {f.last_job_encoder || '—'}
                         </td>
                         <td className="px-4 py-2 text-right">
-                          {cancelButton(f, false)}
+                          <div className="flex justify-end gap-2">
+                            {logButton(f, false)}
+                            {cancelButton(f, false)}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -343,12 +546,18 @@ export default function LibraryDetailPage() {
                   <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
                     <span className="text-slate-400">
                       <span className="text-slate-600">Size: </span>
-                      {formatBytes(f.size)}
+                      {formatBytes(f.size + f.bytes_saved)}
+                      {f.bytes_saved > 0
+                        ? ` → ${formatBytes(f.size)} (${formatRatio(f.size + f.bytes_saved, f.size)})`
+                        : ''}
                     </span>
-                    <span className="text-emerald-400">
-                      <span className="text-slate-600">Saved: </span>
-                      {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
+                    <span className="text-slate-400">
+                      <span className="text-slate-600">Encoder: </span>
+                      {f.last_job_encoder || '—'}
                     </span>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    {logButton(f, true)}
                     {cancelButton(f, true)}
                   </div>
                 </li>
@@ -357,8 +566,8 @@ export default function LibraryDetailPage() {
           </ul>
 
           {/* Pagination (task 13): server side, so 40k files never load at
-              once. The status filter and page size reset to the first page
-              when they change. */}
+              once. The status filter, search, sort and page size reset to
+              the first page when they change. */}
           <div
             className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400"
             data-testid="files-pagination"
@@ -406,6 +615,10 @@ export default function LibraryDetailPage() {
             </div>
           </div>
         </>
+      )}
+
+      {historyFile && (
+        <FileHistory file={historyFile} onClose={() => setHistoryFile(null)} />
       )}
 
       {toCancel && (

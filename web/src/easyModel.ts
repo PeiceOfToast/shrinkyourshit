@@ -157,6 +157,11 @@ export const STATUS_LABELS: Record<string, string> = {
   done: 'Done',
   failed: 'Failed',
   missing: 'Missing',
+  // Job-only statuses (the file history panel, task 19). Files never
+  // carry these; jobs never carry the file-only ones above.
+  claimed: 'Claimed',
+  running: 'Working',
+  cancelled: 'Cancelled',
 }
 
 export function statusLabel(status: string): string {
