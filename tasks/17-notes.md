@@ -70,9 +70,26 @@ None blocking. Two judgement calls, recorded here for the owner:
 
 ## Summary (written at the end)
 
-- Built: update-check service + 3 endpoints + version extension, About card
-  with per-runtime actions, dashboard warning, SSE update events.
-- Skipped: auto-apply (out of scope), staged rollouts, telemetry.
-- Next task should know: `shrinkyourshit` binary execs itself after an
-  in-app update; the rate window and background delay are configurable on
-  `server.UpdateOptions` for tests.
+- Built: the update-check service (`internal/server/updatecheck.go`) with a
+  never-blocking status snapshot, a once-per-minute forced refresh, one
+  background check after start (skipped when `update_check` is off) and an
+  apply that streams `update.progress` / `update.succeeded` / `update.failed`
+  and restarts the process onto the new binary; three admin endpoints plus
+  the extended `/api/v1/version`; the About card (version rows, Check now,
+  per-runtime action, automatic-checks checkbox, channel selector) on the
+  App settings page; a dashboard "update available" warning.
+- Skipped: auto apply on a schedule, staged rollouts, telemetry (out of
+  scope). No store migration was needed.
+- Tests: 10 Go tests (`internal/api/update_test.go`,
+  `internal/server/updatecheck_test.go`, extended `TestVersionEndpoint`)
+  and 9 AboutCard tests cover every acceptance item; `make test`,
+  `make test-integration` and `make lint` are green.
+- What the next task should know: the stage names shared by events and the
+  status `progress` field are the single vocabulary for update progress
+  (`Stage*` in `internal/update`, plain words in `web/src/updateModel.ts`);
+  a successful in-app apply execs the new binary, so anything that runs
+  code after `Restart` in main must survive process replacement. The rate
+  window and background delay are `server.UpdateOptions` fields for tests.
+- Owner note: the first run of a release build pings
+  `api.github.com` once in the background; disable with the About card's
+  automatic-checks checkbox or the `update_check` setting.

@@ -53,12 +53,10 @@ type UpdateOptions struct {
 }
 
 // checkResult is one finished release check: the release on the configured
-// channel, when it worked, or the failure text when it did not.
+// channel, or the failure text when the check could not complete.
 type checkResult struct {
-	release   update.Release
-	checkedAt time.Time
-	channel   string
-	errText   string
+	release update.Release
+	errText string
 }
 
 // ApplyProgress is the live state of an in-app update apply, surfaced on
@@ -279,9 +277,9 @@ func (u *UpdateCheck) snapshotLocked() UpdateStatus {
 
 // Check forces a release refresh (the "Check now" button). Rate limited to
 // one refresh per window (a minute): past it the call answers
-// errRateLimited and the handler maps that to 429. A failed network check
-// is not an error here — it lands in the status as a quiet reason, so the
-// About card can show it and nothing else changes.
+// ErrUpdateRateLimited and the handler maps that to 429. A failed network
+// check is not an error here — it lands in the status as a quiet reason,
+// so the About card can show it and nothing else changes.
 func (u *UpdateCheck) Check(ctx context.Context) (UpdateStatus, error) {
 	u.mu.Lock()
 	if !u.lastRefresh.IsZero() && u.now().Sub(u.lastRefresh) < u.opts.CheckWindow {
@@ -298,7 +296,7 @@ func (u *UpdateCheck) Check(ctx context.Context) (UpdateStatus, error) {
 	}
 
 	rel, checkErr := update.Latest(ctx, u.latestOptions(channel))
-	result := &checkResult{checkedAt: u.now(), channel: channel}
+	result := &checkResult{}
 	if checkErr != nil {
 		result.errText = fmt.Sprintf("Could not check for updates: %v", checkErr)
 		u.log.Warn("update check failed", "err", checkErr)
@@ -371,8 +369,8 @@ func (u *UpdateCheck) StartBackgroundCheck(ctx context.Context) {
 // other unsupported shape) synchronously so the caller can answer 409 with
 // the fix. The returned error types:
 //
-//   - *selfUpdateUnsupported → 409 self_update_unsupported
-//   - alreadyApplying        → 409 update_in_progress
+//   - *SelfUpdateUnsupported → 409 self_update_unsupported
+//   - ErrAlreadyApplying     → 409 update_in_progress
 func (u *UpdateCheck) Apply(ctx context.Context) error {
 	if supported, reason := u.support(); !supported {
 		return &SelfUpdateUnsupported{Reason: reason}
