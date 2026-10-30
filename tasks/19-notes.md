@@ -78,11 +78,22 @@ past tasks; if it cannot start, record that and let CI's e2e job decide).
   timing-test behaviour the repo has seen before; not a regression — the
   task touches nothing on the claim path.
 - e2e: this VM cannot launch chromium (`libatk-1.0.so.0` missing, no
-  sudo/apt — the standing limitation tasks 10, 12 and 13 recorded). The
-  layout suite gains `/libraries/{id}` at 390/768/1280 as a pure refactor
-  of the same three assertions the five existing pages run, registered
-  under the `library-detail` ready marker the task 12 card tests already
-  use; the pixel-true verdict comes from CI's e2e job on the PR.
+  sudo/apt — the standing limitation tasks 10, 12 and 13 recorded), so the
+  first verdict came from CI — and it caught a real bug: the detail page
+  overflowed by 109 px at tablet (877 > 768). A temporary diagnostic walk
+  in the layout suite named the offender from the CI log: the
+  `sr-only` span in the Actions `<th>` — `position: absolute` with no
+  positioned ancestor, so its containing block is the document and it
+  paints at the table's far edge (right = 877) OUTSIDE the
+  `overflow-x-auto` clip. The old table carried the same latent bug; the
+  new Before/After/Ratio/Encoder columns pushed the table wide enough to
+  expose it. Fix: `relative` on both scroll wrappers (detail page and
+  libraries list), so the span clips inside its scroll container. The
+  diagnostic also showed the search label collapsing to 9 px at tablet
+  (flex basis 0 + min-w-0 under squeeze); fixed with `min-w-[12rem]` so
+  the field wraps instead of vanishing. After the fix all seven CI jobs
+  are green, e2e included — the pixel-true 390/768/1280 check on both
+  library pages is verified by CI run 41004113513.
 - `LibraryDetailPage` plain-language block reuses the server's
   `POST /flows/preview {graph}` — the same renderer the easy screen uses,
   so the UI keeps no second copy (task 14 rule).
@@ -105,6 +116,16 @@ past tasks; if it cannot start, record that and let CI's e2e job decide).
   list/detail chips share `StatusChip`; the stores' `SetLibraryScanTime`
   is deliberately not part of `UpdateLibrary`.
 - Verification: make test 0, make lint 0, integration re-run green after
-  one load flake; e2e verdict delegated to CI (no launchable chromium on
-  this VM, libatk missing, no sudo).
-- PR: (opened after this commit — see tasks/STATUS.md row 19.)
+  one load flake; CI run 41004113513 green on all seven jobs including
+  e2e at 390/768/1280 for both library pages (after the sr-only fix).
+- PR: #18 https://github.com/PeiceOfToast/shrinkyourshit/pull/18
+
+## For the next task
+
+The `sr-only`-inside-a-table-header pattern paints an absolutely
+positioned span at the table's far edge and widens the page whenever the
+table's min-content exceeds the viewport — any new table with an sr-only
+Actions column must sit in a `relative` scroll wrapper (`relative
+overflow-x-auto`). Toolbar rows built from selects also squeeze flexed
+inputs to zero under pressure; give such inputs a `min-w-[…]` so they wrap
+instead of collapsing.
