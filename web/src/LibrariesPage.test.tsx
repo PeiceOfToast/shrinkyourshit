@@ -88,7 +88,7 @@ let mock: FetchMock
 afterEach(() => mock?.restore())
 
 describe('LibrariesPage', () => {
-  it('lists libraries with counts and space saved', async () => {
+  it('lists libraries with counts and space saved, matching /stats', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -102,16 +102,69 @@ describe('LibrariesPage', () => {
     ])
     renderPage()
 
+    // Per-library counts come from the per-library breakdown of /stats,
+    // shown as status chips (task 19).
     await waitFor(() =>
-      expect(screen.getByTestId('library-counts-lib-1')).toHaveTextContent(
-        '2 nothing to do · 1 waiting · 0 done · 0 failed',
+      expect(screen.getByTestId('library-chip-satisfied-lib-1')).toHaveTextContent(
+        '2 Nothing to do',
       ),
     )
+    expect(screen.getByTestId('library-chip-queued-lib-1')).toHaveTextContent(
+      '1 Waiting',
+    )
+    expect(screen.getByTestId('library-chip-done-lib-1')).toHaveTextContent(
+      '0 Done',
+    )
+    expect(screen.getByTestId('library-chip-failed-lib-1')).toHaveTextContent(
+      '0 Failed',
+    )
+    expect(screen.getByTestId('library-files-lib-1')).toHaveTextContent('3')
+    expect(screen.getByTestId('library-files-lib-2')).toHaveTextContent('2')
     expect(screen.getByTestId('library-saved-lib-1')).toHaveTextContent(
-      '2.0 GB saved',
+      '2.0 GB',
     )
     expect(screen.getByTestId('library-saved-lib-2')).toHaveTextContent(
-      '500 MB saved',
+      '500 MB',
+    )
+
+    // The library name links to the detail page.
+    expect(screen.getByTestId('library-name-lib-1')).toHaveAttribute(
+      'href',
+      '/libraries/lib-1',
+    )
+    expect(screen.getByTestId('library-name-lib-2')).toHaveAttribute(
+      'href',
+      '/libraries/lib-2',
+    )
+  })
+
+  it('renders the phone card list with the same data (task 19)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+    ])
+    renderPage()
+
+    const cards = await screen.findByTestId('libraries-cards')
+    expect(cards).toBeInTheDocument()
+    const card = screen.getByTestId('library-card-lib-1')
+    expect(card).toHaveTextContent('Movies')
+    expect(card).toHaveTextContent('/media/movies')
+    expect(screen.getByTestId('library-files-lib-1-card')).toHaveTextContent('3')
+    expect(screen.getByTestId('library-chip-satisfied-lib-1-card')).toHaveTextContent(
+      '2 Nothing to do',
+    )
+    expect(screen.getByTestId('library-saved-lib-1-card')).toHaveTextContent(
+      '2.0 GB saved',
+    )
+    // The card name links to the detail page.
+    expect(screen.getByTestId('library-name-lib-1-card')).toHaveAttribute(
+      'href',
+      '/libraries/lib-1',
     )
   })
 
