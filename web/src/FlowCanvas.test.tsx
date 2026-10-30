@@ -11,7 +11,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import FlowCanvasPage from './FlowCanvasPage'
 import type { FlowFieldError, FlowGraph, StepTypeInfo } from './api'
 import {
@@ -497,5 +497,69 @@ describe('FlowCanvas unsaved-changes guard', () => {
     await waitFor(() => screen.getByTestId('flow-guard-dialog'))
     fireEvent.click(screen.getByTestId('flow-guard-leave'))
     await waitFor(() => screen.getByTestId('rules-stub'))
+  })
+})
+
+describe('FlowCanvas mobile (task 22)', () => {
+  /**
+   * Forces the phone layout: every media query answers false. Without the
+   * stub jsdom has no matchMedia and useMediaQuery defaults to wide —
+   * exactly what the desktop tests above rely on.
+   */
+  function stubNarrow() {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      })),
+    )
+  }
+
+  it('is view only below md: notice, no editing UI, canvas still works', async () => {
+    stubNarrow()
+    mock = installFetchMock(standardRoutes('easy'))
+    renderFlow()
+    await waitFor(() => screen.getByTestId('flow-canvas-page'))
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas-node-probe')).toBeInTheDocument(),
+    )
+    // The notice explains why editing is not offered here.
+    expect(screen.getByTestId('flow-mobile-notice').textContent).toBe(
+      'Viewing only on a phone. Editing the flow needs a desktop browser.',
+    )
+    // No palette, no inspector, no edit controls, no banner CTA.
+    expect(screen.queryByTestId('flow-palette')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('flow-inspector-empty'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId('flow-edit')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('flow-edit-banner')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('flow-save')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('flow-readonly-banner')).not.toBeInTheDocument()
+    // The graph itself is still readable: same node count as desktop.
+    expect(screen.getByTestId('flow-summary').textContent).toBe(
+      '5 steps · 4 connections',
+    )
+    for (const id of [
+      'probe',
+      'transcode_video',
+      'convert_audio',
+      'subtitles',
+      'remux_container',
+    ]) {
+      expect(screen.getByTestId(`canvas-node-${id}`)).toBeInTheDocument()
+    }
+    // The zoom controls keep their accessible names (they are real
+    // buttons in main, so the audit counts them).
+    expect(screen.getByRole('button', { name: 'Zoom In' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Zoom Out' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fit View' })).toBeInTheDocument()
   })
 })
