@@ -17,8 +17,9 @@
  * in the failure message) are skipped. Empty strings and hidden elements
  * are excluded, everything else counts.
  *
- * Runs only under the `phone` project; the widths are set per test below
- * (the config's three projects exist for layout.spec).
+ * Runs only under the `phone` project (playwright.config.ts sets
+ * `testIgnore` on the other two projects, which exist for layout.spec);
+ * the widths are set per test below.
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -68,10 +69,7 @@ interface SmallControl {
 
 async function open(page: Page, path: string, ready: string): Promise<void> {
   await page.goto(path)
-  await expect(
-    page.getByTestId(ready),
-    `${path} did not render`,
-  ).toBeVisible()
+  await expect(page.getByTestId(ready), `${path} did not render`).toBeVisible()
 }
 
 /**
@@ -139,10 +137,6 @@ test.describe('mobile audit', () => {
     test(`no overflow and 44px touch targets at ${width}px`, async ({
       page,
     }) => {
-      test.skip(
-        test.info().project.name !== 'phone',
-        'the width loop is phone-project only',
-      )
       await page.setViewportSize({ width, height: 844 })
       for (const { path, ready, settled } of PAGES) {
         await open(page, path, ready)

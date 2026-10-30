@@ -33,13 +33,51 @@ Files, in order:
 - Dashboard warning links got `min-h-11` (was `min-h-[36px]`): the audit gate covers `/`,
   and a fresh seed (built-in node stopped) renders a warning card whose link would fail
   it. One-class change only; full dashboard restyle stays in task 21.
-- AboutCard's update-check checkbox becomes a 44px `appearance-none` checkbox: the audit
-  measures `main input` heights and a 16px native checkbox fails it.
+- AboutCard's update-check checkbox becomes a 44px checkbox: the audit measures
+  `main input` heights and a 16px native checkbox fails it.
+- `DataList` takes an optional `cardTestid` (defaults to `${testid}-cards`) and the two
+  list pages pass their existing `libraries-cards` / `file-cards` names. The task also
+  wants a `{testid}-cards` name, but the alternative was renaming test ids that task 12
+  and 19 assert.
+- `DataList`'s table wrapper carries `relative` as well as `overflow-x-auto`: the action
+  column's `sr-only` header is absolutely positioned, and without a positioned ancestor
+  it widened the page by its offset at 768 px (caught by the layout spec).
+- The `/libraries/:id` cards hide the After/Ratio columns and fold the size comparison
+  into one "Size:" row; show "Saved" only when there is a saving. The table keeps every
+  existing column and test id.
+- Filter selects and the search field on the detail page got `min-h-11` in place rather
+  than the full `input` string: `input` is `w-full`, which breaks the inline filter row.
+  The settings pages do use `input` on every text/number field and select.
 
 ## Audit run before any UI change (recorded as required)
 
-(filled in after first run)
+Ran `make e2e` on the pre-change build (with `LD_LIBRARY_PATH` pointing at the local
+Playwright system libs in this sandbox). The audit failed at `/` for every width with:
+
+```
+/ at 320px: 1 control(s) under 44px tall: [{"tag":"a","label":"Go to Nodes","height":36}]
+```
+
+The other four pages had already been brought to 44 px by tasks 12, 18 and 19; the gate
+still failed, so it was a real red baseline. After the change the same command reports
+`61 passed, 3 skipped` (the skips are the phone-only/desktop-only branches of the
+existing layout spec).
+
+## Gate results
+
+- `make e2e`: 61 passed, 3 skipped; mobile audit green at 320, 390, 414, 768 on `/`,
+  `/libraries`, `/nodes`, `/encode`, `/app` and the seeded `/libraries/:id`.
+- `make test`: Go suite + 174 web tests pass.
+- `make lint`: `go vet`, `golangci-lint` (0 issues), SPDX check, ESLint, Prettier all pass.
+- `cd web && npm run build`: `tsc --noEmit` and Vite build exit 0.
 
 ## Summary
 
-(filled in at the end)
+Built the task 20 mobile foundation: `mobile.spec.ts` audit (4 widths x 5 pages + seeded
+detail), `uiControls.ts`, generic `DataList` (cards below `sm`, wrapped table above), and
+migrated Nodes, Libraries, Library detail, Encode settings, App settings and About.
+Skipped the dashboard stat-card / rail work (tasks 21 and 22) and any API change.
+Next task should know: `DataList` has card-specific hooks (`cardCell`, `cardLabel`,
+`hideInCard`, `cardTestid`) so test ids survive; use them rather than renaming.
+Playwright in this sandbox needs `LD_LIBRARY_PATH=/tmp/opencode/pwlibs/root/usr/lib/x86_64-linux-gnu`;
+CI's `playwright install --with-deps` handles that normally.

@@ -51,11 +51,11 @@ Each migrated page gets a test asserting its controls carry `min-h-11`, and the 
 The dashboard stat cards, the nav rail behaviour (task 21), the flow canvas (task 22). Do not change the API, do not change any `data-testid` that exists today, do not restyle anything not named above.
 
 ## Acceptance
-- [ ] `web/e2e/mobile.spec.ts` exists, covers 320, 390, 414 and 768 px on all five pages, and fails with a message naming the page, width and exact overflow or the offending controls.
-- [ ] `web/src/uiControls.ts` exports `btn`, `btnPrimary`, `btnGhost`, `input`, each containing `min-h-11`, with a unit test proving it.
-- [ ] `web/src/DataList.tsx` renders cards below `sm` and a wrapped table at `sm` and up, with a test asserting both exist in the DOM.
-- [ ] `/nodes`, `/libraries`, `/libraries/:id`, `/encode` and `/app` have zero controls under 44 px tall in the Playwright audit at all four widths.
-- [ ] No page has horizontal overflow at any audited width.
-- [ ] `/libraries` and `/libraries/:id` render a card list below `sm` instead of a raw table.
-- [ ] Every pre existing `data-testid` still resolves; tasks 11, 12, 18 and 19 tests pass unchanged.
-- [ ] `make test`, `make lint` and `cd web && npm run build` all exit 0.
+- [x] `web/e2e/mobile.spec.ts` exists, covers 320, 390, 414 and 768 px on all five pages, and fails with a message naming the page, width and exact overflow or the offending controls.
+- [x] `web/src/uiControls.ts` exports `btn`, `btnPrimary`, `btnGhost`, `input`, each containing `min-h-11`, with a unit test proving it.
+- [x] `web/src/DataList.tsx` renders cards below `sm` and a wrapped table at `sm` and up, with a test asserting both exist in the DOM.
+- [x] `/nodes`, `/libraries`, `/libraries/:id`, `/encode` and `/app` have zero controls under 44 px tall in the Playwright audit at all four widths.
+- [x] No page has horizontal overflow at any audited width.
+- [x] `/libraries` and `/libraries/:id` render a card list below `sm` instead of a raw table.
+- [x] Every pre existing `data-testid` still resolves; tasks 11, 12, 18 and 19 tests pass unchanged.
+- [x] `make test`, `make lint` and `cd web && npm run build` all exit 0.

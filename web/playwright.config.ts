@@ -37,7 +37,17 @@ export default defineConfig({
   outputDir: './test-results',
   projects: [
     { name: 'phone', use: { viewport: { width: 390, height: 844 } } },
-    { name: 'tablet', use: { viewport: { width: 768, height: 1024 } } },
-    { name: 'desktop', use: { viewport: { width: 1280, height: 800 } } },
+    {
+      name: 'tablet',
+      use: { viewport: { width: 768, height: 1024 } },
+      // The mobile audit (task 20) sets its own widths per test and runs
+      // once — the tablet and desktop projects exist for layout.spec.
+      testIgnore: /mobile\.spec\.ts/,
+    },
+    {
+      name: 'desktop',
+      use: { viewport: { width: 1280, height: 800 } },
+      testIgnore: /mobile\.spec\.ts/,
+    },
   ],
 })
