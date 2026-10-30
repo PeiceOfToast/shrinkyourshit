@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, getHealth } from './api'
+import { ApiError, api, getFlowStepTypes, getHealth } from './api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -88,5 +88,53 @@ describe('api client', () => {
     )
     const err = (await api('/api/v1/nope').catch((e: unknown) => e)) as ApiError
     expect(err.raw).toBe('{"error":"nope","code":"invalid_request"}')
+  })
+
+  it('normalizes the server\'s null step-type params to an empty array (task 22)', async () => {
+    // The Go server marshals a parameterless step type as `"params": null`
+    // (nil slice), which crashed every consumer that maps over params —
+    // the whole flow canvas page went blank in a real browser.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            items: [
+              {
+                type: 'probe',
+                label: 'Check the file',
+                description: 'Read the file details.',
+                condition: false,
+                params: null,
+              },
+              {
+                type: 'if_codec_not',
+                label: 'If the video is not…',
+                description: 'A condition on the video.',
+                condition: true,
+                params: [
+                  {
+                    name: 'codec',
+                    label: 'codec',
+                    kind: 'select',
+                    options: ['hevc', 'av1', 'h264'],
+                    required: true,
+                    default: 'hevc',
+                  },
+                ],
+              },
+            ],
+            total: 2,
+          },
+          true,
+          200,
+        ),
+      ),
+    )
+    const resp = await getFlowStepTypes()
+    expect(resp.items[0].params).toEqual([])
+    // Real param lists pass through untouched.
+    expect(resp.items[1].params).toHaveLength(1)
+    expect(resp.items[1].params[0].name).toBe('codec')
   })
 })

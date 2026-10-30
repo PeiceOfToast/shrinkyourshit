@@ -629,8 +629,23 @@ export interface StepTypeInfo {
   params: StepParamField[]
 }
 
+/**
+ * GET /api/v1/flows/step-types. The server marshals a step type without
+ * parameters as `"params": null` (a nil Go slice), which crashed every
+ * consumer that maps over `params` — the whole canvas page went blank in
+ * a real browser (caught by the task 22 audit; the jsdom fixture always
+ * used `[]`). Normalized here so every consumer sees an array.
+ */
 export function getFlowStepTypes(): Promise<ListResponse<StepTypeInfo>> {
-  return api<ListResponse<StepTypeInfo>>('/api/v1/flows/step-types')
+  return api<ListResponse<StepTypeInfo>>('/api/v1/flows/step-types').then(
+    (resp) => ({
+      ...resp,
+      items: resp.items.map((info) => ({
+        ...info,
+        params: info.params ?? [],
+      })),
+    }),
+  )
 }
 
 export interface FlowPreviewStep {
