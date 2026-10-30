@@ -44,6 +44,36 @@ function layoutSuite(path: string, ready: string): void {
         scrollWidth: document.documentElement.scrollWidth,
         innerWidth: window.innerWidth,
       }))
+      if (scrollWidth > innerWidth) {
+        // DEBUG(task 19): name every element that sticks out, with its
+        // chain of ancestors, so the offender is in the CI log.
+        const offenders = await page.evaluate(() => {
+          const vw = window.innerWidth
+          const out: string[] = []
+          for (const el of Array.from(document.querySelectorAll('*'))) {
+            const r = el.getBoundingClientRect()
+            if (r.right <= vw + 1 && el.scrollWidth <= el.clientWidth + 1) {
+              continue
+            }
+            const chain: string[] = []
+            let cur: Element | null = el
+            for (let i = 0; cur && i < 6; i++) {
+              const b = cur.getBoundingClientRect()
+              chain.push(
+                `${cur.tagName.toLowerCase()}${cur.id ? '#' + cur.id : ''}${
+                  cur.getAttribute('data-testid')
+                    ? '[' + cur.getAttribute('data-testid') + ']'
+                    : ''
+                }.w${Math.round(b.width)}`,
+              )
+              cur = cur.parentElement
+            }
+            out.push(chain.join(' < '))
+          }
+          return out.slice(0, 40)
+        })
+        console.log(`OFFENDERS ${path}:\n${offenders.join('\n')}`)
+      }
       expect(
         scrollWidth,
         `${path}: the page overflows by ${scrollWidth - innerWidth}px (scrollWidth ${scrollWidth} > viewport ${innerWidth})`,
