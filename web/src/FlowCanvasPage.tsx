@@ -4,7 +4,11 @@
  * The flow canvas page (task 15, tier 3): the library's rule graph as a
  * React Flow canvas, reachable from the rules page tier selector. Read
  * only first — an explicit "Edit flow" unlocks editing, so nobody breaks a
- * generated flow by accident. The server owns validation: every change
+ * generated flow by accident. Below the `md` breakpoint (768px, task 22) the
+ * page is view only: no palette, no inspector, no edit controls, just the
+ * notice and the canvas. Editing state is `editingRequested && wide`, so
+ * resizing below md degrades to viewing and the unsaved guard still warns.
+ * The server owns validation: every change
  * re-runs POST /api/v1/flows/validate, the returned field errors render on
  * the nodes, and Save stays disabled with the reason shown while the graph
  * is invalid. Saving writes the whole graph with source=advanced.
@@ -37,6 +41,8 @@ import ConfirmDialog from './ConfirmDialog'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
 import { useUnsavedGuard } from './useUnsavedGuard'
+import { useMediaQuery } from './useMediaQuery'
+import { btn, btnGhost, btnPrimary } from './uiControls'
 
 /** Every change re-validates; the debounce keeps typing in the inspector
  * from firing a request per keystroke. */
@@ -81,7 +87,9 @@ export default function FlowCanvasPage() {
   const [graph, setGraphState] = useState<FlowGraph | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
-  const [editing, setEditing] = useState(false)
+  const [editingRequested, setEditingRequested] = useState(false)
+  const wide = useMediaQuery('(min-width: 768px)')
+  const editing = editingRequested && wide
   const [selection, setSelection] = useState<CanvasSelection>(NO_SELECTION)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [validity, setValidity] = useState<Validity | null>(null)
@@ -268,51 +276,52 @@ export default function FlowCanvasPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {editing ? (
-            <>
+          {wide &&
+            (editing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => save.mutate()}
+                  disabled={!canSave}
+                  title={saveReason ?? undefined}
+                  className={btnPrimary}
+                  data-testid="flow-save"
+                >
+                  {save.isPending ? 'Saving…' : 'Save flow'}
+                </button>
+                {dirty ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDiscard(true)}
+                    className={btn}
+                    data-testid="flow-discard"
+                  >
+                    Discard changes
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingRequested(false)}
+                    className={btn}
+                    data-testid="flow-done"
+                  >
+                    Done editing
+                  </button>
+                )}
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={() => save.mutate()}
-                disabled={!canSave}
-                title={saveReason ?? undefined}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-                data-testid="flow-save"
+                onClick={() => setEditingRequested(true)}
+                className={btnPrimary}
+                data-testid="flow-edit"
               >
-                {save.isPending ? 'Saving…' : 'Save flow'}
+                Edit flow
               </button>
-              {dirty ? (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDiscard(true)}
-                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"
-                  data-testid="flow-discard"
-                >
-                  Discard changes
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditing(false)}
-                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"
-                  data-testid="flow-done"
-                >
-                  Done editing
-                </button>
-              )}
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-              data-testid="flow-edit"
-            >
-              Edit flow
-            </button>
-          )}
+            ))}
           <Link
             to={`/libraries/${id}/rules`}
-            className="rounded-lg px-3 py-2 text-sm text-slate-400 underline hover:text-slate-200"
+            className={btnGhost}
             data-testid="flow-back"
           >
             Back to rules
@@ -320,7 +329,7 @@ export default function FlowCanvasPage() {
         </div>
       </div>
 
-      {!editing && (
+      {wide && !editing && (
         <div
           className="flex flex-wrap items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 ring-1 ring-slate-800"
           data-testid="flow-readonly-banner"
@@ -333,12 +342,21 @@ export default function FlowCanvasPage() {
           </p>
           <button
             type="button"
-            onClick={() => setEditing(true)}
-            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"
+            onClick={() => setEditingRequested(true)}
+            className={btn}
             data-testid="flow-edit-banner"
           >
             Edit flow
           </button>
+        </div>
+      )}
+
+      {!wide && (
+        <div
+          className="rounded-xl bg-slate-900 p-3 text-sm text-slate-300 ring-1 ring-slate-800"
+          data-testid="flow-mobile-notice"
+        >
+          Viewing only on a phone. Editing the flow needs a desktop browser.
         </div>
       )}
 
@@ -364,7 +382,7 @@ export default function FlowCanvasPage() {
       )}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        {editing && (
+        {wide && editing && (
           <div className="shrink-0 lg:w-56">
             <FlowPalette palette={paletteItems} onAdd={addToGraph} />
           </div>
@@ -382,17 +400,19 @@ export default function FlowCanvasPage() {
             />
           </div>
         </div>
-        <div className="shrink-0 lg:w-80">
-          <div className="rounded-2xl bg-slate-950/60 p-4 ring-1 ring-slate-800">
-            <FlowInspector
-              graph={graph!}
-              palette={paletteItems}
-              selection={selection}
-              editing={editing}
-              onChange={applyGraph}
-            />
+        {wide && (
+          <div className="shrink-0 lg:w-80">
+            <div className="rounded-2xl bg-slate-950/60 p-4 ring-1 ring-slate-800">
+              <FlowInspector
+                graph={graph!}
+                palette={paletteItems}
+                selection={selection}
+                editing={editing}
+                onChange={applyGraph}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {confirmDiscard && (
