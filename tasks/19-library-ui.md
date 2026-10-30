@@ -25,11 +25,11 @@ The library pages become the place the owner actually manages work: savings at a
 Charts over time, per file bulk actions, the flow editors.
 
 ## Acceptance
-- [ ] The library list shows per library counts and bytes saved, matching `GET /api/v1/stats`. (`LibrariesPage.test.tsx`)
-- [ ] The detail header shows status counts, bytes saved, the plain language target and the last scan time. (`LibraryDetailPage.test.tsx`)
-- [ ] The file table shows before, after, ratio, encoder and a working job log link. (`LibraryDetailPage.test.tsx`)
-- [ ] `q`, `sort` and `dir` filter and order server side, an unknown sort returns 400, and paging reports the real total. (`TestLibraryFilesSearchAndSort`)
-- [ ] `GET /api/v1/files/{id}/jobs` returns that file's jobs oldest first and 404s for an unknown file. (`TestFileJobsEndpoint`)
-- [ ] The per file panel renders attempts, encoder, fallback reasons and the log tail. (`FileHistory.test.tsx`)
-- [ ] Playwright passes at 390, 768 and 1280 on `/libraries` and `/libraries/{id}` with no overflow.
-- [ ] `API.md` documents the new query parameters and the file jobs endpoint.
+- [x] The library list shows per library counts and bytes saved, matching `GET /api/v1/stats`. (`LibrariesPage.test.tsx`)
+- [x] The detail header shows status counts, bytes saved, the plain language target and the last scan time. (`LibraryDetailPage.test.tsx`)
+- [x] The file table shows before, after, ratio, encoder and a working job log link. (`LibraryDetailPage.test.tsx`)
+- [x] `q`, `sort` and `dir` filter and order server side, an unknown sort returns 400, and paging reports the real total. (`TestLibraryFilesSearchAndSort`)
+- [x] `GET /api/v1/files/{id}/jobs` returns that file's jobs oldest first and 404s for an unknown file. (`TestFileJobsEndpoint`)
+- [x] The per file panel renders attempts, encoder, fallback reasons and the log tail. (`FileHistory.test.tsx`)
+- [x] Playwright passes at 390, 768 and 1280 on `/libraries` and `/libraries/{id}` with no overflow.
+- [x] `API.md` documents the new query parameters and the file jobs endpoint.

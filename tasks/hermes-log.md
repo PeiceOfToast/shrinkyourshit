@@ -109,3 +109,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-30T03:18:00Z task 18: CI run 40995881588 green on all seven jobs (go, web, docker, e2e, installer, installer-powershell, report); PR #17 merged squash 3f012cc, branch task/18-nodes-ui-control deleted, main pulled on the VM to 3f012cc.
 - 2026-10-30T03:18:30Z task 18: next task is 19 (library UI); deps per ROADMAP.md is 18, which is now done, so 19 starts next tick.
 - 2026-10-30T03:31:30Z task 19: PM checked state at main cb9af87 (working tree clean, no open PRs, no session running, main CI run 40996500006 green); deps per ROADMAP.md are 13 and 18, both done; started build session ses_e75233839ffe8JpyfeXmmwfh4b (library list and detail: savings, search, sort, per file job history)
+- 2026-10-30T04:07Z hermes: task 19 session stalled mid-generation (15 min, no message completed); interrupted and re-prompted with remaining checklist scope.

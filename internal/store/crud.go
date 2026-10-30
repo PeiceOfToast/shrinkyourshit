@@ -6,31 +6,35 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, watch, schedule, result_policy, created_at, updated_at`
+const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, watch, schedule, result_policy, created_at, updated_at, last_scan_at`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
 	var (
-		l       Library
-		watch   string
-		created string
-		updated string
+		l        Library
+		watch    string
+		created  string
+		updated  string
+		lastScan string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
 	l.CreatedAt = parseTime(created)
 	l.UpdatedAt = parseTime(updated)
+	l.LastScanAt = parseTime(lastScan)
 	return &l, nil
 }
 
 // libraryDest builds the scan destination for a single library row.
-func libraryDest(l *Library, watch *string, created, updated *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, watch, &l.Schedule, &l.ResultPolicy, created, updated}
+// lastScan receives the raw last_scan_at text; the caller parses it.
+func libraryDest(l *Library, watch *string, created, updated, lastScan *string) []any {
+	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled
@@ -47,8 +51,8 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 		l.CreatedAt = now
 	}
 	l.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt))
 	if err != nil {
 		return fmt.Errorf("store: create library: %w", err)
 	}
@@ -58,15 +62,16 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 // GetLibrary returns one library or ErrNotFound.
 func (s *SQLite) GetLibrary(ctx context.Context, id string) (*Library, error) {
 	var l Library
-	var watch, created, updated string
+	var watch, created, updated, lastScan string
 	err := scanOne(ctx, s.db, `SELECT `+libraryColumns+` FROM libraries WHERE id = ?`,
-		libraryDest(&l, &watch, &created, &updated), id)
+		libraryDest(&l, &watch, &created, &updated, &lastScan), id)
 	if err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
 	l.CreatedAt = parseTime(created)
 	l.UpdatedAt = parseTime(updated)
+	l.LastScanAt = parseTime(lastScan)
 	return &l, nil
 }
 
@@ -98,6 +103,21 @@ func (s *SQLite) DeleteLibrary(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete library: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetLibraryScanTime stamps the library's last successful scan (task 19).
+// A dedicated update rather than UpdateLibrary so the scanner never
+// rewrites the whole row — and clobbers a concurrent settings change —
+// from a copy it read when the scan started.
+func (s *SQLite) SetLibraryScanTime(ctx context.Context, id string, at time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET last_scan_at = ? WHERE id = ?`, fmtTime(at), id)
+	if err != nil {
+		return fmt.Errorf("store: set library scan time: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound

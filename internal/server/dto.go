@@ -38,10 +38,15 @@ type LibraryDTO struct {
 	ResultPolicy string          `json:"result_policy"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
+	// LastScanAt is when a scan of this library last finished without
+	// error (task 19); omitted when it has never been scanned.
+	LastScanAt string `json:"last_scan_at,omitempty"`
 }
 
 // FileDTO is the JSON shape of a file. Probe carries the stored probe
-// result verbatim (null until the file has been probed).
+// result verbatim (null until the file has been probed). LastJobEncoder is
+// the encoder of the file's most recent job (task 19, the file table's
+// "encoder used" column); empty when the file has no job yet.
 type FileDTO struct {
 	ID              string          `json:"id"`
 	LibraryID       string          `json:"library_id"`
@@ -53,6 +58,7 @@ type FileDTO struct {
 	Status          string          `json:"status"`
 	SatisfiedReason string          `json:"satisfied_reason"`
 	LastJobID       string          `json:"last_job_id"`
+	LastJobEncoder  string          `json:"last_job_encoder,omitempty"`
 	BytesSaved      int64           `json:"bytes_saved"`
 	CreatedAt       string          `json:"created_at"`
 	UpdatedAt       string          `json:"updated_at"`
@@ -114,6 +120,7 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		ResultPolicy: l.ResultPolicy,
 		CreatedAt:    rfc3339(l.CreatedAt),
 		UpdatedAt:    rfc3339(l.UpdatedAt),
+		LastScanAt:   rfc3339(l.LastScanAt),
 	}
 }
 

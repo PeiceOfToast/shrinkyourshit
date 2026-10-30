@@ -201,6 +201,8 @@ export interface Library {
   result_policy: string
   created_at: string
   updated_at: string
+  /** When a scan last finished without error (task 19); absent when none. */
+  last_scan_at?: string
 }
 
 export interface FileItem {
@@ -214,6 +216,8 @@ export interface FileItem {
   status: string
   satisfied_reason: string
   last_job_id: string
+  /** Encoder of the file's most recent job (task 19); absent with none. */
+  last_job_encoder?: string
   bytes_saved: number
   created_at: string
   updated_at: string
@@ -293,12 +297,26 @@ export function scanLibrary(id: string): Promise<{ started: boolean }> {
   })
 }
 
+export interface FileListParams {
+  status?: string
+  /** Case-insensitive substring of the file's name; server side (task 19). */
+  q?: string
+  /** Sort key: name, size or saved; the server orders, never the browser. */
+  sort?: 'name' | 'size' | 'saved'
+  dir?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
+}
+
 export function getFiles(
   id: string,
-  params: { status?: string; limit?: number; offset?: number } = {},
+  params: FileListParams = {},
 ): Promise<ListResponse<FileItem>> {
   const search = new URLSearchParams()
   if (params.status) search.set('status', params.status)
+  if (params.q) search.set('q', params.q)
+  if (params.sort) search.set('sort', params.sort)
+  if (params.dir) search.set('dir', params.dir)
   if (params.limit) search.set('limit', String(params.limit))
   if (params.offset) search.set('offset', String(params.offset))
   const qs = search.toString()
@@ -320,6 +338,21 @@ export function getJobs(
 
 export function cancelJob(id: string): Promise<void> {
   return api<void>(`/api/v1/jobs/${id}/cancel`, { method: 'POST' })
+}
+
+/** GET /files/{id}/jobs — one file's job history, oldest first (task 19). */
+export function getFileJobs(
+  fileId: string,
+  params: { status?: string; limit?: number; offset?: number } = {},
+): Promise<ListResponse<Job>> {
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  if (params.limit) search.set('limit', String(params.limit))
+  if (params.offset) search.set('offset', String(params.offset))
+  const qs = search.toString()
+  return api<ListResponse<Job>>(
+    `/api/v1/files/${fileId}/jobs${qs ? `?${qs}` : ''}`,
+  )
 }
 
 export function retryJob(id: string): Promise<Job> {

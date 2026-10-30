@@ -242,6 +242,13 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 		s.log.Info("file missing", "library", lib.ID, "path", f.Path)
 		s.publish(EventFileUpdated, NewFileDTO(f))
 	}
+
+	// The scan came through: stamp when it finished (task 19, the library
+	// detail header's "last scan"). Best effort — a stamping failure must
+	// not turn a finished scan into an error.
+	if err := s.st.SetLibraryScanTime(ctx, libraryID, time.Now().UTC()); err != nil {
+		s.log.Error("scanner: stamp last scan", "library", libraryID, "err", err)
+	}
 	return res, nil
 }
 

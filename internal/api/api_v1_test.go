@@ -218,6 +218,31 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 	require.NotEmpty(t, errBody.Error)
 }
 
+// TestLibraryLastScanAtExposed covers the DTO field (task 19): a library
+// that has never been scanned omits last_scan_at; a finished scan stamps
+// it and the API exposes it.
+func TestLibraryLastScanAtExposed(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+
+	rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.NotContains(t, raw, "last_scan_at", "never scanned: the field is omitted")
+
+	h.scanSync(lib.ID)
+
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	raw = map[string]any{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	stamped, ok := raw["last_scan_at"].(string)
+	require.True(t, ok, "last_scan_at is a string after a scan")
+	_, err := time.Parse(time.RFC3339, stamped)
+	require.NoError(t, err, "last_scan_at is RFC 3339: %q", stamped)
+}
+
 func TestFilesEndpointStatusFilterAndPagination(t *testing.T) {
 	h := newAPIHarness(t)
 	h.stated.mu.Lock()
@@ -254,6 +279,192 @@ func TestFilesEndpointStatusFilterAndPagination(t *testing.T) {
 	// Bad status filter.
 	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/files?status=bogus", nil)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// TestLibraryFilesSearchAndSort is acceptance item 4 (task 19): q filters
+// on the file's base name only, sort orders server side by name, size or
+// saved bytes in either direction, unknown sort or dir is 400, and the
+// page's total is the filtered count — the browser never re-sorts.
+func TestLibraryFilesSearchAndSort(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	ctx := context.Background()
+
+	type seedFile struct {
+		name      string
+		size      int64
+		saved     int64
+		jobID     string
+		encoder   string
+		jobStatus string
+	}
+	seed := []seedFile{
+		{name: "alpha.mkv", size: 1000, saved: 300, jobID: "job-a", encoder: "nvenc", jobStatus: store.JobStatusDone},
+		{name: "Beta.mkv", size: 5000, saved: 0, jobID: "", encoder: "", jobStatus: ""},
+		{name: "gamma.mkv", size: 300, saved: 100, jobID: "job-b", encoder: "cpu", jobStatus: store.JobStatusDone},
+	}
+	for _, s := range seed {
+		f := &store.File{
+			LibraryID:  lib.ID,
+			Path:       filepath.Join(h.root, s.name),
+			Size:       s.size,
+			Status:     store.FileStatusNew,
+			LastJobID:  s.jobID,
+			BytesSaved: s.saved,
+		}
+		require.NoError(t, h.st.UpsertFile(ctx, f))
+		if s.jobID != "" {
+			require.NoError(t, h.st.CreateJob(ctx, &store.Job{
+				ID: s.jobID, FileID: f.ID, LibraryID: lib.ID,
+				Status:      s.jobStatus,
+				EncoderUsed: s.encoder,
+				BytesBefore: s.size, BytesAfter: s.size - s.saved,
+			}))
+		}
+	}
+
+	// A file under a subfolder whose folder name contains the query, so q
+	// is provably a basename match and never a path match.
+	sub := &store.File{
+		LibraryID: lib.ID,
+		Path:      filepath.Join(h.root, "movies-library", "inside.mkv"),
+		Size:      700, Status: store.FileStatusNew,
+	}
+	require.NoError(t, h.st.UpsertFile(ctx, sub))
+
+	type page struct {
+		Items []server.FileDTO `json:"items"`
+		Total int              `json:"total"`
+	}
+	get := func(query string) page {
+		t.Helper()
+		rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/files"+query, nil)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var p page
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+		return p
+	}
+	names := func(p page) []string {
+		out := make([]string, 0, len(p.Items))
+		for _, f := range p.Items {
+			out = append(out, filepath.Base(f.Path))
+		}
+		return out
+	}
+
+	// q matches the base name, case-insensitively, and never the directory.
+	p := get("?q=alpha")
+	require.Equal(t, []string{"alpha.mkv"}, names(p))
+	require.Equal(t, 1, p.Total)
+	p = get("?q=BETA")
+	require.Equal(t, []string{"Beta.mkv"}, names(p))
+	p = get("?q=library")
+	require.Empty(t, p.Items, "q never matches the directory part")
+	require.Equal(t, 0, p.Total)
+	p = get("?q=nomatch")
+	require.Equal(t, 0, p.Total)
+
+	// size asc puts the smallest first; desc flips it.
+	require.Equal(t, []string{"gamma.mkv", "inside.mkv", "alpha.mkv", "Beta.mkv"}, names(get("?sort=size&dir=asc")))
+	require.Equal(t, []string{"Beta.mkv", "alpha.mkv", "inside.mkv", "gamma.mkv"}, names(get("?sort=size&dir=desc")))
+
+	// name sorts case-insensitively on the base name.
+	require.Equal(t, []string{"alpha.mkv", "Beta.mkv", "gamma.mkv", "inside.mkv"}, names(get("?sort=name&dir=asc")))
+	require.Equal(t, []string{"inside.mkv", "gamma.mkv", "Beta.mkv", "alpha.mkv"}, names(get("?sort=name&dir=desc")))
+
+	// saved orders by bytes saved; the no-job file has none. Ties keep the
+	// store order (the sort is stable).
+	require.Equal(t, []string{"alpha.mkv", "gamma.mkv", "Beta.mkv", "inside.mkv"}, names(get("?sort=saved&dir=desc")))
+
+	// The page total is the filtered count, not the library count.
+	p = get("?q=alpha&limit=1&offset=0")
+	require.Equal(t, 1, p.Total)
+	require.Len(t, p.Items, 1)
+
+	// The encoder of the file's most recent job rides along (task 19).
+	p = get("?q=alpha")
+	require.Equal(t, "nvenc", p.Items[0].LastJobEncoder)
+	p = get("?q=Beta")
+	require.Empty(t, p.Items[0].LastJobEncoder, "no job, no encoder")
+
+	// Unknown sort and dir are 400 invalid_request.
+	for _, query := range []string{"?sort=bogus", "?dir=bogus", "?sort=size&dir=up"} {
+		rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/files"+query, nil)
+		require.Equal(t, http.StatusBadRequest, rec.Code, query)
+		var body struct {
+			Code string `json:"code"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Equal(t, "invalid_request", body.Code, query)
+	}
+
+	// No sort keeps the store order (oldest first) so existing clients
+	// are unaffected.
+	require.Equal(t, []string{"alpha.mkv", "Beta.mkv", "gamma.mkv", "inside.mkv"}, names(get("")))
+}
+
+// TestFileJobsEndpoint is acceptance item 5 (task 19): GET
+// /files/{id}/jobs returns that file's jobs oldest first and 404s for an
+// unknown file. The DTO shape is the same JobDTO every job response uses.
+func TestFileJobsEndpoint(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	ctx := context.Background()
+
+	f1 := &store.File{LibraryID: lib.ID, Path: filepath.Join(h.root, "one.mkv"), Size: 100, Status: store.FileStatusNew}
+	f2 := &store.File{LibraryID: lib.ID, Path: filepath.Join(h.root, "two.mkv"), Size: 100, Status: store.FileStatusNew}
+	require.NoError(t, h.st.UpsertFile(ctx, f1))
+	require.NoError(t, h.st.UpsertFile(ctx, f2))
+
+	// Three jobs for f1 (created in order) and one for f2.
+	mkJob := func(fileID string, n int, status string) {
+		t.Helper()
+		require.NoError(t, h.st.CreateJob(ctx, &store.Job{
+			FileID: fileID, LibraryID: lib.ID, Status: status, Attempt: n,
+		}))
+	}
+	mkJob(f1.ID, 0, store.JobStatusFailed)
+	mkJob(f1.ID, 1, store.JobStatusFailed)
+	mkJob(f2.ID, 0, store.JobStatusDone)
+	mkJob(f1.ID, 2, store.JobStatusDone)
+
+	rec := h.do(http.MethodGet, "/api/v1/files/"+f1.ID+"/jobs", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var page struct {
+		Items []server.JobDTO `json:"items"`
+		Total int             `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &page))
+	require.Equal(t, 3, page.Total)
+	attempts := []int{}
+	for _, j := range page.Items {
+		require.Equal(t, f1.ID, j.FileID, "only this file's jobs")
+		attempts = append(attempts, j.Attempt)
+	}
+	require.Equal(t, []int{0, 1, 2}, attempts, "oldest first")
+
+	// The DTO carries the file identity (task 18).
+	require.Equal(t, "one.mkv", page.Items[0].FileName)
+	require.Equal(t, filepath.Join(h.root, "one.mkv"), page.Items[0].FilePath)
+
+	// The status filter narrows to that file's matching jobs.
+	rec = h.do(http.MethodGet, "/api/v1/files/"+f1.ID+"/jobs?status=failed", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var failed struct {
+		Items []server.JobDTO `json:"items"`
+		Total int             `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &failed))
+	require.Equal(t, 2, failed.Total)
+
+	// Unknown file is 404 not_found.
+	rec = h.do(http.MethodGet, "/api/v1/files/does-not-exist/jobs", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	var body struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "not_found", body.Code)
 }
 
 func TestJobsEndpointsListGetCancelRetry(t *testing.T) {
