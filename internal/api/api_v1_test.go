@@ -281,6 +281,128 @@ func TestFilesEndpointStatusFilterAndPagination(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+// TestLibraryFilesSearchAndSort is acceptance item 4 (task 19): q filters
+// on the file's base name only, sort orders server side by name, size or
+// saved bytes in either direction, unknown sort or dir is 400, and the
+// page's total is the filtered count — the browser never re-sorts.
+func TestLibraryFilesSearchAndSort(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	ctx := context.Background()
+
+	type seedFile struct {
+		name      string
+		size      int64
+		saved     int64
+		jobID     string
+		encoder   string
+		jobStatus string
+	}
+	seed := []seedFile{
+		{name: "alpha.mkv", size: 1000, saved: 300, jobID: "job-a", encoder: "nvenc", jobStatus: store.JobStatusDone},
+		{name: "Beta.mkv", size: 5000, saved: 0, jobID: "", encoder: "", jobStatus: ""},
+		{name: "gamma.mkv", size: 300, saved: 100, jobID: "job-b", encoder: "cpu", jobStatus: store.JobStatusDone},
+	}
+	for _, s := range seed {
+		f := &store.File{
+			LibraryID:  lib.ID,
+			Path:       filepath.Join(h.root, s.name),
+			Size:       s.size,
+			Status:     store.FileStatusNew,
+			LastJobID:  s.jobID,
+			BytesSaved: s.saved,
+		}
+		require.NoError(t, h.st.UpsertFile(ctx, f))
+		if s.jobID != "" {
+			require.NoError(t, h.st.CreateJob(ctx, &store.Job{
+				ID: s.jobID, FileID: f.ID, LibraryID: lib.ID,
+				Status:      s.jobStatus,
+				EncoderUsed: s.encoder,
+				BytesBefore: s.size, BytesAfter: s.size - s.saved,
+			}))
+		}
+	}
+
+	// A file under a subfolder whose folder name contains the query, so q
+	// is provably a basename match and never a path match.
+	sub := &store.File{
+		LibraryID: lib.ID,
+		Path:      filepath.Join(h.root, "movies-library", "inside.mkv"),
+		Size:      700, Status: store.FileStatusNew,
+	}
+	require.NoError(t, h.st.UpsertFile(ctx, sub))
+
+	type page struct {
+		Items []server.FileDTO `json:"items"`
+		Total int              `json:"total"`
+	}
+	get := func(query string) page {
+		t.Helper()
+		rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/files"+query, nil)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var p page
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+		return p
+	}
+	names := func(p page) []string {
+		out := make([]string, 0, len(p.Items))
+		for _, f := range p.Items {
+			out = append(out, filepath.Base(f.Path))
+		}
+		return out
+	}
+
+	// q matches the base name, case-insensitively, and never the directory.
+	p := get("?q=alpha")
+	require.Equal(t, []string{"alpha.mkv"}, names(p))
+	require.Equal(t, 1, p.Total)
+	p = get("?q=BETA")
+	require.Equal(t, []string{"Beta.mkv"}, names(p))
+	p = get("?q=library")
+	require.Empty(t, p.Items, "q never matches the directory part")
+	require.Equal(t, 0, p.Total)
+	p = get("?q=nomatch")
+	require.Equal(t, 0, p.Total)
+
+	// size asc puts the smallest first; desc flips it.
+	require.Equal(t, []string{"gamma.mkv", "inside.mkv", "alpha.mkv", "Beta.mkv"}, names(get("?sort=size&dir=asc")))
+	require.Equal(t, []string{"Beta.mkv", "alpha.mkv", "inside.mkv", "gamma.mkv"}, names(get("?sort=size&dir=desc")))
+
+	// name sorts case-insensitively on the base name.
+	require.Equal(t, []string{"alpha.mkv", "Beta.mkv", "gamma.mkv", "inside.mkv"}, names(get("?sort=name&dir=asc")))
+	require.Equal(t, []string{"inside.mkv", "gamma.mkv", "Beta.mkv", "alpha.mkv"}, names(get("?sort=name&dir=desc")))
+
+	// saved orders by bytes saved; the no-job file has none. Ties keep the
+	// store order (the sort is stable).
+	require.Equal(t, []string{"alpha.mkv", "gamma.mkv", "Beta.mkv", "inside.mkv"}, names(get("?sort=saved&dir=desc")))
+
+	// The page total is the filtered count, not the library count.
+	p = get("?q=alpha&limit=1&offset=0")
+	require.Equal(t, 1, p.Total)
+	require.Len(t, p.Items, 1)
+
+	// The encoder of the file's most recent job rides along (task 19).
+	p = get("?q=alpha")
+	require.Equal(t, "nvenc", p.Items[0].LastJobEncoder)
+	p = get("?q=Beta")
+	require.Empty(t, p.Items[0].LastJobEncoder, "no job, no encoder")
+
+	// Unknown sort and dir are 400 invalid_request.
+	for _, query := range []string{"?sort=bogus", "?dir=bogus", "?sort=size&dir=up"} {
+		rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/files"+query, nil)
+		require.Equal(t, http.StatusBadRequest, rec.Code, query)
+		var body struct {
+			Code string `json:"code"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Equal(t, "invalid_request", body.Code, query)
+	}
+
+	// No sort keeps the store order (oldest first) so existing clients
+	// are unaffected.
+	require.Equal(t, []string{"alpha.mkv", "Beta.mkv", "gamma.mkv", "inside.mkv"}, names(get("")))
+}
+
 func TestJobsEndpointsListGetCancelRetry(t *testing.T) {
 	h := newAPIHarness(t)
 	h.stated.mu.Lock()

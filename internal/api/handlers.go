@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -141,7 +143,11 @@ func (a *API) scanLibrary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
 }
 
-// listFiles returns a library's files, paginated, optional ?status= filter.
+// listFiles returns a library's files, paginated, with an optional status
+// filter plus the task 19 search and sort: `q` matches the file's base name
+// (case-insensitive substring), `sort` orders by name, size or bytes saved
+// and `dir` flips the order. Unknown sort or dir values are 400. Filtering
+// and sorting happen here, server side; the browser never re-sorts a page.
 func (a *API) listFiles(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, err := a.svc.Libraries().Get(r.Context(), id); errors.Is(err, store.ErrNotFound) {
@@ -153,6 +159,10 @@ func (a *API) listFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, offset, ok := pageParams(r, w)
+	if !ok {
+		return
+	}
+	sortKey, dir, ok := fileSortParams(r, w)
 	if !ok {
 		return
 	}
@@ -173,7 +183,99 @@ func (a *API) listFiles(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	writePage(w, files, limit, offset, server.NewFileDTO)
+
+	if q := queryText(r); q != "" {
+		files = filterFilesByName(files, q)
+	}
+	sortFiles(files, sortKey, dir)
+
+	// The file table shows the encoder that produced the file's current
+	// state (task 19): resolved from the file's most recent job, one
+	// lookup per page row (writePage maps only the sliced page). A missing
+	// job leaves the field empty rather than failing the response.
+	writePage(w, files, limit, offset, func(f *store.File) server.FileDTO {
+		dto := server.NewFileDTO(f)
+		if f.LastJobID != "" {
+			if j, err := a.st.GetJob(r.Context(), f.LastJobID); err == nil {
+				dto.LastJobEncoder = j.EncoderUsed
+			}
+		}
+		return dto
+	})
+}
+
+// fileSortParams reads ?sort= and ?dir= (task 19). An empty sort keeps the
+// store's order and dir is ignored; unknown values are 400 invalid_request.
+func fileSortParams(r *http.Request, w http.ResponseWriter) (sort, dir string, ok bool) {
+	sort = r.URL.Query().Get("sort")
+	switch sort {
+	case "", "name", "size", "saved":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"sort must be name, size or saved")
+		return "", "", false
+	}
+	dir = r.URL.Query().Get("dir")
+	switch dir {
+	case "", "asc", "desc":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"dir must be asc or desc")
+		return "", "", false
+	}
+	return sort, dir, true
+}
+
+// queryText reads and normalizes the ?q= search text (task 19): trimmed and
+// lowercased, so matching is case-insensitive against the lowered name.
+func queryText(r *http.Request) string {
+	return strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+}
+
+// filterFilesByName keeps the files whose base name contains q
+// (case-insensitive; q arrives normalized from queryText). The directory
+// part of the path never matches, so a folder called "movies" does not
+// summon every file inside it.
+func filterFilesByName(files []*store.File, q string) []*store.File {
+	kept := files[:0]
+	for _, f := range files {
+		if strings.Contains(strings.ToLower(filepath.Base(f.Path)), q) {
+			kept = append(kept, f)
+		}
+	}
+	return kept
+}
+
+// sortFiles orders files in place (task 19). sort is a validated key
+// (fileSortParams); dir is asc (default) or desc. An empty sort key keeps
+// the store's created_at order and dir is ignored. Stable, so equal keys
+// keep their store order in both directions.
+func sortFiles(files []*store.File, sort, dir string) {
+	if sort == "" {
+		return
+	}
+	desc := dir == "desc"
+	slices.SortStableFunc(files, func(a, b *store.File) int {
+		c := compareFiles(a, b, sort)
+		if desc {
+			return -c
+		}
+		return c
+	})
+}
+
+// compareFiles returns -1, 0 or 1 for one sort key.
+func compareFiles(a, b *store.File, sort string) int {
+	switch sort {
+	case "name":
+		an, bn := strings.ToLower(filepath.Base(a.Path)), strings.ToLower(filepath.Base(b.Path))
+		return strings.Compare(an, bn)
+	case "size":
+		return cmp.Compare(a.Size, b.Size)
+	case "saved":
+		return cmp.Compare(a.BytesSaved, b.BytesSaved)
+	}
+	return 0
 }
 
 // jobDTO maps a job to its DTO with the file identity resolved (task 18):

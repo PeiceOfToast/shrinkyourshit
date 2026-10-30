@@ -437,3 +437,6 @@ Details:
 - `LibraryDTO` gains `last_scan_at` (RFC 3339, omitted when the library has
   never been scanned): the scanner stamps it when a scan finishes without
   error, and the detail header shows it as the last scan time.
+- `FileDTO` gains `last_job_encoder` (omitted when the file has no job yet):
+  the encoder of the file's most recent job, resolved for the page's files
+  so the file table can show the encoder used.
