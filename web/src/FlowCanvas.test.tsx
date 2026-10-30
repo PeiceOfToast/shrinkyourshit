@@ -536,9 +536,7 @@ describe('FlowCanvas mobile (task 22)', () => {
     )
     // No palette, no inspector, no edit controls, no banner CTA.
     expect(screen.queryByTestId('flow-palette')).not.toBeInTheDocument()
-    expect(
-      screen.queryByTestId('flow-inspector-empty'),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId('flow-inspector-empty')).not.toBeInTheDocument()
     expect(screen.queryByTestId('flow-edit')).not.toBeInTheDocument()
     expect(screen.queryByTestId('flow-edit-banner')).not.toBeInTheDocument()
     expect(screen.queryByTestId('flow-save')).not.toBeInTheDocument()
