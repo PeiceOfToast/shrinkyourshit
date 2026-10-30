@@ -135,3 +135,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-30T14:34:18Z task 20 verified: all 8 acceptance boxes ticked, DECISIONS.md unchanged vs origin/main, make test (Go + 174 web tests) / make lint (golangci 0 issues, eslint, prettier, spdx) / web build all exit 0 on VM 201, CI run 41072172634 fully green (go, web, docker, e2e, cross, installer, installer-powershell, report).
 - 2026-10-30T14:34:18Z task 20 merged: PR #21 squashed to ce04748 (branch task/20-mobile-touch-targets deleted), main pulled on VM 201. Mobile foundation in place: uiControls (min-h-11), DataList cards-below-sm, e2e/mobile.spec.ts gate at 320/390/414/768 on five pages.
 - 2026-10-30T14:34:18Z next: task 21 (fluid dashboard and rail) and task 22 (flow canvas mobile) both unblocked, both depend only on 20. Starting 21 on the next tick, one task in flight.
+2026-10-30T14:46:15Z task 21 fluid dashboard and rail started (session ses_e72b974f9ffetnp6LpGsW6flvp)
