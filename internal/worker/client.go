@@ -189,12 +189,15 @@ func (c *Client) JobSpec(ctx context.Context, jobID string) (*server.JobSpec, er
 // ProgressInput is the progress request body (API.md). The response's
 // status lets the runner detect a cancelled job. AccessMode (task 09) is
 // the mode the node resolved for the job; the server stores it.
+// BytesSoFar (task 18) is the scratch output's size at report time: one
+// stat per tick, so the node card can show the file growing.
 type ProgressInput struct {
 	Percent    float64 `json:"percent"`
 	Speed      float64 `json:"speed"`
 	ETASeconds int64   `json:"eta_seconds"`
 	Encoder    string  `json:"encoder"`
 	AccessMode string  `json:"access_mode"`
+	BytesSoFar int64   `json:"bytes_so_far"`
 }
 
 // Progress reports progress and returns the job's current status.

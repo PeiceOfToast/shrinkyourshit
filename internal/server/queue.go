@@ -102,9 +102,25 @@ func (q *Queue) QueueJob(ctx context.Context, lib *store.Library, f *store.File,
 	}
 
 	q.log.Debug("job queued", "job", job.ID, "file", f.Path)
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, NewJobDTO(job, f))
 	q.publish(EventFileUpdated, NewFileDTO(f))
 	return job, true, nil
+}
+
+// jobDTO maps a job to its DTO with the file identity resolved (task 18):
+// one file lookup per event, so every job payload carries the file's
+// basename and path. The lookup is best effort — an unknown file leaves
+// the name fields empty rather than failing the transition.
+func (q *Queue) jobDTO(ctx context.Context, j *store.Job) JobDTO {
+	var f *store.File
+	if j.FileID != "" {
+		if got, err := q.st.GetFile(ctx, j.FileID); err == nil {
+			f = got
+		} else if !errors.Is(err, store.ErrNotFound) {
+			q.log.Error("queue: job dto file lookup", "job", j.ID, "err", err)
+		}
+	}
+	return NewJobDTO(j, f)
 }
 
 // Claim atomically claims the next job for a node and moves its file to
@@ -127,7 +143,7 @@ func (q *Queue) Claim(ctx context.Context, nodeID string) (*store.Job, error) {
 	}
 
 	q.log.Debug("job claimed", "job", job.ID, "node", nodeID)
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 	return job, nil
 }
 
@@ -140,6 +156,11 @@ type ProgressParams struct {
 	// AccessMode is the mode the node resolved for this job (shared or
 	// transfer, task 09). Empty leaves the recorded mode unchanged.
 	AccessMode string
+	// BytesSoFar is the scratch output's size at report time (task 18):
+	// the worker stats its output once per tick. Negative reports clamp
+	// to 0; a report from a node that could not stat (still nothing
+	// written) leaves the recorded value unchanged.
+	BytesSoFar int64
 }
 
 // Progress records a running worker's progress. The first report moves the
@@ -157,6 +178,9 @@ func (q *Queue) Progress(ctx context.Context, jobID, nodeID string, p ProgressPa
 	job.Percent = clampPercent(p.Percent)
 	job.Speed = p.Speed
 	job.ETASeconds = max(p.ETASeconds, 0)
+	if p.BytesSoFar > 0 {
+		job.BytesSoFar = p.BytesSoFar
+	}
 	if p.Encoder != "" {
 		job.EncoderUsed = p.Encoder
 	}
@@ -177,7 +201,7 @@ func (q *Queue) Progress(ctx context.Context, jobID, nodeID string, p ProgressPa
 		return q.refreshed(ctx, job)
 	}
 
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 	return job, nil
 }
 
@@ -228,6 +252,9 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	now := time.Now().UTC()
 	job.Status = store.JobStatusDone
 	job.BytesAfter = p.BytesAfter
+	// The encode is over: the "live output size" is the final size (task
+	// 18), so a done job's card line never shows a stale mid-encode tick.
+	job.BytesSoFar = p.BytesAfter
 	job.EncoderUsed = p.Encoder
 	if p.AccessMode != "" {
 		job.AccessMode = p.AccessMode
@@ -373,7 +400,7 @@ func (q *Queue) Fail(ctx context.Context, jobID, nodeID string, p FailParams) (*
 	}
 
 	q.log.Warn("job failed", "job", job.ID, "error", p.Error)
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 	return job, nil
 }
 
@@ -413,9 +440,10 @@ func (q *Queue) dropDuplicateFiles(ctx context.Context, libraryID, path, keepID 
 	return nil
 }
 
-// finishEvents publishes the job and file after a completion.
+// finishEvents publishes the job and file after a completion. The file is
+// in hand here, so the job DTO carries its identity directly.
 func (q *Queue) finishEvents(job *store.Job, f *store.File) {
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, NewJobDTO(job, f))
 	q.publish(EventFileUpdated, NewFileDTO(f))
 }
 
@@ -459,7 +487,7 @@ func (q *Queue) Cancel(ctx context.Context, jobID string) (*store.Job, error) {
 	q.resetFileToNew(ctx, job)
 
 	q.log.Info("job cancelled", "job", job.ID)
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 	return job, nil
 }
 
@@ -494,6 +522,7 @@ func (q *Queue) Retry(ctx context.Context, jobID string) (*store.Job, error) {
 	job.Percent = 0
 	job.Speed = 0
 	job.ETASeconds = 0
+	job.BytesSoFar = 0
 	if err := q.st.UpdateJob(ctx, job); err != nil {
 		return nil, fmt.Errorf("queue: retry job: %w", err)
 	}
@@ -504,7 +533,7 @@ func (q *Queue) Retry(ctx context.Context, jobID string) (*store.Job, error) {
 	}
 
 	q.log.Info("job retried", "job", job.ID)
-	q.publish(EventJobUpdated, NewJobDTO(job))
+	q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 	q.publish(EventFileUpdated, NewFileDTO(f))
 	return job, nil
 }
@@ -545,6 +574,7 @@ func (q *Queue) RequeueNodeJobs(ctx context.Context, nodeID string) ([]*store.Jo
 			job.Percent = 0
 			job.Speed = 0
 			job.ETASeconds = 0
+			job.BytesSoFar = 0
 		}
 		applied, err := q.st.UpdateJobIfActive(ctx, job)
 		if err != nil {
@@ -555,7 +585,7 @@ func (q *Queue) RequeueNodeJobs(ctx context.Context, nodeID string) ([]*store.Jo
 			continue // finished or cancelled while we looked at it
 		}
 		moved = append(moved, job)
-		q.publish(EventJobUpdated, NewJobDTO(job))
+		q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 
 		if f, ferr := q.st.GetFile(ctx, job.FileID); ferr == nil && f.Status == store.FileStatusProcessing {
 			if job.Status == store.JobStatusQueued {
@@ -584,7 +614,7 @@ func (q *Queue) Sweep(ctx context.Context, heartbeatTimeout time.Duration) ([]*s
 	}
 	for _, job := range moved {
 		q.log.Warn("job heartbeat timed out", "job", job.ID, "attempt", job.Attempt, "status", job.Status)
-		q.publish(EventJobUpdated, NewJobDTO(job))
+		q.publish(EventJobUpdated, q.jobDTO(ctx, job))
 
 		if f, err := q.st.GetFile(ctx, job.FileID); err == nil && f.Status == store.FileStatusProcessing {
 			// A requeued job hands the file back to the queue; a job

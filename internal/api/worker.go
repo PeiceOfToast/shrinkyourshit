@@ -88,7 +88,7 @@ func (a *API) workerClaim(w http.ResponseWriter, r *http.Request, node *store.No
 		a.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+	writeJSON(w, http.StatusOK, a.jobDTO(workerCtx(r), job))
 }
 
 // JobSpec lives in server.JobSpec (single source of truth for the API.md
@@ -205,18 +205,21 @@ func (a *API) workerComplete(w http.ResponseWriter, r *http.Request, node *store
 	if body.AccessMode == store.NodeAccessTransfer {
 		a.svc.Transfer().Discard(r.PathValue("id"))
 	}
-	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+	writeJSON(w, http.StatusOK, a.jobDTO(workerCtx(r), job))
 }
 
 // progressBody is the POST .../progress request (API.md). access_mode
 // (task 09) is the mode the node resolved for this job; the server stores
-// it on the job when present.
+// it on the job when present. bytes_so_far (task 18) is the scratch
+// output's size at report time — the worker stats its output once per
+// tick; the server keeps the last known positive value.
 type progressBody struct {
 	Percent    float64 `json:"percent"`
 	Speed      float64 `json:"speed"`
 	ETASeconds int64   `json:"eta_seconds"`
 	Encoder    string  `json:"encoder"`
 	AccessMode string  `json:"access_mode"`
+	BytesSoFar int64   `json:"bytes_so_far"`
 }
 
 // workerProgress records encode progress. The response carries the job's
@@ -240,6 +243,7 @@ func (a *API) workerProgress(w http.ResponseWriter, r *http.Request, node *store
 		ETASeconds: body.ETASeconds,
 		Encoder:    body.Encoder,
 		AccessMode: body.AccessMode,
+		BytesSoFar: body.BytesSoFar,
 	})
 	if err != nil && errors.Is(err, server.ErrJobNotActive) {
 		if j, gerr := a.st.GetJob(workerCtx(r), r.PathValue("id")); gerr == nil && j.NodeID == node.ID {
@@ -275,7 +279,7 @@ func (a *API) workerFail(w http.ResponseWriter, r *http.Request, node *store.Nod
 		return
 	}
 	a.svc.Transfer().Discard(r.PathValue("id"))
-	writeJSON(w, http.StatusOK, server.NewJobDTO(job))
+	writeJSON(w, http.StatusOK, a.jobDTO(workerCtx(r), job))
 }
 
 // ownedJob loads the job and enforces that it is active and owned by this

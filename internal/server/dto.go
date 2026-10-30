@@ -4,6 +4,7 @@ package server
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -57,7 +58,10 @@ type FileDTO struct {
 	UpdatedAt       string          `json:"updated_at"`
 }
 
-// JobDTO is the JSON shape of a job, including the log tail.
+// JobDTO is the JSON shape of a job, including the log tail. Task 18 adds
+// the human-facing file identity (basename and full path, resolved from
+// the job's file_id) and the live output size the worker reported on its
+// last progress tick (0 until the first tick, bytes_after once done).
 type JobDTO struct {
 	ID              string   `json:"id"`
 	FileID          string   `json:"file_id"`
@@ -73,6 +77,9 @@ type JobDTO struct {
 	ETASeconds      int64    `json:"eta_seconds"`
 	BytesBefore     int64    `json:"bytes_before"`
 	BytesAfter      int64    `json:"bytes_after"`
+	BytesSoFar      int64    `json:"bytes_so_far"`
+	FileName        string   `json:"file_name"`
+	FilePath        string   `json:"file_path"`
 	Log             string   `json:"log"`
 	Error           string   `json:"error"`
 	// AccessMode is how the node reached the source (shared or transfer);
@@ -163,13 +170,16 @@ func NewFileDTO(f *store.File) FileDTO {
 	}
 }
 
-// NewJobDTO maps a stored job to its JSON shape.
-func NewJobDTO(j *store.Job) JobDTO {
+// NewJobDTO maps a stored job to its JSON shape. f is the job's file
+// (resolved from file_id by the caller); nil — a file row that vanished,
+// or a caller that did not need the name — leaves file_name/file_path
+// empty instead of failing the mapping.
+func NewJobDTO(j *store.Job, f *store.File) JobDTO {
 	var fallback []string
 	if j.FallbackReasons != "" {
 		_ = json.Unmarshal([]byte(j.FallbackReasons), &fallback)
 	}
-	return JobDTO{
+	dto := JobDTO{
 		ID:              j.ID,
 		FileID:          j.FileID,
 		LibraryID:       j.LibraryID,
@@ -184,6 +194,7 @@ func NewJobDTO(j *store.Job) JobDTO {
 		ETASeconds:      j.ETASeconds,
 		BytesBefore:     j.BytesBefore,
 		BytesAfter:      j.BytesAfter,
+		BytesSoFar:      j.BytesSoFar,
 		Log:             j.Log,
 		Error:           j.Error,
 		AccessMode:      j.AccessMode,
@@ -193,6 +204,11 @@ func NewJobDTO(j *store.Job) JobDTO {
 		HeartbeatAt:     rfc3339(j.HeartbeatAt),
 		CreatedAt:       rfc3339(j.CreatedAt),
 	}
+	if f != nil {
+		dto.FileName = filepath.Base(f.Path)
+		dto.FilePath = f.Path
+	}
+	return dto
 }
 
 // NodeDTO is the JSON shape of a node. Capabilities carries the stored
@@ -202,6 +218,8 @@ func NewJobDTO(j *store.Job) JobDTO {
 // effective_state (desired, or error while a transition failed to apply),
 // the node's concurrency cap, the reason a transition failed and the id of
 // the job it currently holds (listing responses only; events omit it).
+// Task 18 adds Stats, the node's finished-job totals (listing responses
+// only, same rule).
 type NodeDTO struct {
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
@@ -216,10 +234,19 @@ type NodeDTO struct {
 	Concurrency     int             `json:"concurrency"`
 	StateError      string          `json:"state_error,omitempty"`
 	CurrentJobID    string          `json:"current_job_id,omitempty"`
+	Stats           *NodeStatsDTO   `json:"stats,omitempty"`
 	Status          string          `json:"status"`
 	Enabled         bool            `json:"enabled"`
 	LastHeartbeatAt string          `json:"last_heartbeat_at,omitempty"`
 	CreatedAt       string          `json:"created_at"`
+}
+
+// NodeStatsDTO is one node's finished-job totals (task 18): how many jobs
+// it completed and how many bytes they saved (positive savings only). A
+// node with no finished jobs reports zeros, never an absent field.
+type NodeStatsDTO struct {
+	FilesDone  int64 `json:"files_done"`
+	BytesSaved int64 `json:"bytes_saved"`
 }
 
 // NewNodeDTO maps a stored node to its JSON shape.

@@ -143,7 +143,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	stopReport := make(chan struct{})
 	go func() {
 		defer close(reportDone)
-		r.reportLoop(stopReport, runCtx, spec, state, srcInfo.DurationSeconds, cancelled, cancelRun, mode)
+		r.reportLoop(stopReport, runCtx, spec, state, srcInfo.DurationSeconds, cancelled, cancelRun, mode, output)
 	}()
 
 	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(target), sp,
@@ -294,13 +294,18 @@ func (r *runner) completeTransfer(ctx context.Context, spec *server.JobSpec, out
 // within the tick interval. The first report goes out immediately, so a
 // claimed job flips to running (and starts refreshing its heartbeat) as
 // soon as the encode begins. accessMode is the mode the node resolved for
-// this job; the server records it.
+// this job; the server records it. outputPath is the scratch output being
+// written: every tick stats it (one cheap stat, task 18) and reports the
+// size as bytes_so_far; a stat failure reports 0 and never kills the tick.
 func (r *runner) reportLoop(stop <-chan struct{}, runCtx context.Context, spec *server.JobSpec,
 	state *progressState, srcDuration float64, cancelled *atomic.Bool, cancelRun context.CancelFunc,
-	accessMode string) {
+	accessMode, outputPath string) {
 	report := func() bool {
 		out, speed, _ := state.snapshot()
 		in := ProgressInput{Speed: speed, Encoder: r.tracker.current(), AccessMode: accessMode}
+		if st, err := os.Stat(outputPath); err == nil {
+			in.BytesSoFar = st.Size()
+		}
 		if srcDuration > 0 && out > 0 {
 			in.Percent = clampPercent(out / srcDuration * 100)
 			if speed > 0 {
