@@ -90,7 +90,7 @@ describe('api client', () => {
     expect(err.raw).toBe('{"error":"nope","code":"invalid_request"}')
   })
 
-  it('normalizes the server\'s null step-type params to an empty array (task 22)', async () => {
+  it("normalizes the server's null step-type params to an empty array (task 22)", async () => {
     // The Go server marshals a parameterless step type as `"params": null`
     // (nil slice), which crashed every consumer that maps over params —
     // the whole flow canvas page went blank in a real browser.
