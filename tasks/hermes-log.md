@@ -121,3 +121,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-30T05:44:30Z task 16: session finished outcome=succeeded at head 716b316. PM verified: STATUS row 16 done with PR link, 9 of 9 acceptance boxes ticked and each one backed by a named test, make test and make lint green on the VM, DECISIONS.md unchanged vs origin/main, CI run 41009948074 green on all eight jobs (go, web, e2e, cross, docker, installer, installer-powershell, report).
 - 2026-10-30T05:45:52Z task 16: PR #19 merged squash 5bf715f (task 16: release artifacts, checksums and self update), branch task/16-release-self-update deleted, main pulled on the VM to 5bf715f. Remaining task: 17 (update UI, v1.3).
 2026-10-30T06:01:11Z task 17 started (deps 16,10 done; no open PRs, no live session)
+- 2026-10-30T06:01:23Z task 17: opencode session ses_e749a00d5ffeIUM0C7Vq1Sywmg started (title task 17, no --wait).
