@@ -415,10 +415,10 @@ Details:
 
 Details:
 
-- `JobDTO` gains `file_name` (basename) and `file_path`, resolved from `file_id`.
+- `JobDTO` gains `file_name` (basename) and `file_path`, resolved from `file_id` (one file lookup per job payload; an unknown file leaves both empty). Every job response carries them — admin list/get, retry, worker claim/complete/fail and the `job.updated` events.
 - `JobDTO` gains `bytes_so_far`, the live output size, updated on each progress report.
-- `POST /api/v1/worker/jobs/{id}/progress` gains `bytes_so_far` (integer, the scratch output size at report time).
-- Per node stats count finished jobs only (`status='done'`) and positive savings only: `SUM(MAX(bytes_before - bytes_after, 0))`.
+- `POST /api/v1/worker/jobs/{id}/progress` gains `bytes_so_far` (integer, the scratch output size at report time; the worker stats its output once per tick). The server keeps the last known positive value, clamps negatives, and stamps it to `bytes_after` on complete so a done job shows its final size; requeues and retries reset it to 0.
+- Per node stats count finished jobs only (`status='done'`) and positive savings only: `SUM(MAX(bytes_before - bytes_after, 0))`. The whole registry is folded in one grouped query; a node with no finished jobs reports `{"files_done": 0, "bytes_saved": 0}` in the list response. Like `current_job_id`, `stats` appears in list responses only — event payloads omit it.
 - The UI switch is not a new endpoint: on is `POST /nodes/{id}/start`, off is `POST /nodes/{id}/stop` with `drain: true`, and "Stop now" is the same call with `drain: false`.
 - `POST /api/v1/nodes/pause-all` and `/resume-all` remain the page level controls from task 11.
 

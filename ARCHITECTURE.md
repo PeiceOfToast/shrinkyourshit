@@ -63,11 +63,11 @@ Status enums are fixed strings; do not add values without updating this file.
 - `status`: `new | satisfied | queued | processing | done | failed | missing`
 - `fingerprint`: `size:mtime_unix:sha256(first 1MiB + last 1MiB)` as a string. Re-probe only when it changes.
 
-**Job:** `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons (JSON), percent, speed, eta_seconds, bytes_before, bytes_after, log (text, capped at 64KiB tail), error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
+**Job:** `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons (JSON), percent, speed, eta_seconds, bytes_before, bytes_after, bytes_so_far (the live output size, task 18), log (text, capped at 64KiB tail), error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
 - `status`: `queued | claimed | running | done | failed | cancelled`
 - `access_mode`: how the node actually reached the source — `shared` or `transfer`. Empty until the node reports it (progress and complete, task 09).
 
-**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), throughput_limit_mbps, desired_state, concurrency, state_error, status, enabled, last_heartbeat_at, created_at`
+**Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), throughput_limit_mbps, desired_state, concurrency, state_error, status, enabled, last_heartbeat_at, created_at`. The list API folds each node's finished-job totals (`files_done`, positive-savings `bytes_saved`) into the response (task 18); they are not stored on the node.
 - `status`: `pending | approved | revoked`
 - `desired_state`: `stopped | running | draining` — the operator intent (task 11). New nodes are created `stopped`; a claim needs `status=approved`, `enabled=true` and `desired_state=running`.
 - `concurrency`: 1 to 16, the node's cap on parallel jobs (heartbeat reports it).
