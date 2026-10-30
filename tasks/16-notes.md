@@ -70,10 +70,68 @@ self updating a container image from inside the container, update UI
   already satisfied per the log).
 - `zip` is absent on the coding VM (no sudo/apt), so archive creation for
   windows uses python3's zipfile (present on the VM and on CI runners).
-- Local proof records go in this file (hermes-log.md is PM-owned).
+- `shellcheck` is also absent on the VM; the installer change (one
+  heredoc line plus comment) was verified with `sh -n`, the structural
+  installer run with a fake release server, and `systemd-analyze verify`
+  on the written unit (unit now carries `Restart=always`).
+  `scripts/release.sh` is new and checked by `sh -n` and
+  TestReleaseArtifacts; CI runs shellcheck over the installers only.
+
+### Local proof records
+
+- Windows build fix: `for t in linux/amd64 linux/arm64 windows/amd64
+  darwin/amd64 darwin/arm64; GOOS/GOARCH go build ./...` — all five OK
+  (before the fix, windows/amd64 failed at discovery.go:315 exactly as
+  the v0.1.0 run did).
+- `make release-cross VERSION=v0.1.1-dryrun` (2026-10-30T05:27Z): five
+  binaries built with `-X main.version/-X main.commit/-X main.date`, five
+  archives (4 tar.gz + 1 zip) plus checksums.txt, `release.sh verify` and
+  `sha256sum -c checksums.txt` both OK.
+- The dry-run linux/amd64 binary: `shrinkyourshit version` prints
+  `version: v0.1.1-dryrun / commit: ba041bf / build date:
+  2026-10-30T05:26:57Z / runtime: binary`; `shrinkyourshit update
+  --check` reports "no published release on the stable channel" and exits
+  (correct: no release exists yet).
+- Tests: TestReleaseArtifacts, TestAssetSelection, TestChecksumMismatch
+  Aborts, TestSelfUpdateAndRollback, TestContainerRefusesSelfUpdate,
+  TestPreUpdateBackupRetention, TestLatestCachesWithETag,
+  TestVersionEndpoint (api), TestVersionOutput (cmd), TestSQLiteBackup
+  (store) all pass; `make test`, `make lint`, `make test-integration`
+  green (ffmpeg 7.0.2 static in ~/.local).
 
 ## Summary (written at the end)
 
-- Built:
-- Skipped:
-- Next task should know:
+- Built: the windows/amd64 build fix (per-OS broadcast socket option in
+  internal/discovery, the exact defect that killed the v0.1.0 binaries
+  job); scripts/release.sh (build/package/checksums/verify, one place
+  owns the release layout); the release workflow dry run
+  (workflow_dispatch), separate checksums job, docker gated on binaries +
+  checksums, OCI licence/source/version/revision labels and build
+  provenance attestation; internal/update (Latest with per-channel cache,
+  6h TTL and ETag revalidation, asset selection, sha256-verified download
+  and extraction, atomic swap keeping <binary>.prev, DB backup keeping
+  the last three, typed container refusal, v0.0.0 refusal); the CLI
+  (`version` full identity, `update`, `update --check`,
+  `update --rollback`, systemd bounce vs exec restart); settings
+  update_check/update_channel/backup_before_update with PUT validation;
+  GET /api/v1/version; store Backup (VACUUM INTO) so a live server yields
+  a consistent snapshot; README update paths and the installer's
+  Restart=always.
+- Skipped (out of scope per task): delta updates, signing beyond GitHub
+  attestation, container self update, the update UI (task 17), and the
+  one-time ghcr package visibility click (already done by the owner at
+  v0.1.0 per hermes-log; documented in the workflow footer).
+- Verification: make test (Go + 153 web tests), make lint (0 issues),
+  make test-integration (ffmpeg present), all five cross targets build,
+  make release-cross produced 5 archives + checksums.txt that verify.
+- Next task (17, update UI) should know: /api/v1/version returns
+  {version, commit, date, runtime} and gains update_check_enabled +
+  channel in task 17; the update feed reads settings via the store
+  (cmd/shrinkyourshit/updatecmd.go readUpdateSettings is the pattern);
+  update.Apply/upd.Rollback take an Options struct with test-injectable
+  Executable/Now/APIBase/Backup, which is how the UI should drive them if
+  it ever calls Go directly; nothing auto-applies — the UI may only show
+  status and ask.
+- The v* tag itself is the owner's cut: the next tag runs the new
+  pipeline (binaries + checksums + docker in dependency order); the
+  workflow_dispatch dry run can prove it any time without publishing.

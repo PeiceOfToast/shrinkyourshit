@@ -21,7 +21,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 18 | 18-nodes-ui-control.md | done | PR #17 https://github.com/PeiceOfToast/shrinkyourshit/pull/17 |
 | 19 | 19-library-ui.md | done | PR #18 https://github.com/PeiceOfToast/shrinkyourshit/pull/18 |
 | 15 | 15-visual-flow-editor.md | done | PR #16 https://github.com/PeiceOfToast/shrinkyourshit/pull/16 |
-| 16 | 16-release-and-self-update.md | in_progress | |
+| 16 | 16-release-and-self-update.md | done | |
 | 17 | 17-update-ui.md | todo | v1.3 |
 
 Dependencies are listed in ROADMAP.md. Do not start a task whose dependencies are not `done`.
