@@ -365,7 +365,7 @@ export default function LibraryDetailPage() {
             ))}
           </select>
         </label>
-        <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-400 sm:max-w-xs">
+        <label className="flex min-w-[12rem] flex-1 items-center gap-2 text-sm text-slate-400 sm:max-w-xs">
           <span className="shrink-0">Search</span>
           <input
             type="search"
@@ -439,9 +439,12 @@ export default function LibraryDetailPage() {
       ) : (
         <>
           {/* From `sm` up: the real table, scrollable so wide content
-              (long paths, long reasons) never forces the page wide. */}
+              (long paths, long reasons) never forces the page wide.
+              `relative` keeps the header's sr-only th span (position
+              absolute) inside this scroll container instead of letting it
+              paint at the table's far edge and widen the page. */}
           <div className="hidden sm:block">
-            <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-800">
+            <div className="relative overflow-x-auto rounded-2xl ring-1 ring-slate-800">
               <table
                 className="w-full text-left text-sm"
                 data-testid="file-table"

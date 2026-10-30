@@ -138,9 +138,11 @@ export default function LibrariesPage() {
       )}
 
       {/* From `sm` up: the real table, scrollable so nothing forces the
-          page wide. */}
+          page wide. `relative` keeps the header's sr-only th span (position
+          absolute) inside this scroll container instead of letting it
+          paint at the table's far edge and widen the page. */}
       <div className="hidden sm:block">
-        <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-800">
+        <div className="relative overflow-x-auto rounded-2xl ring-1 ring-slate-800">
           <table
             className="w-full text-left text-sm"
             data-testid="libraries-table"
