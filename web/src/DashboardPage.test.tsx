@@ -231,6 +231,45 @@ describe('DashboardPage', () => {
     expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument()
   })
 
+  it('renders the four stats as fluid StatCards, 2 columns below sm and 4 at sm and up', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      { method: 'GET', match: /\/api\/v1\/nodes$/, body: { items: [], total: 0 } },
+      { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
+    ])
+
+    renderDashboard()
+    const grid = await screen
+      .findByTestId('stat-space-saved')
+      .then((card) => card.parentElement)
+    expect(grid?.className).toContain('grid-cols-2')
+    expect(grid?.className).toContain('sm:grid-cols-4')
+    // One grid produces the geometry jsdom cannot measure: 2 columns on a
+    // phone, 4 from sm up. Testids and order are the dashboard's contract.
+    const ids = Array.from(grid?.children ?? []).map(
+      (el) => (el as HTMLElement).dataset.testid,
+    )
+    expect(ids).toEqual([
+      'stat-space-saved',
+      'stat-files',
+      'stat-satisfied',
+      'stat-queued',
+    ])
+    // Every tile is a StatCard: an aria-hidden icon and a fluid value.
+    for (const id of ids) {
+      const card = screen.getByTestId(id)
+      expect(card.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+      expect(card.querySelector('p.font-bold')?.className).toContain(
+        'text-[clamp(',
+      )
+    }
+  })
+
   it('shows recent history with sizes and per-node activity', async () => {
     mock = installFetchMock([
       {
