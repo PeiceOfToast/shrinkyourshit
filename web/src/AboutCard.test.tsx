@@ -300,6 +300,31 @@ describe('AboutCard', () => {
     expect(screen.getByTestId('apply-update')).toBeDisabled()
   })
 
+  it('shows a quiet failure when the apply could not use the release', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/version$/, body: version },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/update\/status$/,
+        body: {
+          ...updateAvailable,
+          progress: {
+            active: false,
+            error: 'no release asset for this platform',
+          },
+        },
+      },
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderCard()
+
+    await screen.findByTestId('update-banner')
+    const note = screen.getByTestId('update-error')
+    expect(note).toHaveTextContent('no release asset for this platform')
+    // Quiet: no toast anywhere.
+    expect(screen.queryByTestId('toast')).not.toBeInTheDocument()
+  })
+
   it('saves the automatic checks switch and the channel', async () => {
     const puts: Array<Record<string, unknown>> = []
     mock = installFetchMock([

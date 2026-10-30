@@ -258,14 +258,10 @@ func TestApplyEmitsProgressEvents(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), "started")
 
-	type event struct {
-		Type string
-		Data map[string]string
-	}
 	var progress []string
 	var succeeded bool
 	deadline := time.After(5 * time.Second)
-	for !(succeeded && progress != nil) {
+	for !succeeded || progress == nil {
 		select {
 		case <-deadline:
 			t.Fatalf("timed out waiting for update events; got progress=%v succeeded=%v", progress, succeeded)

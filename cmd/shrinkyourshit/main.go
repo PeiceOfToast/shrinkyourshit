@@ -180,12 +180,9 @@ func serve(args []string, info buildInfo) error {
 			Current: update.Info{Version: info.version, Commit: info.commit, Date: info.date},
 			// After a successful in-app update the process hands itself
 			// over to the freshly installed binary (systemd bounce or
-			// exec, see restart.go). The delay first lets the update
-			// events reach the UI.
-			Restart: func(exe string) error {
-				time.Sleep(2 * time.Second)
-				return restartSelf(exe)
-			},
+			// exec, see restart.go). The service waits for the events to
+			// flush before calling this.
+			Restart: restartSelf,
 		},
 	})
 
