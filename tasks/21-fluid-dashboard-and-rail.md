@@ -46,11 +46,11 @@ Behaviour to preserve exactly: under `md` the rail is replaced by the `Open menu
 Per user theming, a settings toggle for the rail, mobile editing of the flow canvas (task 22), any new dashboard data.
 
 ## Acceptance
-- [ ] `web/src/StatCard.tsx` exists with an `aria-hidden` inline SVG icon and `clamp()` sizing, proven by `StatCard.test.tsx`.
-- [ ] The dashboard renders four `StatCard`s in a 2 column grid below `sm` and 4 columns at `sm` and up, with the testids `stat-space-saved`, `stat-files`, `stat-satisfied` and `stat-queued` unchanged.
-- [ ] Below `lg` the rail shows icons only without any click, and at `lg` and up it shows labels.
-- [ ] An explicit toggle persists across reloads via `localStorage` key `sys.rail`, and is proven by an AppShell test.
-- [ ] The toggle exposes `aria-expanded` and a label that matches its action.
-- [ ] Under `md` the `Open menu` drawer still opens, closes on Escape and closes on backdrop click.
-- [ ] The mobile audit from task 20 still passes at 320, 390, 414 and 768 px, including the dashboard and the rail toggle.
-- [ ] `make test`, `make lint`, `cd web && npm run build` exit 0.
+- [x] `web/src/StatCard.tsx` exists with an `aria-hidden` inline SVG icon and `clamp()` sizing, proven by `StatCard.test.tsx`.
+- [x] The dashboard renders four `StatCard`s in a 2 column grid below `sm` and 4 columns at `sm` and up, with the testids `stat-space-saved`, `stat-files`, `stat-satisfied` and `stat-queued` unchanged.
+- [x] Below `lg` the rail shows icons only without any click, and at `lg` and up it shows labels.
+- [x] An explicit toggle persists across reloads via `localStorage` key `sys.rail`, and is proven by an AppShell test.
+- [x] The toggle exposes `aria-expanded` and a label that matches its action.
+- [x] Under `md` the `Open menu` drawer still opens, closes on Escape and closes on backdrop click.
+- [x] The mobile audit from task 20 still passes at 320, 390, 414 and 768 px, including the dashboard and the rail toggle.
+- [x] `make test`, `make lint`, `cd web && npm run build` exit 0.
