@@ -146,6 +146,18 @@ jobs:
         if: always()
         run: docker rm -f shrink-e2e
 
+  # Task 16: every release target must compile, including windows/amd64,
+  # whose syscall.Handle fd type once broke the release binaries job only
+  # after the docker image had already published (v0.1.0).
+  cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - run: make cross
+
   # Installer checks (task 09): shellcheck over the POSIX installer, an
   # install run inside a throwaway container against a fake release
   # server, a structural systemd-analyze verify of the written unit, and
@@ -206,7 +218,7 @@ jobs:
   # state without the Actions/Checks API scope. The comment is best-effort;
   # the run summary is the reliable copy.
   report:
-    needs: [go, web, docker, installer, installer-powershell, e2e]
+    needs: [go, web, docker, installer, installer-powershell, e2e, cross]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -222,6 +234,7 @@ jobs:
             echo "- installer (shell): ${{ needs.installer.result }}"
             echo "- installer (powershell): ${{ needs.installer-powershell.result }}"
             echo "- e2e: ${{ needs.e2e.result }}"
+            echo "- cross: ${{ needs.cross.result }}"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Comment on the PR
         continue-on-error: true
@@ -237,6 +250,7 @@ jobs:
               `- installer (shell): **${{ needs.installer.result }}**`,
               `- installer (powershell): **${{ needs.installer-powershell.result }}**`,
               `- e2e: **${{ needs.e2e.result }}**`,
+              `- cross: **${{ needs.cross.result }}**`,
             ].join('\n')
             await github.rest.issues.createComment({
               owner: context.repo.owner,
