@@ -19,7 +19,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 13 | 13-feedback-and-safety.md | done | PR #14 https://github.com/PeiceOfToast/shrinkyourshit/pull/14 |
 | 14 | 14-flow-schema-and-step-stack.md | done | PR #15 https://github.com/PeiceOfToast/shrinkyourshit/pull/15 |
 | 18 | 18-nodes-ui-control.md | done | PR #17 https://github.com/PeiceOfToast/shrinkyourshit/pull/17 |
-| 19 | 19-library-ui.md | todo | v1.4, after 18 |
+| 19 | 19-library-ui.md | in_progress | v1.4, after 18 |
 | 15 | 15-visual-flow-editor.md | done | PR #16 https://github.com/PeiceOfToast/shrinkyourshit/pull/16 |
 | 16 | 16-release-and-self-update.md | todo | v1.3 |
 | 17 | 17-update-ui.md | todo | v1.3 |

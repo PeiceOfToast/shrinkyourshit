@@ -218,6 +218,31 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 	require.NotEmpty(t, errBody.Error)
 }
 
+// TestLibraryLastScanAtExposed covers the DTO field (task 19): a library
+// that has never been scanned omits last_scan_at; a finished scan stamps
+// it and the API exposes it.
+func TestLibraryLastScanAtExposed(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+
+	rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	require.NotContains(t, raw, "last_scan_at", "never scanned: the field is omitted")
+
+	h.scanSync(lib.ID)
+
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	raw = map[string]any{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+	stamped, ok := raw["last_scan_at"].(string)
+	require.True(t, ok, "last_scan_at is a string after a scan")
+	_, err := time.Parse(time.RFC3339, stamped)
+	require.NoError(t, err, "last_scan_at is RFC 3339: %q", stamped)
+}
+
 func TestFilesEndpointStatusFilterAndPagination(t *testing.T) {
 	h := newAPIHarness(t)
 	h.stated.mu.Lock()

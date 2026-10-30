@@ -38,6 +38,9 @@ type LibraryDTO struct {
 	ResultPolicy string          `json:"result_policy"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
+	// LastScanAt is when a scan of this library last finished without
+	// error (task 19); omitted when it has never been scanned.
+	LastScanAt string `json:"last_scan_at,omitempty"`
 }
 
 // FileDTO is the JSON shape of a file. Probe carries the stored probe
@@ -114,6 +117,7 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		ResultPolicy: l.ResultPolicy,
 		CreatedAt:    rfc3339(l.CreatedAt),
 		UpdatedAt:    rfc3339(l.UpdatedAt),
+		LastScanAt:   rfc3339(l.LastScanAt),
 	}
 }
 

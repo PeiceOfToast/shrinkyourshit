@@ -430,6 +430,10 @@ Details:
 
 Details:
 
-- `GET /api/v1/libraries/{id}/files` gains `q` (name substring), `sort` (`name`, `size`, `saved`), `dir` (`asc`, `desc`) and returns `total` alongside the page. An unknown `sort` or `dir` is `400 {"code":"invalid_request"}`.
+- `GET /api/v1/libraries/{id}/files` gains `q` (name substring),
+  `sort` (`name`, `size`, `saved`), `dir` (`asc`, `desc`) and returns `total` alongside the page. An unknown `sort` or `dir` is `400 {"code":"invalid_request"}`.
 - Sorting and filtering happen server side; the browser never re-sorts a page.
 - `GET /api/v1/files/{id}/jobs` reuses the existing job filter with `file_id` set and returns `404 {"code":"not_found"}` for an unknown file.
+- `LibraryDTO` gains `last_scan_at` (RFC 3339, omitted when the library has
+  never been scanned): the scanner stamps it when a scan finishes without
+  error, and the detail header shows it as the last scan time.

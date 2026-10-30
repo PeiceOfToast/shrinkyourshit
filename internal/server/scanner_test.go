@@ -51,6 +51,11 @@ func TestScannerClassifiesAndQueues(t *testing.T) {
 	assert.Equal(t, 1, res.Queued)
 	assert.Equal(t, 1, res.Satisfied)
 
+	// A finished scan stamps the library's last scan time (task 19).
+	fresh, err := h.st.GetLibrary(context.Background(), lib.ID)
+	require.NoError(t, err)
+	assert.False(t, fresh.LastScanAt.IsZero(), "the scan stamps last_scan_at")
+
 	fs := h.files(lib.ID)
 	require.Len(t, fs, 2)
 

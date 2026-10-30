@@ -48,6 +48,9 @@ type Library struct {
 	ResultPolicy string // replace_if_smaller | replace | keep_both
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	// LastScanAt is when a scan of this library last finished without
+	// error (task 19). Zero means "never scanned".
+	LastScanAt time.Time
 }
 
 // File is one media file inside a library. Probe is opaque JSON produced by
