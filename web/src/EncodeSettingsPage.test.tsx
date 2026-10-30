@@ -87,6 +87,21 @@ describe('EncodeSettingsPage', () => {
     )
   })
 
+  it('uses 44px controls on the encode settings page (task 20)', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderPage()
+    await screen.findByTestId('save-settings')
+    for (const el of [
+      ...screen.getAllByRole('combobox'),
+      ...screen.getAllByRole('textbox'),
+      ...screen.getAllByRole('button'),
+    ]) {
+      expect(el.className).toContain('min-h-11')
+    }
+  })
+
   it('renders the load failure with status and code (task 13)', async () => {
     mock = installFetchMock([
       {

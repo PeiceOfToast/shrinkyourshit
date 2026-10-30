@@ -43,6 +43,7 @@ import Switch from './Switch'
 import { useToast } from './toastContext'
 import ErrorBox from './ErrorBox'
 import { formatBytes } from './easyModel'
+import { btn, btnGhost, btnPrimary, input } from './uiControls'
 
 const statusStyles: Record<string, string> = {
   pending: 'bg-amber-500/20 text-amber-300',
@@ -94,7 +95,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   return (
     <button
       type="button"
-      className="shrink-0 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-slate-600"
+      className={btn}
       data-testid={`copy-${label}`}
       onClick={async () => {
         try {
@@ -135,7 +136,7 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+          className={btnGhost}
           data-testid="add-node-close"
         >
           Close
@@ -152,7 +153,7 @@ function AddNodeDialog({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => created.mutate()}
             disabled={created.isPending}
-            className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            className={`${btnPrimary} mt-3`}
             data-testid="add-node-generate"
           >
             {created.isPending ? 'Generating…' : 'Generate install commands'}
@@ -257,15 +258,16 @@ function EditNodeDialog({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2"
+          className={input}
           data-testid="edit-node-name"
         />
       </label>
-      <label className="mt-3 flex items-center gap-3">
+      <label className="mt-3 flex min-h-11 items-center gap-3">
         <input
           type="checkbox"
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
+          className="h-11 min-h-11 w-11 shrink-0 accent-emerald-500"
           data-testid="edit-node-enabled"
         />
         <span>This node takes on work</span>
@@ -275,7 +277,7 @@ function EditNodeDialog({
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value)}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2"
+          className={input}
           data-testid="edit-node-access-mode"
         >
           {Object.entries(accessModeLabels).map(([value, label]) => (
@@ -296,7 +298,7 @@ function EditNodeDialog({
           min={0}
           value={limit}
           onChange={(e) => setLimit(e.target.value)}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2"
+          className={input}
           data-testid="edit-node-throughput"
         />
       </label>
@@ -317,7 +319,7 @@ function EditNodeDialog({
                 placeholder="/media on the server"
                 aria-label={`Path on the server, mapping ${i + 1}`}
                 onChange={(e) => setRow(i, 'server_path', e.target.value)}
-                className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                className={`${input} min-w-0 flex-1 text-sm`}
                 data-testid={`mapping-server-${i}`}
               />
               <span className="text-slate-500">→</span>
@@ -327,7 +329,7 @@ function EditNodeDialog({
                 placeholder="path on this node"
                 aria-label={`Path on this node, mapping ${i + 1}`}
                 onChange={(e) => setRow(i, 'node_path', e.target.value)}
-                className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                className={`${input} min-w-0 flex-1 text-sm`}
                 data-testid={`mapping-node-${i}`}
               />
               <button
@@ -335,7 +337,7 @@ function EditNodeDialog({
                 onClick={() =>
                   setMappings((rows) => rows.filter((_, j) => j !== i))
                 }
-                className="rounded-lg px-2 py-1 text-sm text-red-400 hover:bg-slate-800"
+                className={`${btnGhost} !text-red-300 hover:!bg-red-950/40`}
                 aria-label={`Remove mapping ${i + 1}`}
               >
                 ✕
@@ -348,7 +350,7 @@ function EditNodeDialog({
           onClick={() =>
             setMappings((rows) => [...rows, { server_path: '', node_path: '' }])
           }
-          className="mt-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+          className={`${btn} mt-2`}
           data-testid="add-mapping"
         >
           Add a mapping
@@ -359,7 +361,7 @@ function EditNodeDialog({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+          className={btnGhost}
           data-testid="edit-node-cancel"
         >
           Cancel
@@ -378,7 +380,7 @@ function EditNodeDialog({
             })
           }
           disabled={busy || name.trim() === ''}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className={btnPrimary}
           data-testid="edit-node-save"
         >
           {busy ? 'Saving…' : 'Save'}
@@ -508,7 +510,7 @@ function NodeRow({
                 type="button"
                 onClick={() => approve.mutate(node.id)}
                 disabled={approve.isPending}
-                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                className={btnPrimary}
                 data-testid={`node-approve-${node.id}`}
               >
                 {approve.isPending ? 'Approving…' : 'Approve'}
@@ -517,7 +519,7 @@ function NodeRow({
                 type="button"
                 onClick={() => setConfirming('reject')}
                 disabled={reject.isPending}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-slate-800 disabled:opacity-50"
+                className={`${btnGhost} !text-red-300 hover:!bg-red-950/40`}
                 data-testid={`node-reject-${node.id}`}
               >
                 {reject.isPending ? 'Rejecting…' : 'Reject'}
@@ -529,7 +531,7 @@ function NodeRow({
               <button
                 type="button"
                 onClick={onEdit ? () => onEdit(node) : undefined}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                className={btnGhost}
                 data-testid={`node-edit-${node.id}`}
               >
                 Edit
@@ -538,7 +540,7 @@ function NodeRow({
                 type="button"
                 onClick={() => revoke.mutate(node.id)}
                 disabled={revoke.isPending}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-slate-800 disabled:opacity-50"
+                className={`${btnGhost} !text-red-300 hover:!bg-red-950/40`}
                 data-testid={`node-revoke-${node.id}`}
               >
                 {revoke.isPending ? 'Revoking…' : 'Revoke'}
@@ -567,7 +569,7 @@ function NodeRow({
               type="button"
               onClick={() => setConfirming('stop')}
               disabled={stop.isPending}
-              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-slate-800 disabled:opacity-50"
+              className={`${btnGhost} !text-red-300 hover:!bg-red-950/40`}
               data-testid={`node-stop-now-${node.id}`}
             >
               {stop.isPending ? 'Stopping…' : 'Stop now'}
@@ -626,7 +628,7 @@ function NodeRow({
                 })
               }
               disabled={setConcurrency.isPending || node.concurrency <= 1}
-              className="rounded-md bg-slate-800 px-2 py-0.5 font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+              className={`${btn} !min-w-11 !px-0`}
               aria-label="Fewer parallel jobs"
               data-testid={`node-concurrency-down-${node.id}`}
             >
@@ -644,7 +646,7 @@ function NodeRow({
                 })
               }
               disabled={setConcurrency.isPending || node.concurrency >= 16}
-              className="rounded-md bg-slate-800 px-2 py-0.5 font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-40"
+              className={`${btn} !min-w-11 !px-0`}
               aria-label="More parallel jobs"
               data-testid={`node-concurrency-up-${node.id}`}
             >
@@ -801,7 +803,7 @@ export default function NodesPage() {
                 title={
                   anythingRunning ? undefined : 'Nothing is running right now'
                 }
-                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className={btn}
                 data-testid="nodes-pause-all"
               >
                 {pauseAll.isPending ? 'Pausing…' : 'Pause all'}
@@ -811,7 +813,7 @@ export default function NodesPage() {
                 onClick={() => resumeAll.mutate()}
                 disabled={!allStopped || resumeAll.isPending}
                 title={allStopped ? undefined : 'Stop every node first'}
-                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className={btn}
                 data-testid="nodes-resume-all"
               >
                 {resumeAll.isPending ? 'Resuming…' : 'Resume all'}
@@ -821,7 +823,7 @@ export default function NodesPage() {
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            className={btnPrimary}
             data-testid="nodes-add"
           >
             Add node

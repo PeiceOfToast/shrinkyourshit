@@ -158,4 +158,22 @@ describe('AppSettingsPage', () => {
     )
     expect(screen.getByTestId('check-now')).toBeInTheDocument()
   })
+
+  it('uses 44px controls on the app settings page (task 20)', async () => {
+    mock = installFetchMock([
+      ...aboutRoutes,
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderPage()
+    await screen.findByTestId('update-channel')
+    for (const el of [
+      ...screen.getAllByRole('combobox'),
+      ...screen.getAllByRole('textbox'),
+      ...screen.getAllByRole('spinbutton'),
+      ...screen.getAllByRole('checkbox'),
+      ...screen.getAllByRole('button'),
+    ]) {
+      expect(el.className).toContain('min-h-11')
+    }
+  })
 })

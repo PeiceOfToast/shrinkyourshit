@@ -577,6 +577,34 @@ describe('NodesPage', () => {
     )
   })
 
+  it('primary controls meet the 44px touch minimum (task 20)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderNodes()
+    for (const name of [
+      /pause all/i,
+      /resume all/i,
+      /add node/i,
+      /edit/i,
+      /stop now/i,
+      /revoke/i,
+    ]) {
+      const el = await screen.findByRole('button', { name })
+      expect(el.className).toContain('min-h-11')
+    }
+  })
+
   it('shows the empty state when there are no nodes at all', async () => {
     mock = installFetchMock([
       {

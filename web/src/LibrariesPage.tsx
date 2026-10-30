@@ -21,12 +21,14 @@ import {
   type LibraryStats,
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
+import DataList, { type Column } from './DataList'
 import { formatBytes } from './easyModel'
 import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
 import StatusChip from './StatusChip'
 import { SkeletonCard } from './skeleton'
 import { useToast } from './toastContext'
+import { btn, btnPrimary } from './uiControls'
 
 /** The per-status chips a row shows, in table order. */
 const SHOWN_STATUSES = ['satisfied', 'queued', 'done', 'failed'] as const
@@ -70,7 +72,7 @@ export default function LibrariesPage() {
       type="button"
       onClick={() => scan.mutate(lib.id)}
       disabled={scan.isPending}
-      className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-50"
+      className={btn}
       data-testid={`library-scan-${lib.id}${onCard ? '-card' : ''}`}
     >
       {scan.isPending ? 'Scanning…' : 'Scan now'}
@@ -79,7 +81,7 @@ export default function LibrariesPage() {
   const editLink = (lib: Library, onCard: boolean) => (
     <Link
       to={`/libraries/${lib.id}/edit`}
-      className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700"
+      className={btn}
       data-testid={`library-edit-${lib.id}${onCard ? '-card' : ''}`}
     >
       Edit
@@ -89,12 +91,144 @@ export default function LibrariesPage() {
     <button
       type="button"
       onClick={() => setToDelete(lib)}
-      className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-red-400 hover:bg-slate-700"
+      className={`${btn} !text-red-300 hover:!bg-red-950/40`}
       data-testid={`library-delete-${lib.id}${onCard ? '-card' : ''}`}
     >
       Remove
     </button>
   )
+
+  const columns: Column<Library>[] = [
+    {
+      key: 'name',
+      header: 'Library',
+      primary: true,
+      cell: (lib) => (
+        <Link
+          to={`/libraries/${lib.id}`}
+          className="inline-flex min-h-11 items-center font-semibold text-slate-100 hover:text-emerald-400"
+          data-testid={`library-name-${lib.id}`}
+        >
+          {lib.name}
+        </Link>
+      ),
+      cardCell: (lib) => (
+        <Link
+          to={`/libraries/${lib.id}`}
+          className="inline-flex min-h-11 items-center break-words font-semibold text-slate-100 hover:text-emerald-400"
+          data-testid={`library-name-${lib.id}-card`}
+        >
+          {lib.name}
+        </Link>
+      ),
+    },
+    {
+      key: 'path',
+      header: 'Path',
+      cell: (lib) => (
+        <span
+          className="block max-w-[18rem] truncate text-xs text-slate-500"
+          title={lib.path}
+        >
+          {lib.path}
+        </span>
+      ),
+      cardCell: (lib) => (
+        <span className="break-words text-xs text-slate-500">{lib.path}</span>
+      ),
+      cardLabel: 'Path',
+    },
+    {
+      key: 'files',
+      header: 'Files',
+      cell: (lib) => (
+        <span
+          className="text-slate-300"
+          data-testid={`library-files-${lib.id}`}
+        >
+          {countsFor(lib)?.files ?? 0}
+        </span>
+      ),
+      cardCell: (lib) => (
+        <span
+          className="text-slate-300"
+          data-testid={`library-files-${lib.id}-card`}
+        >
+          {countsFor(lib)?.files ?? 0}
+        </span>
+      ),
+      cardLabel: 'Files',
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      cell: (lib) => (
+        <div className="flex max-w-[18rem] flex-wrap gap-1.5">
+          {SHOWN_STATUSES.map((s) => (
+            <StatusChip
+              key={s}
+              status={s}
+              count={countsFor(lib)?.[s] ?? 0}
+              testId={`library-chip-${s}-${lib.id}`}
+            />
+          ))}
+        </div>
+      ),
+      cardCell: (lib) => (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {SHOWN_STATUSES.map((s) => (
+            <StatusChip
+              key={s}
+              status={s}
+              count={countsFor(lib)?.[s] ?? 0}
+              testId={`library-chip-${s}-${lib.id}-card`}
+            />
+          ))}
+        </div>
+      ),
+      cardLabel: 'Status',
+    },
+    {
+      key: 'saved',
+      header: 'Saved',
+      cell: (lib) => (
+        <span
+          className="text-emerald-400"
+          data-testid={`library-saved-${lib.id}`}
+        >
+          {formatBytes(countsFor(lib)?.bytes_saved ?? 0)}
+        </span>
+      ),
+      cardCell: (lib) => (
+        <span
+          className="whitespace-nowrap text-emerald-400"
+          data-testid={`library-saved-${lib.id}-card`}
+        >
+          {formatBytes(countsFor(lib)?.bytes_saved ?? 0)} saved
+        </span>
+      ),
+      cardLabel: 'Saved',
+    },
+    {
+      key: 'actions',
+      header: '',
+      cell: (lib) => (
+        <div className="flex flex-wrap justify-end gap-2">
+          {scanButton(lib, false)}
+          {editLink(lib, false)}
+          {removeButton(lib, false)}
+        </div>
+      ),
+      cardCell: (lib) => (
+        <div className="flex flex-wrap justify-end gap-2">
+          {scanButton(lib, true)}
+          {editLink(lib, true)}
+          {removeButton(lib, true)}
+        </div>
+      ),
+      cardNoLabel: true,
+    },
+  ]
 
   if (libraries.isPending) {
     return (
@@ -120,7 +254,7 @@ export default function LibrariesPage() {
         <h1 className="text-2xl font-bold">Libraries</h1>
         <Link
           to="/libraries/new"
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+          className={btnPrimary}
           data-testid="libraries-add"
         >
           Add folder
@@ -137,136 +271,16 @@ export default function LibrariesPage() {
         </p>
       )}
 
-      {/* From `sm` up: the real table, scrollable so nothing forces the
-          page wide. `relative` keeps the header's sr-only th span (position
-          absolute) inside this scroll container instead of letting it
-          paint at the table's far edge and widen the page. */}
-      <div className="hidden sm:block">
-        <div className="relative overflow-x-auto rounded-2xl ring-1 ring-slate-800">
-          <table
-            className="w-full text-left text-sm"
-            data-testid="libraries-table"
-          >
-            <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Library</th>
-                <th className="px-4 py-3">Files</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Saved</th>
-                <th className="px-4 py-3">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 bg-slate-900/50">
-              {libraries.data.items.map((lib) => {
-                const counts = countsFor(lib)
-                return (
-                  <tr key={lib.id} data-testid={`library-${lib.id}`}>
-                    <td className="max-w-[14rem] px-4 py-3">
-                      <Link
-                        to={`/libraries/${lib.id}`}
-                        className="font-semibold text-slate-100 hover:text-emerald-400"
-                        data-testid={`library-name-${lib.id}`}
-                      >
-                        {lib.name}
-                      </Link>
-                      <p className="truncate text-xs text-slate-500">
-                        {lib.path}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">
-                      <span data-testid={`library-files-${lib.id}`}>
-                        {counts?.files ?? 0}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex max-w-[18rem] flex-wrap gap-1.5">
-                        {SHOWN_STATUSES.map((s) => (
-                          <StatusChip
-                            key={s}
-                            status={s}
-                            count={counts?.[s] ?? 0}
-                            testId={`library-chip-${s}-${lib.id}`}
-                          />
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-emerald-400">
-                      <span data-testid={`library-saved-${lib.id}`}>
-                        {formatBytes(counts?.bytes_saved ?? 0)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        {scanButton(lib, false)}
-                        {editLink(lib, false)}
-                        {removeButton(lib, false)}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Under `sm`: the same rows as stacked cards. */}
-      <ul className="space-y-3 sm:hidden" data-testid="libraries-cards">
-        {libraries.data.items.map((lib) => {
-          const counts = countsFor(lib)
-          return (
-            <li
-              key={lib.id}
-              className="min-w-0 rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-              data-testid={`library-card-${lib.id}`}
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <Link
-                  to={`/libraries/${lib.id}`}
-                  className="min-w-0 break-words font-semibold text-slate-100 hover:text-emerald-400"
-                  data-testid={`library-name-${lib.id}-card`}
-                >
-                  {lib.name}
-                </Link>
-                <span className="shrink-0 text-sm text-slate-400">
-                  <span data-testid={`library-files-${lib.id}-card`}>
-                    {counts?.files ?? 0}
-                  </span>{' '}
-                  file{(counts?.files ?? 0) === 1 ? '' : 's'}
-                </span>
-              </div>
-              <p className="mt-0.5 break-words text-xs text-slate-500">
-                {lib.path}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {SHOWN_STATUSES.map((s) => (
-                  <StatusChip
-                    key={s}
-                    status={s}
-                    count={counts?.[s] ?? 0}
-                    testId={`library-chip-${s}-${lib.id}-card`}
-                  />
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <span
-                  className="text-sm text-emerald-400"
-                  data-testid={`library-saved-${lib.id}-card`}
-                >
-                  {formatBytes(counts?.bytes_saved ?? 0)} saved
-                </span>
-                <div className="flex shrink-0 gap-2">
-                  {scanButton(lib, true)}
-                  {editLink(lib, true)}
-                  {removeButton(lib, true)}
-                </div>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
+      {/* One column definition, two layouts (task 20): the table from
+          `sm` up, stacked cards below it. */}
+      <DataList
+        rows={libraries.data.items}
+        columns={columns}
+        testid="libraries-table"
+        cardTestid="libraries-cards"
+        rowTestId={(lib) => `library-${lib.id}`}
+        cardRowTestId={(lib) => `library-card-${lib.id}`}
+      />
 
       {toDelete && (
         <ConfirmDialog

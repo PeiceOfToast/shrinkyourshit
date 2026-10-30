@@ -14,6 +14,7 @@ import PageContainer from './PageContainer'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
+import { btnPrimary, input } from './uiControls'
 
 const policies = [
   {
@@ -100,7 +101,7 @@ export default function EncodeSettingsPage() {
             type="text"
             value={form.preferred_languages}
             onChange={(e) => set({ preferred_languages: e.target.value })}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
+            className={input}
             data-testid="preferred-languages"
           />
           <span className="text-xs text-slate-500">
@@ -114,7 +115,7 @@ export default function EncodeSettingsPage() {
           <select
             value={form.default_video_codec}
             onChange={(e) => set({ default_video_codec: e.target.value })}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
+            className={input}
             data-testid="default-video-codec"
           >
             {codecs.map((c) => (
@@ -131,7 +132,7 @@ export default function EncodeSettingsPage() {
           <select
             value={form.default_result_policy}
             onChange={(e) => set({ default_result_policy: e.target.value })}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
+            className={input}
             data-testid="default-result-policy"
           >
             {policies.map((p) => (
@@ -147,7 +148,7 @@ export default function EncodeSettingsPage() {
         type="button"
         onClick={savePlain}
         disabled={save.isPending}
-        className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+        className={btnPrimary}
         data-testid="save-settings"
       >
         {save.isPending ? 'Saving…' : 'Save settings'}
