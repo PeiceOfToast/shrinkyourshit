@@ -63,6 +63,20 @@ export function defaultParams(info: StepTypeInfo): Record<string, unknown> {
   return params
 }
 
+/** A new step from a palette entry: unique id among `nodes`, default
+ * parameters, no params key at all when the type takes none. */
+export function stepFromPalette(
+  info: StepTypeInfo,
+  nodes: FlowStep[],
+): FlowStep {
+  const params = defaultParams(info)
+  return {
+    id: newStepID(info.type, nodes),
+    type: info.type,
+    params: Object.keys(params).length ? params : undefined,
+  }
+}
+
 /** The palette entry for a step type. */
 export function paletteFor(
   palette: StepTypeInfo[],

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from './AppShell'
 import DashboardPage from './DashboardPage'
@@ -14,6 +14,21 @@ import RulesPage from './RulesPage'
 import EncodeSettingsPage from './EncodeSettingsPage'
 import AppSettingsPage from './AppSettingsPage'
 import SetupPage from './SetupPage'
+import PageContainer from './PageContainer'
+import { SkeletonRows } from './skeleton'
+
+// The visual flow editor (task 15) carries the canvas library; it loads
+// only when the route is opened so every other page stays light.
+const FlowCanvasPage = lazy(() => import('./FlowCanvasPage'))
+
+function FlowLoading() {
+  return (
+    <PageContainer className="space-y-6" data-testid="flow-loading">
+      <h1 className="text-2xl font-bold">Flow</h1>
+      <SkeletonRows rows={4} />
+    </PageContainer>
+  )
+}
 
 export default function App() {
   // Mirrors the index.css rule for html/body so the dark background is
@@ -37,6 +52,14 @@ export default function App() {
           <Route path="libraries/:id" element={<LibraryDetailPage />} />
           <Route path="libraries/:id/edit" element={<LibraryEditPage />} />
           <Route path="libraries/:id/rules" element={<RulesPage />} />
+          <Route
+            path="libraries/:id/flow"
+            element={
+              <Suspense fallback={<FlowLoading />}>
+                <FlowCanvasPage />
+              </Suspense>
+            }
+          />
           <Route path="nodes" element={<NodesPage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />
           <Route path="app" element={<AppSettingsPage />} />

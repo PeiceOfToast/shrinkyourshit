@@ -24,6 +24,9 @@ export interface MockRoute {
   /** Matched against the pathname (no query string). */
   match: RegExp
   status?: number
+  /** Dynamic status (wins over `status`): a 200/400 pair from one route,
+   * e.g. POST /flows/validate answering both valid and invalid graphs. */
+  statusFn?: (ctx: { body: unknown }) => number
   /** Static response body (ignored when bodyFn is set). */
   body?: unknown
   /** Dynamic response body: a function of the request context. */
@@ -60,7 +63,9 @@ export function installFetchMock(routes: MockRoute[]): FetchMock {
       for (const route of routes) {
         if (route.method !== method) continue
         if (!route.match.test(url.pathname)) continue
-        const status = route.status ?? 200
+        const status = route.statusFn
+          ? route.statusFn({ body: parsed })
+          : (route.status ?? 200)
         const payload = route.bodyFn
           ? route.bodyFn({ url, body: parsed, request })
           : route.body

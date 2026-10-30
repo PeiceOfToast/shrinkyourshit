@@ -13,12 +13,12 @@ import {
   chainEdges,
   chipsFor,
   conditionText,
-  defaultParams,
   gatesFor,
-  newStepID,
   orderedSteps,
   paletteFor,
+  stepFromPalette,
 } from './flowModel'
+import ParamField from './flowParams'
 
 export interface StepStackEditorProps {
   graph: FlowGraph
@@ -56,14 +56,7 @@ export default function StepStackEditor({
   const add = (type: string) => {
     const info = paletteFor(palette, type)
     if (!info) return
-    const step: FlowStep = {
-      id: newStepID(type, steps),
-      type,
-      params: Object.keys(defaultParams(info)).length
-        ? defaultParams(info)
-        : undefined,
-    }
-    setSteps([...steps, step])
+    setSteps([...steps, stepFromPalette(info, steps)])
   }
 
   const updateParams = (id: string, name: string, value: unknown) => {
@@ -197,107 +190,15 @@ export default function StepStackEditor({
                 data-testid={`step-params-${step.id}`}
               >
                 {info.params.map((f) => (
-                  <label key={f.name} className="grid gap-1">
-                    <span className="text-xs font-medium text-slate-400">
-                      {f.label}
-                      {f.required ? ' *' : ''}
-                    </span>
-                    {f.kind === 'select' && (
-                      <select
-                        value={String(
-                          ((step.params ?? {}) as Record<string, unknown>)[
-                            f.name
-                          ] ??
-                            f.default ??
-                            '',
-                        )}
-                        onChange={(e) =>
-                          updateParams(step.id, f.name, e.target.value)
-                        }
-                        className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
-                        data-testid={`step-param-${f.name}`}
-                      >
-                        {(f.options ?? []).map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {f.kind === 'number' && (
-                      <input
-                        type="number"
-                        min={f.min}
-                        max={f.max}
-                        value={Number(
-                          ((step.params ?? {}) as Record<string, unknown>)[
-                            f.name
-                          ] ??
-                            f.default ??
-                            0,
-                        )}
-                        onChange={(e) =>
-                          updateParams(step.id, f.name, Number(e.target.value))
-                        }
-                        className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
-                        data-testid={`step-param-${f.name}`}
-                      />
-                    )}
-                    {f.kind === 'text' && (
-                      <input
-                        type="text"
-                        value={String(
-                          ((step.params ?? {}) as Record<string, unknown>)[
-                            f.name
-                          ] ?? '',
-                        )}
-                        onChange={(e) =>
-                          updateParams(step.id, f.name, e.target.value)
-                        }
-                        className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
-                        data-testid={`step-param-${f.name}`}
-                      />
-                    )}
-                    {f.kind === 'languages' && (
-                      <input
-                        type="text"
-                        placeholder="eng, ger"
-                        value={((step.params?.[f.name] as string[]) ?? []).join(
-                          ', ',
-                        )}
-                        onChange={(e) =>
-                          updateParams(
-                            step.id,
-                            f.name,
-                            e.target.value
-                              .split(',')
-                              .map((s) => s.trim())
-                              .filter(Boolean),
-                          )
-                        }
-                        className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
-                        data-testid={`step-param-${f.name}`}
-                      />
-                    )}
-                    {f.kind === 'toggle' && (
-                      <input
-                        type="checkbox"
-                        checked={Boolean(
-                          ((step.params ?? {}) as Record<string, unknown>)[
-                            f.name
-                          ],
-                        )}
-                        onChange={(e) =>
-                          updateParams(step.id, f.name, e.target.checked)
-                        }
-                        className="h-4 w-4 accent-emerald-500"
-                        data-testid={`step-param-${f.name}`}
-                      />
-                    )}
-                    {f.help && (
-                      <span className="text-xs text-slate-500">{f.help}</span>
-                    )}
-                  </label>
+                  <ParamField
+                    key={f.name}
+                    field={f}
+                    step={step}
+                    testId={`step-param-${f.name}`}
+                    onChange={(name, value) =>
+                      updateParams(step.id, name, value)
+                    }
+                  />
                 ))}
               </div>
             )}
