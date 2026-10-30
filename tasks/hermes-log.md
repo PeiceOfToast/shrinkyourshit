@@ -98,3 +98,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-30T01:19:40Z task 14: PR #15 merged squash 6fd0653, branch task/14-flow-schema-and-step-stack deleted, main pulled on the VM to 6fd0653; next task is 15 (visual flow editor, deps check next tick)
 - 2026-10-30T01:30:00Z task 15: PM checked state at main 2b34cec (green run for task 14 merge already recorded), no session running, no open PRs; deps 14 done per ROADMAP.md, STATUS row 15 todo, working tree clean
 - 2026-10-30T01:31:09Z task 15: started build session ses_e75915bc6ffeiq7PjKuRGBSFHJ (visual flow editor on @xyflow/react, read only then editing, server owned validation)
+- 2026-10-30T01:39:44Z docs: planning session converted to tasks 18 (node switch, live job line, per node totals) and 19 (library list and detail), scheduled next ahead of 15 to 17 so owner visible UI work lands first

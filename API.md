@@ -406,3 +406,30 @@ Details:
 - Progress streams on the existing events channel as `update.progress`, `update.succeeded` and `update.failed`.
 - The status endpoint never blocks on the network at startup; the first answer may be `{update_available: false, reason: "not checked yet"}`.
 - Nothing in this API applies an update on its own. There is no auto apply endpoint and none is planned.
+
+### Task 18
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/nodes` | admin | now also returns per node `stats: {files_done, bytes_saved}` |
+
+Details:
+
+- `JobDTO` gains `file_name` (basename) and `file_path`, resolved from `file_id`.
+- `JobDTO` gains `bytes_so_far`, the live output size, updated on each progress report.
+- `POST /api/v1/worker/jobs/{id}/progress` gains `bytes_so_far` (integer, the scratch output size at report time).
+- Per node stats count finished jobs only (`status='done'`) and positive savings only: `SUM(MAX(bytes_before - bytes_after, 0))`.
+- The UI switch is not a new endpoint: on is `POST /nodes/{id}/start`, off is `POST /nodes/{id}/stop` with `drain: true`, and "Stop now" is the same call with `drain: false`.
+- `POST /api/v1/nodes/pause-all` and `/resume-all` remain the page level controls from task 11.
+
+### Task 19
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/files/{id}/jobs` | admin | that file's jobs, oldest first |
+
+Details:
+
+- `GET /api/v1/libraries/{id}/files` gains `q` (name substring), `sort` (`name`, `size`, `saved`), `dir` (`asc`, `desc`) and returns `total` alongside the page. An unknown `sort` or `dir` is `400 {"code":"invalid_request"}`.
+- Sorting and filtering happen server side; the browser never re-sorts a page.
+- `GET /api/v1/files/{id}/jobs` reuses the existing job filter with `file_id` set and returns `404 {"code":"not_found"}` for an unknown file.

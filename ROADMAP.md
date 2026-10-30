@@ -47,6 +47,15 @@ The release workflow already builds five binaries and a container image on a `v*
 | 16 | Release artifacts with checksums, self update command, rollback, container refusal | 12 |
 | 17 | In app update check and update UI | 16, 10 |
 
+## v1.4: Node control and library views (scheduled)
+
+From the second UI planning session. The owner's answers drove this: a real on/off switch per node, one condensed live line per busy node, per node totals, pause all on the nodes page, and the library pages next.
+
+| Task | Summary | Depends on |
+|------|---------|------------|
+| 18 | Node on/off switch, live job line, per node totals, pause all | 11 |
+| 19 | Library list and detail: savings, search, sort, per file job history | 13, 18 |
+
 ## After v1.2 (order flexible)
 
 1. Remux-only, audio-only conversion, subtitle extract, health check, rename/move as first-class actions with UI.
