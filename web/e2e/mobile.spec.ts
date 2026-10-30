@@ -17,6 +17,10 @@
  * in the failure message) are skipped. Empty strings and hidden elements
  * are excluded, everything else counts.
  *
+ * Task 21 adds the rail leg: where the `md` rail exists (768 px in this
+ * loop), it must start icons only below `lg`, the toggle must show the
+ * labels again, and the expanded rail must not overflow the page.
+ *
  * Runs only under the `phone` project (playwright.config.ts sets
  * `testIgnore` on the other two projects, which exist for layout.spec);
  * the widths are set per test below.
@@ -153,6 +157,30 @@ test.describe('mobile audit', () => {
           '[data-testid="file-cards"], [data-testid="file-table"]',
         )
         await auditPage(page, path, width)
+      }
+      // The rail exists only at `md` and up (task 21): below `lg` it must
+      // show icons without any click, the toggle must bring the labels
+      // back, and even the expanded rail must not overflow the page.
+      const rail = page.getByTestId('nav-rail')
+      if ((await rail.count()) > 0) {
+        await expect(rail.getByText('Encode settings')).toHaveCount(0)
+        await page.getByRole('button', { name: 'Show labels' }).click()
+        await expect(rail.getByText('Encode settings')).toBeVisible()
+        const { overflow, scrollWidth, innerWidth } = await page.evaluate(
+          () => ({
+            overflow: document.documentElement.scrollWidth - window.innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            innerWidth: window.innerWidth,
+          }),
+        )
+        expect(
+          overflow,
+          `the expanded rail at ${width}px overflows by ${overflow}px (scrollWidth ${scrollWidth} > viewport ${innerWidth})`,
+        ).toBeLessThanOrEqual(0)
+        await page
+          .getByRole('button', { name: 'Collapse navigation' })
+          .click()
+        await expect(rail.getByText('Encode settings')).toHaveCount(0)
       }
     })
   }
