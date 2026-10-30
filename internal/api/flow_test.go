@@ -85,6 +85,70 @@ func TestFlowRoundTrip(t *testing.T) {
 	require.Equal(t, "steps", got.Source)
 }
 
+// TestFlowCanvasSave: the canvas saves the whole graph with source
+// advanced (task 15 acceptance) — a guard spliced into the chain, PUT,
+// then GET returns the graph byte identical and reports source=advanced.
+// An invalid canvas graph is still refused with 400 invalid_flow and
+// nothing is saved.
+func TestFlowCanvasSave(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+
+	canvas := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "if_codec_not", Type: flow.StepIfCodecNot, Params: rawParams(`{"codec":"hevc"}`)},
+			{ID: "transcode_video", Type: flow.StepTranscodeVideo, Params: rawParams(`{"codec":"hevc","quality":3}`)},
+			{ID: "remux_container", Type: flow.StepRemuxContainer, Params: rawParams(`{"container":"mkv"}`)},
+		},
+		Edges: []flow.Edge{
+			{From: "probe", To: "if_codec_not"},
+			{From: "if_codec_not", To: "transcode_video"},
+			{From: "transcode_video", To: "remux_container"},
+		},
+	}
+
+	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+		"source": "advanced", "graph": canvas,
+	})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/flow", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var got flowResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, flow.FlowSourceAdvanced, got.Source)
+	sentJSON, err := json.Marshal(canvas)
+	require.NoError(t, err)
+	gotJSON, err := json.Marshal(got.Graph)
+	require.NoError(t, err)
+	require.JSONEq(t, string(sentJSON), string(gotJSON))
+
+	// The library DTO reports the advanced source, so the rules page tier
+	// selector and the canvas badge agree.
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var dto server.LibraryDTO
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &dto))
+	require.Equal(t, flow.FlowSourceAdvanced, dto.FlowSource)
+
+	// An invalid canvas graph (an orphan step) never saves.
+	orphan := canvas
+	orphan.Nodes = append(orphan.Nodes, flow.Step{ID: "orphan", Type: flow.StepSkipIfSmaller})
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+		"source": "advanced", "graph": orphan,
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "invalid_flow")
+
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/flow", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, flow.FlowSourceAdvanced, got.Source)
+	require.Len(t, got.Graph.Nodes, 4)
+}
+
 // TestFlowValidate: 200 for a valid graph; 400 invalid_flow with a field
 // error for a cycle, a dangling edge, an unknown step type and a missing
 // required parameter (task 14 acceptance).
