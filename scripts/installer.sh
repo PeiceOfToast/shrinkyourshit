@@ -204,6 +204,11 @@ printf 'Wrote %s (role: worker, server: %s)\n' "$CONFIG" "$SERVER"
 
 install_systemd_unit() {
 	# $1 = unit file path
+	#
+	# Restart=always is required, not on-failure: `shrinkyourshit update`
+	# exits 0 after swapping the binary and expects systemd to bring the
+	# new build straight back up (task 16). With on-failure a clean exit
+	# would leave the service stopped after every update.
 	cat >"$1" <<EOF
 [Unit]
 Description=ShrinkYourShit worker
@@ -212,7 +217,7 @@ Wants=network-online.target
 
 [Service]
 ExecStart=$INSTALL_PATH serve
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]

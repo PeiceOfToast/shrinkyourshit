@@ -66,6 +66,37 @@ docker compose up -d
 
 The web UI is at http://localhost:8765. GPU passthrough (NVIDIA NVENC, Intel QSV/VAAPI) is in the commented blocks of the compose example. `PUID`/`PGID` are supported by the image entrypoint.
 
+## Updating
+
+Three install shapes, three update paths. `shrinkyourshit version` always tells you which one you are on (`runtime: binary` or `runtime: container`). Nothing auto-applies an update — checking is on by default, applying is always a human click or command.
+
+**Binary (self update).** A binary install replaces itself in place:
+
+```sh
+shrinkyourshit update --check     # report current and latest, change nothing
+shrinkyourshit update             # download, verify, swap, restart
+shrinkyourshit update --rollback  # back to the previous binary
+```
+
+Every download is verified against the release's `checksums.txt` — a mismatch or a missing entry aborts with the running binary untouched. Before the swap the database is backed up to `<data-dir>/backups/pre-update-<version>.db` (the last three are kept, or turn it off with the `backup_before_update` setting), and the previous binary is kept as `<binary>.prev` for `--rollback`. The update feed follows the `update_channel` setting (`stable` or `prerelease`).
+
+**systemd requirement: `Restart=always`.** A binary self update exits 0 after the swap and expects the service manager to bring the new build straight back up. With `Restart=on-failure` a clean exit would leave the service stopped after every update. The installer writes the right setting; check yours with `systemctl cat shrinkyourshit`:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/shrinkyourshit serve
+Restart=always
+RestartSec=5
+```
+
+**Container.** The image is published to `ghcr.io/peiceoftoast/shrinkyourshit` on every `v*` tag. A container never updates itself from inside — `shrinkyourshit update` refuses with the exact commands instead:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+**From source.** `git pull`, then `make build`. `make release-cross VERSION=vX.Y.Z` is the local dry run of the release pipeline (cross compiles all five targets, packages archives, writes and verifies `checksums.txt`) without publishing anything.
+
 ## Building from source
 
 Requires Go 1.23+, Node 20, and make. `make build` compiles the web UI into the binary; `make test`, `make lint`, `make cross` (linux, windows, macOS — arm64 and amd64), `make docker`. For development, `make dev` runs Vite on :5173 with the Go API on :8765 behind a proxy.
