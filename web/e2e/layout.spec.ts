@@ -52,25 +52,29 @@ function layoutSuite(path: string, ready: string): void {
           const out: string[] = []
           for (const el of Array.from(document.querySelectorAll('*'))) {
             const r = el.getBoundingClientRect()
-            if (r.right <= vw + 1 && el.scrollWidth <= el.clientWidth + 1) {
-              continue
-            }
+            const cs = getComputedStyle(el)
+            const mR = parseFloat(cs.marginRight) || 0
+            const overflowRight = r.right + mR > vw + 1
+            const innerOverflow = el.scrollWidth > el.clientWidth + 1
+            if (!overflowRight && !innerOverflow) continue
             const chain: string[] = []
             let cur: Element | null = el
-            for (let i = 0; cur && i < 6; i++) {
+            for (let i = 0; cur && i < 4; i++) {
               const b = cur.getBoundingClientRect()
               chain.push(
-                `${cur.tagName.toLowerCase()}${cur.id ? '#' + cur.id : ''}${
+                `${cur.tagName.toLowerCase()}${
                   cur.getAttribute('data-testid')
                     ? '[' + cur.getAttribute('data-testid') + ']'
                     : ''
-                }.w${Math.round(b.width)}`,
+                }.w${Math.round(b.width)}.r${Math.round(b.right)}`,
               )
               cur = cur.parentElement
             }
-            out.push(chain.join(' < '))
+            out.push(
+              `scrollW${el.scrollWidth}/clientW${el.clientWidth} mR${mR} ${cs.position} ${cs.display} ox-${cs.overflowX} :: ${chain.join(' < ')}`,
+            )
           }
-          return out.slice(0, 40)
+          return out.slice(0, 60)
         })
         console.log(`OFFENDERS ${path}:\n${offenders.join('\n')}`)
       }
