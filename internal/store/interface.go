@@ -108,6 +108,13 @@ type Store interface {
 	SetSetting(ctx context.Context, key, value string) error
 	DeleteSetting(ctx context.Context, key string) error
 	ListSettings(ctx context.Context) (map[string]string, error)
+
+	// Backup writes a consistent snapshot of the whole database to dest
+	// (task 16: the pre-update backup). VACUUM INTO is safe while the
+	// server is running; a plain file copy could catch a mid-commit
+	// state. An existing dest is removed first (VACUUM INTO refuses to
+	// overwrite).
+	Backup(ctx context.Context, dest string) error
 }
 
 // validateResultPolicy rejects unknown result policies on write.

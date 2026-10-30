@@ -129,9 +129,8 @@ func (e *ContainerError) Error() string {
 	return "running in a container; update the image instead:\n  " + e.Instruction
 }
 
-// errRestartBySystemd asks the CLI to exit 0 so the unit's Restart=always
-// brings the new binary back. See cmd/shrinkyourshit/restart.go.
-var errRestartBySystemd = errors.New("restart handled by systemd")
+// errExitZero lives in cmd (main.go): the update package never exits the
+// process itself.
 
 // logger returns the caller's logger or the default.
 func (o Options) logger() *slog.Logger {

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,19 @@ func (s *SQLite) Close() error {
 // Ping checks that the database is reachable.
 func (s *SQLite) Ping(ctx context.Context) error {
 	return s.db.PingContext(ctx)
+}
+
+// Backup writes a consistent snapshot of the whole database to dest with
+// VACUUM INTO (see the Store interface). An existing dest file is removed
+// first because VACUUM INTO refuses to overwrite.
+func (s *SQLite) Backup(ctx context.Context, dest string) error {
+	if err := os.Remove(dest); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("store: backup: remove stale %s: %w", dest, err)
+	}
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", dest); err != nil {
+		return fmt.Errorf("store: backup to %s: %w", dest, err)
+	}
+	return nil
 }
 
 // nowUTC returns the current time in UTC.

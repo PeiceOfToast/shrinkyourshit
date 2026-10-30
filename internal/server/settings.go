@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 )
 
 // Settings is the typed view of the settings key/value table. It knows the
@@ -38,6 +39,9 @@ type Values struct {
 	Username            string   `json:"admin_username"`
 	PreferredLanguages  []string `json:"preferred_languages"`
 	DefaultVideoCodec   string   `json:"default_video_codec"`
+	UpdateCheck         bool     `json:"update_check"`
+	UpdateChannel       string   `json:"update_channel"`
+	BackupBeforeUpdate  bool     `json:"backup_before_update"`
 }
 
 // Video codec choices for the settings API (ARCHITECTURE.md easy-mode
@@ -62,6 +66,12 @@ const (
 	DefaultScratchDir         = "" // empty: the process config decides
 	MinWorkerConcurrency      = 1
 	MaxWorkerConcurrency      = 16
+	// Self update (task 16): checks are on, the channel is stable and
+	// database backups before an update are on. Nothing applies an
+	// update by default — `shrink update` is always a human command.
+	DefaultUpdateCheck        = true
+	DefaultUpdateChannel      = update.ChannelStable
+	DefaultBackupBeforeUpdate = true
 )
 
 // read parses one string setting with a fallback.
@@ -87,6 +97,9 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 		Username:            raw[store.SettingAdminUsername],
 		PreferredLanguages:  []string{read(raw, store.SettingPreferredLanguages, DefaultPreferredLanguages)},
 		DefaultVideoCodec:   DefaultVideoCodec,
+		UpdateCheck:         DefaultUpdateCheck,
+		UpdateChannel:       DefaultUpdateChannel,
+		BackupBeforeUpdate:  DefaultBackupBeforeUpdate,
 	}
 	if n, err := strconv.Atoi(read(raw, store.SettingWorkerConcurrency, "1")); err == nil && n >= MinWorkerConcurrency && n <= MaxWorkerConcurrency {
 		out.WorkerConcurrency = n
@@ -96,6 +109,15 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 	}
 	if c := read(raw, store.SettingDefaultVideoCodec, ""); validVideoCodec(c) {
 		out.DefaultVideoCodec = c
+	}
+	if raw[store.SettingUpdateCheck] == "false" {
+		out.UpdateCheck = false
+	}
+	if c := read(raw, store.SettingUpdateChannel, ""); validUpdateChannel(c) {
+		out.UpdateChannel = c
+	}
+	if raw[store.SettingBackupBeforeUpdate] == "false" {
+		out.BackupBeforeUpdate = false
 	}
 	if langs := read(raw, store.SettingPreferredLanguages, ""); langs != "" {
 		out.PreferredLanguages = splitLanguages(langs)
@@ -116,6 +138,16 @@ func validResultPolicy(p string) bool {
 // validVideoCodec reports whether c is a known video codec choice.
 func validVideoCodec(c string) bool {
 	for _, v := range VideoCodecValues() {
+		if v == c {
+			return true
+		}
+	}
+	return false
+}
+
+// validUpdateChannel reports whether c is a known update feed.
+func validUpdateChannel(c string) bool {
+	for _, v := range update.ChannelValues() {
 		if v == c {
 			return true
 		}
@@ -145,6 +177,13 @@ type Update struct {
 	DefaultResultPolicy *string
 	PreferredLanguages  *[]string
 	DefaultVideoCodec   *string
+
+	// Self update (task 16): whether the app checks for updates, which
+	// release feed to follow, and whether the database is backed up
+	// before an update. Nothing here ever applies an update.
+	UpdateCheck        *bool
+	UpdateChannel      *string
+	BackupBeforeUpdate *bool
 
 	// Login toggle. nil means "leave as is". Turning login on requires a
 	// username (when none is stored) and a password in the same request.
@@ -199,6 +238,24 @@ func (s *Settings) Update(ctx context.Context, auth *Auth, u Update) error {
 		}
 		if err := s.st.SetSetting(ctx, store.SettingDefaultVideoCodec, *u.DefaultVideoCodec); err != nil {
 			return fmt.Errorf("settings: video codec: %w", err)
+		}
+	}
+	if u.UpdateCheck != nil {
+		if err := s.st.SetSetting(ctx, store.SettingUpdateCheck, strconv.FormatBool(*u.UpdateCheck)); err != nil {
+			return fmt.Errorf("settings: update check: %w", err)
+		}
+	}
+	if u.UpdateChannel != nil {
+		if !validUpdateChannel(*u.UpdateChannel) {
+			return badRequest("update_channel must be one of %v", update.ChannelValues())
+		}
+		if err := s.st.SetSetting(ctx, store.SettingUpdateChannel, *u.UpdateChannel); err != nil {
+			return fmt.Errorf("settings: update channel: %w", err)
+		}
+	}
+	if u.BackupBeforeUpdate != nil {
+		if err := s.st.SetSetting(ctx, store.SettingBackupBeforeUpdate, strconv.FormatBool(*u.BackupBeforeUpdate)); err != nil {
+			return fmt.Errorf("settings: backup before update: %w", err)
 		}
 	}
 

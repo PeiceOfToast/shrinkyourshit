@@ -12,6 +12,7 @@ import (
 	shrink "github.com/PeiceOfToast/shrinkyourshit"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 )
 
 // API is the HTTP surface of the server. svc may be nil only for the routes
@@ -25,7 +26,10 @@ type API struct {
 	log *slog.Logger
 	// version is the server's build version; /health reports it and the
 	// installer scripts (task 09) bake it into the release download URL.
+	// commit and date (task 16) ride with /api/v1/version.
 	version string
+	commit  string
+	date    string
 	// logins rate-limits failed login attempts per IP (task 06).
 	logins *loginLimiter
 	// join records a setup "join" decision (task 08); main owns the
@@ -53,6 +57,13 @@ func WithBuiltinNode(nodeID string) Option {
 	return func(a *API) { a.builtinNode = nodeID }
 }
 
+// WithBuild wires the commit and build date (task 16) reported by
+// /api/v1/version. Empty values are what a build without release flags
+// reports.
+func WithBuild(commit, date string) Option {
+	return func(a *API) { a.commit, a.date = commit, date }
+}
+
 // New builds the root HTTP handler. version is reported by /api/v1/health;
 // static is the built web UI (web/dist), served at / with an index.html
 // fallback for unknown non-API paths so client-side routing works. svc holds
@@ -69,6 +80,7 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/v1/health", health(version))
+	mux.HandleFunc("GET /api/v1/version", a.buildVersion)
 
 	// Installer scripts (task 09): open, templated with this request's
 	// origin so a node reaches the server the way the admin's browser does.
@@ -173,6 +185,25 @@ func health(version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Version: version})
 	}
+}
+
+// versionResponse is the /api/v1/version body (API.md, task 16): the full
+// build identity plus how this install runs (binary or container).
+// Task 17 adds the update check fields to this endpoint.
+type versionResponse struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+	Runtime string `json:"runtime"`
+}
+
+func (a *API) buildVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, versionResponse{
+		Version: a.version,
+		Commit:  a.commit,
+		Date:    a.date,
+		Runtime: update.Runtime(),
+	})
 }
 
 // apiNotFound returns JSON errors for unknown API paths instead of the HTML

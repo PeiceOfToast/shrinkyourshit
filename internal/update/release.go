@@ -166,20 +166,25 @@ func Latest(ctx context.Context, opts Options) (Release, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	switch {
-	case resp.StatusCode == http.StatusNotModified:
+	switch resp.StatusCode {
+	case http.StatusNotModified:
 		// Unchanged: keep the body, refresh the timestamp so the TTL
 		// window restarts without spending another API call.
 		cached.FetchedAt = opts.now()
 		_ = writeCache(path, cached)
 		return cached.Release, nil
-	case resp.StatusCode == http.StatusOK:
+	case http.StatusOK:
 		// fall through to decode
 	default:
 		if cached != nil {
 			opts.logger().Warn("update: release check failed, serving cached",
 				"status", resp.StatusCode)
 			return cached.Release, nil
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			// GitHub answers 404 for releases/latest when no non-prerelease
+			// release exists (yet).
+			return Release{}, fmt.Errorf("update: no published release on the %s channel", channel)
 		}
 		return Release{}, fmt.Errorf("update: release check: unexpected status %d", resp.StatusCode)
 	}
