@@ -175,6 +175,18 @@ func serve(args []string, info buildInfo) error {
 		Log:         logger,
 		FFprobePath: cfg.FFprobePath(),
 		ScratchDir:  cfg.ScratchDir,
+		DataDir:     cfg.DataDir,
+		Update: server.UpdateOptions{
+			Current: update.Info{Version: info.version, Commit: info.commit, Date: info.date},
+			// After a successful in-app update the process hands itself
+			// over to the freshly installed binary (systemd bounce or
+			// exec, see restart.go). The delay first lets the update
+			// events reach the UI.
+			Restart: func(exe string) error {
+				time.Sleep(2 * time.Second)
+				return restartSelf(exe)
+			},
+		},
 	})
 
 	// First serve start creates the built-in node and its key file; later
@@ -185,6 +197,10 @@ func serve(args []string, info buildInfo) error {
 	}
 
 	svc.Start(ctx)
+
+	// The in-app update check (task 17): one background refresh after
+	// start, never blocking it; everything else is on demand.
+	svc.Update().StartBackgroundCheck(ctx)
 
 	// LAN discovery: advertise this server and answer probes; the setup
 	// wizard's join card reads the discovered list (own id hidden).

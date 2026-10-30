@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,27 +42,58 @@ func TestHealth(t *testing.T) {
 	assert.Equal(t, "v1.2.3", body.Version)
 }
 
-// TestVersionEndpoint covers /api/v1/version (API.md, task 16): the full
-// build identity plus the runtime, open like /health (no admin auth,
-// works without a wired server).
+// TestVersionEndpoint covers /api/v1/version (API.md, task 16, extended by
+// task 17): the full build identity, the runtime, and the update settings.
+// Open like /health: no admin auth, and it works without a wired server.
 func TestVersionEndpoint(t *testing.T) {
-	h := New("v1.2.3", testStatic(), nil, WithBuild("abc1234", "2026-01-02T03:04:05Z"))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
+	t.Run("full identity, binary runtime, update defaults", func(t *testing.T) {
+		h := New("v1.2.3", testStatic(), nil,
+			WithBuild("abc1234", "2026-01-02T03:04:05Z"),
+			WithRuntime(func() string { return update.RuntimeBinary }))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	var body versionResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	assert.Equal(t, "v1.2.3", body.Version)
-	assert.Equal(t, "abc1234", body.Commit)
-	assert.Equal(t, "2026-01-02T03:04:05Z", body.Date)
-	// The test VM is not a container; pin the runtime without guessing
-	// what environment a future containerized CI may add.
-	if update.IsContainer() {
-		assert.Equal(t, update.RuntimeContainer, body.Runtime)
-	} else {
+		require.Equal(t, http.StatusOK, rec.Code)
+		var body versionResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		assert.Equal(t, "v1.2.3", body.Version)
+		assert.Equal(t, "abc1234", body.Commit)
+		assert.Equal(t, "2026-01-02T03:04:05Z", body.Date)
 		assert.Equal(t, update.RuntimeBinary, body.Runtime)
-	}
+		// Task 17: the update check is on by default, stable channel.
+		assert.True(t, body.UpdateCheckEnabled)
+		assert.Equal(t, "stable", body.Channel)
+	})
+
+	t.Run("container runtime is reported as such", func(t *testing.T) {
+		h := New("v1.2.3", testStatic(), nil,
+			WithRuntime(func() string { return update.RuntimeContainer }))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		var body versionResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		assert.Equal(t, update.RuntimeContainer, body.Runtime)
+	})
+
+	t.Run("wired server reports the update settings and its runtime", func(t *testing.T) {
+		h := newAPIHarness(t, func(cfg *server.Config) {
+			cfg.Update.IsContainer = func() bool { return true }
+		})
+		// The admin turned checks off and follows prereleases.
+		ctx := context.Background()
+		require.NoError(t, h.st.SetSetting(ctx, store.SettingUpdateCheck, "false"))
+		require.NoError(t, h.st.SetSetting(ctx, store.SettingUpdateChannel, "prerelease"))
+
+		rec := h.do(http.MethodGet, "/api/v1/version", nil)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var body versionResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		assert.Equal(t, update.RuntimeContainer, body.Runtime)
+		assert.False(t, body.UpdateCheckEnabled)
+		assert.Equal(t, "prerelease", body.Channel)
+	})
 }
 
 func TestServesIndexAtRoot(t *testing.T) {

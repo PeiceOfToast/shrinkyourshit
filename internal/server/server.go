@@ -46,6 +46,13 @@ type Config struct {
 	// server applies them (task 09). Empty falls back to a directory
 	// under the OS temp path; main wires the configured scratch dir.
 	ScratchDir string
+	// DataDir is the data directory (update cache, pre-update backups);
+	// task 17. Empty falls back to the OS temp dir.
+	DataDir string
+
+	// Update tunes the in-app update service (task 17): build identity,
+	// restart hook and test overrides.
+	Update UpdateOptions
 
 	// Discover finds servers on the LAN for the setup wizard's join card
 	// (task 08). Nil → the wizard list stays empty. Wired by main to
@@ -106,6 +113,7 @@ type Server struct {
 	settings  *Settings
 	stats     *StatsService
 	transfer  *Transfer
+	update    *UpdateCheck
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -143,9 +151,20 @@ func New(cfg Config) *Server {
 	stats := NewStats(cfg.Store)
 	queue.SetInspector(cfg.Inspect, cfg.FFprobePath)
 	transfer := NewTransfer(cfg.Store, cfg.ScratchDir)
+	// The update service (task 17) defaults its dirs to the server's: a
+	// release cache or backup must never land outside the data dir just
+	// because main only set the top-level fields.
+	updOpts := cfg.Update
+	if updOpts.DataDir == "" {
+		updOpts.DataDir = cfg.DataDir
+	}
+	if updOpts.ScratchDir == "" {
+		updOpts.ScratchDir = cfg.ScratchDir
+	}
+	updateSvc := NewUpdateCheck(events, settings, cfg.Store, updOpts, cfg.Log)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
-		auth: auth, settings: settings, stats: stats, transfer: transfer}
+		auth: auth, settings: settings, stats: stats, transfer: transfer, update: updateSvc}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
@@ -187,6 +206,9 @@ func (s *Server) Stats() *StatsService { return s.stats }
 // Transfer exposes the transfer service (worker access checks and result
 // uploads; task 09).
 func (s *Server) Transfer() *Transfer { return s.transfer }
+
+// Update exposes the in-app update service (task 17).
+func (s *Server) Update() *UpdateCheck { return s.update }
 
 // discoveredTTL is how long Discovered reuses the last LAN scan.
 const discoveredTTL = 10 * time.Second
