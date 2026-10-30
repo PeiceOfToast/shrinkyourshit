@@ -74,3 +74,26 @@ func TestJobFilterOrderDesc(t *testing.T) {
 	_, err = h.st.ListJobs(ctx, store.JobFilter{Order: "sideways"})
 	require.ErrorContains(t, err, "invalid job order")
 }
+
+// TestJobDTOCarriesFileName covers the task-18 file identity: the DTO
+// carries the file's basename and full path resolved from file_id, and a
+// missing file row leaves both fields empty instead of failing.
+func TestJobDTOCarriesFileName(t *testing.T) {
+	job := &store.Job{
+		ID: "job-1", FileID: "file-1", LibraryID: "lib-1",
+		Status: store.JobStatusRunning, BytesBefore: 32505856, BytesSoFar: 12582912,
+	}
+	file := &store.File{ID: "file-1", LibraryID: "lib-1", Path: "/media/movies/movie.mkv"}
+
+	dto := NewJobDTO(job, file)
+	require.Equal(t, "file-1", dto.FileID, "file_id stays")
+	require.Equal(t, "movie.mkv", dto.FileName)
+	require.Equal(t, "/media/movies/movie.mkv", dto.FilePath)
+	require.Equal(t, int64(12582912), dto.BytesSoFar)
+
+	// The file row vanished (or the caller had none): empty names, no error.
+	dto = NewJobDTO(job, nil)
+	require.Empty(t, dto.FileName)
+	require.Empty(t, dto.FilePath)
+	require.Equal(t, "file-1", dto.FileID)
+}

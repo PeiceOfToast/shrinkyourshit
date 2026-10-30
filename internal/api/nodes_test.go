@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -318,4 +319,101 @@ func TestPairAndKeyNeverLogged(t *testing.T) {
 	// The SSE/event payloads also never carry the key: a node.updated
 	// subscriber sees the DTO, which has no key field at all.
 	require.False(t, strings.Contains(out, "\"node_key\""))
+}
+
+// statsCountingStore wraps the real store and counts NodeJobStats calls,
+// so the aggregate test can prove the handler folds all nodes into one
+// grouped query instead of asking per node (task 18 acceptance).
+type statsCountingStore struct {
+	store.Store
+	mu         sync.Mutex
+	statsCalls int
+}
+
+func (s *statsCountingStore) NodeJobStats(ctx context.Context) (map[string]store.NodeStat, error) {
+	s.mu.Lock()
+	s.statsCalls++
+	s.mu.Unlock()
+	return s.Store.NodeJobStats(ctx)
+}
+
+func (s *statsCountingStore) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.statsCalls
+}
+
+// TestNodeStatsAggregate covers the per node totals (task 18): GET /nodes
+// returns files_done and bytes_saved per node — done jobs only, positive
+// savings only — a node with no finished jobs reports zeros, and the whole
+// answer is folded with a single stats query.
+func TestNodeStatsAggregate(t *testing.T) {
+	st, err := store.New(filepath.Join(t.TempDir(), "data.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	counting := &statsCountingStore{Store: st}
+	require.NoError(t, os.MkdirAll(filepath.Join(t.TempDir(), "library"), 0o755))
+
+	svc := server.New(server.Config{
+		Store:             counting,
+		Prober:            (&apiFakeProber{byName: map[string]probe.MediaInfo{}, fallback: apiSatisfied}).Probe,
+		SweepInterval:     time.Hour,
+		HeartbeatTimeout:  time.Hour,
+		WatchPollInterval: time.Hour,
+	})
+	svc.Libraries().SetScanHook(func(string) {})
+	svc.Start(context.Background())
+	t.Cleanup(svc.Stop)
+	mux := New("v0.0.0", testStatic(), svc)
+
+	ctx := context.Background()
+	lib := &store.Library{ID: "lib-1", Name: "Movies", Path: "/media/movies",
+		TargetJSON: `{"video":{"codec":"hevc","quality":3,"reencode_if_same_codec":false},"audio":{"mode":"keep_all","preferred_languages":["eng"],"compact_codec":"aac"},"subtitles":{"mode":"keep_all","preferred_languages":["eng"],"extract_removed":false},"container":"mkv"}`,
+		ResultPolicy: store.ResultPolicyReplaceIfSmaller}
+	require.NoError(t, counting.CreateLibrary(ctx, lib))
+	file := &store.File{ID: "file-1", LibraryID: lib.ID, Path: "/media/movies/movie.mkv", Status: store.FileStatusSatisfied}
+	require.NoError(t, counting.UpsertFile(ctx, file))
+
+	// worker-a: two done jobs (one with negative savings that must not
+	// count) plus one claimed job that must not count either.
+	nodeA := &store.Node{ID: "node-a", Name: "worker-a", KeyHash: "h1", Status: store.NodeStatusApproved,
+		Enabled: true, AccessMode: store.NodeAccessShared, DesiredState: store.NodeStateRunning, Concurrency: 1}
+	require.NoError(t, counting.CreateNode(ctx, nodeA))
+	for _, j := range []store.Job{
+		{ID: "job-1", FileID: file.ID, LibraryID: lib.ID, NodeID: nodeA.ID, Status: store.JobStatusDone, BytesBefore: 100, BytesAfter: 40},
+		{ID: "job-2", FileID: file.ID, LibraryID: lib.ID, NodeID: nodeA.ID, Status: store.JobStatusDone, BytesBefore: 100, BytesAfter: 120},
+		{ID: "job-3", FileID: file.ID, LibraryID: lib.ID, NodeID: nodeA.ID, Status: store.JobStatusClaimed, BytesBefore: 999},
+	} {
+		require.NoError(t, counting.CreateJob(ctx, &j))
+	}
+	// worker-b: approved, one queued job, nothing ever finished.
+	nodeB := &store.Node{ID: "node-b", Name: "worker-b", KeyHash: "h2", Status: store.NodeStatusApproved,
+		Enabled: true, AccessMode: store.NodeAccessShared, DesiredState: store.NodeStateStopped, Concurrency: 1}
+	require.NoError(t, counting.CreateNode(ctx, nodeB))
+	require.NoError(t, counting.CreateJob(ctx, &store.Job{ID: "job-4", FileID: file.ID, LibraryID: lib.ID, NodeID: nodeB.ID, Status: store.JobStatusQueued}))
+
+	rec := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, rec)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	var body struct {
+		Items []server.NodeDTO `json:"items"`
+		Total int              `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	require.Len(t, body.Items, 2)
+	byID := map[string]server.NodeDTO{}
+	for _, n := range body.Items {
+		byID[n.ID] = n
+	}
+	require.NotNil(t, byID["node-a"].Stats, "stats present even when zeroed below")
+	require.Equal(t, int64(2), byID["node-a"].Stats.FilesDone)
+	require.Equal(t, int64(60), byID["node-a"].Stats.BytesSaved, "only positive savings count")
+	require.NotNil(t, byID["node-b"].Stats, "a node with no finished jobs still reports stats")
+	require.Equal(t, int64(0), byID["node-b"].Stats.FilesDone)
+	require.Equal(t, int64(0), byID["node-b"].Stats.BytesSaved)
+
+	// One grouped query for the whole registry, never one per node.
+	require.Equal(t, 1, counting.calls())
 }
