@@ -183,4 +183,26 @@ describe('computeWarnings', () => {
     })
     expect(warnings[0].message).toContain('2 jobs have failed')
   })
+
+  it('warns about an available update and points at App settings (task 17)', () => {
+    const warnings = computeWarnings({
+      ...base,
+      update: { available: true, version: 'v1.3.0' },
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].id).toBe('update-available')
+    expect(warnings[0].message).toContain('Version v1.3.0 is available')
+    expect(warnings[0].linkTo).toBe('/app')
+    expect(warnings[0].linkLabel).toBe('Go to App settings')
+  })
+
+  it('stays quiet when the update check failed or has not run (task 17)', () => {
+    // No update input at all (check failed, never ran): never loud.
+    expect(computeWarnings(base)).toHaveLength(0)
+    expect(computeWarnings({ ...base, update: null })).toHaveLength(0)
+    // A checked, up-to-date install is quiet too.
+    expect(
+      computeWarnings({ ...base, update: { available: false } }),
+    ).toHaveLength(0)
+  })
 })

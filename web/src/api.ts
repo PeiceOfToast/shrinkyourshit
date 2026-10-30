@@ -127,6 +127,10 @@ export interface Settings {
   admin_username?: string
   preferred_languages: string[]
   default_video_codec: string
+  /** Update settings (task 16); the About card edits the first two. */
+  update_check: boolean
+  update_channel: string
+  backup_before_update: boolean
 }
 
 export function getSettings(): Promise<Settings> {
@@ -146,6 +150,10 @@ export interface SettingsUpdate {
   password?: string
   /** Required for a password change when login is enabled. */
   current_password?: string
+  /** Update settings (task 16; the About card edits them). */
+  update_check?: boolean
+  update_channel?: string
+  backup_before_update?: boolean
 }
 
 export function updateSettings(body: SettingsUpdate): Promise<Settings> {
@@ -645,4 +653,60 @@ export function previewFlow(body: {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+/**
+ * Version and in-app update (task 17). Checking is on by default and
+ * nothing here applies an update: the apply call only ever follows an
+ * explicit click in the About card.
+ */
+export interface VersionInfo {
+  version: string
+  commit: string
+  date: string
+  /** How this install runs: binary or container. */
+  runtime: 'binary' | 'container'
+  update_check_enabled: boolean
+  channel: string
+}
+
+export function getVersion(): Promise<VersionInfo> {
+  return api<VersionInfo>('/api/v1/version')
+}
+
+/** The stages the About card renders while an update applies. */
+export interface UpdateProgress {
+  active: boolean
+  stage?: string
+  error?: string
+}
+
+export interface UpdateStatus {
+  current: string
+  /** Empty until a check succeeded. */
+  latest?: string
+  update_available: boolean
+  release_url?: string
+  release_notes?: string
+  published_at?: string
+  self_update_supported: boolean
+  /** Why the answer is "no": not checked yet, a quiet failure, the
+   * container fix, or "already on the latest release". */
+  reason?: string
+  progress?: UpdateProgress
+}
+
+/** GET /update/status — the last check result, never a network call. */
+export function getUpdateStatus(): Promise<UpdateStatus> {
+  return api<UpdateStatus>('/api/v1/update/status')
+}
+
+/** POST /update/check — forces a refresh, rate limited to once a minute. */
+export function checkForUpdate(): Promise<UpdateStatus> {
+  return api<UpdateStatus>('/api/v1/update/check', { method: 'POST' })
+}
+
+/** POST /update/apply — starts a binary self update; 409 in a container. */
+export function applyUpdate(): Promise<{ started: boolean }> {
+  return api<{ started: boolean }>('/api/v1/update/apply', { method: 'POST' })
 }

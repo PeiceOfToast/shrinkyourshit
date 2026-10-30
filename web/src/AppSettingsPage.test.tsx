@@ -21,7 +21,37 @@ const settings = {
   admin_username: 'michael',
   preferred_languages: ['eng'],
   default_video_codec: 'hevc',
+  update_check: true,
+  update_channel: 'stable',
+  backup_before_update: true,
 }
+
+/** The About card (task 17) rides on the App settings page. */
+const aboutRoutes = [
+  {
+    method: 'GET',
+    match: /\/api\/v1\/version$/,
+    body: {
+      version: 'v1.2.0',
+      commit: 'abc1234',
+      date: '2026-01-02T03:04:05Z',
+      runtime: 'binary',
+      update_check_enabled: true,
+      channel: 'stable',
+    },
+  },
+  {
+    method: 'GET',
+    match: /\/api\/v1\/update\/status$/,
+    body: {
+      current: 'v1.2.0',
+      latest: 'v1.2.0',
+      update_available: false,
+      self_update_supported: true,
+      reason: 'already on the latest release',
+    },
+  },
+]
 
 function renderPage() {
   const client = new QueryClient({
@@ -45,6 +75,7 @@ afterEach(() => mock?.restore())
 describe('AppSettingsPage', () => {
   it('toasts on a successful save (task 13)', async () => {
     mock = installFetchMock([
+      ...aboutRoutes,
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
       { method: 'PUT', match: /\/api\/v1\/settings$/, body: settings },
     ])
@@ -56,6 +87,7 @@ describe('AppSettingsPage', () => {
 
   it('renders the HTTP status and server code when a save fails (task 13)', async () => {
     mock = installFetchMock([
+      ...aboutRoutes,
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
       {
         method: 'PUT',
@@ -87,6 +119,7 @@ describe('AppSettingsPage', () => {
   it('turning login off still asks first and then saves', async () => {
     const puts: unknown[] = []
     mock = installFetchMock([
+      ...aboutRoutes,
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
       {
         method: 'PUT',
@@ -108,5 +141,21 @@ describe('AppSettingsPage', () => {
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toMatchObject({ login_enabled: false })
     await screen.findByTestId('toast')
+  })
+
+  it('renders the About card with the version and the runtime (task 17)', async () => {
+    mock = installFetchMock([
+      ...aboutRoutes,
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderPage()
+    await screen.findByTestId('about-card')
+    await waitFor(() =>
+      expect(screen.getByTestId('about-version')).toHaveTextContent('v1.2.0'),
+    )
+    expect(screen.getByTestId('about-runtime')).toHaveTextContent(
+      'App on this machine',
+    )
+    expect(screen.getByTestId('check-now')).toBeInTheDocument()
   })
 })

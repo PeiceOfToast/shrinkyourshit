@@ -15,6 +15,12 @@ export interface DashboardWarning {
   linkLabel: string
 }
 
+/** The slice of the update status the dashboard warning needs (task 17). */
+export interface UpdateHint {
+  available: boolean
+  version?: string
+}
+
 /**
  * An approved, enabled node that has not checked in for 3 minutes counts
  * as lost: the worker heartbeats every 30 s and the server requeues its
@@ -47,9 +53,23 @@ export function computeWarnings(input: {
   jobs: Job[]
   stats: Pick<Stats, 'queued'>
   now: number
+  update?: UpdateHint | null
 }): DashboardWarning[] {
   const { nodes, jobs, stats, now } = input
   const warnings: DashboardWarning[] = []
+
+  // A newer release is out (task 17): one quiet entry pointing at the
+  // About card, where the action matches the install type. The warning
+  // stays away when the check failed or has not run — update trouble is
+  // never loud.
+  if (input.update?.available) {
+    warnings.push({
+      id: 'update-available',
+      message: `Version ${input.update.version ?? 'newer'} is available. See the About card in App settings for what changed and how to update.`,
+      linkTo: '/app',
+      linkLabel: 'Go to App settings',
+    })
+  }
 
   const activeJobs = jobs.filter(
     (j) => j.status === 'running' || j.status === 'claimed',
