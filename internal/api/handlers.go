@@ -298,21 +298,8 @@ func (a *API) listJobs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	filter := store.JobFilter{}
-	if status := r.URL.Query().Get("status"); status != "" {
-		if !validJobStatus(status) {
-			writeError(w, http.StatusBadRequest, "invalid_request",
-				"invalid status filter: want one of "+strings.Join(store.JobStatusValues(), ", "))
-			return
-		}
-		filter.Status = status
-	}
-	switch order := r.URL.Query().Get("order"); order {
-	case "":
-	case "desc":
-		filter.Order = order
-	default:
-		writeError(w, http.StatusBadRequest, "invalid_request", "order must be desc")
+	filter, ok := jobFilterParams(r, w)
+	if !ok {
 		return
 	}
 	jobs, err := a.st.ListJobs(r.Context(), filter)
@@ -323,6 +310,60 @@ func (a *API) listJobs(w http.ResponseWriter, r *http.Request) {
 	writePage(w, jobs, limit, offset, func(j *store.Job) server.JobDTO {
 		return a.jobDTO(r.Context(), j)
 	})
+}
+
+// fileJobs answers GET /files/{id}/jobs (task 19): one file's job history,
+// oldest first. Unknown file is 404. The filter parsing is the same as
+// GET /jobs, with the file id pinned.
+func (a *API) fileJobs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := a.st.GetFile(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "no such file")
+		return
+	} else if err != nil {
+		a.internal(w, err)
+		return
+	}
+	limit, offset, ok := pageParams(r, w)
+	if !ok {
+		return
+	}
+	filter, ok := jobFilterParams(r, w)
+	if !ok {
+		return
+	}
+	filter.FileID = id
+	jobs, err := a.st.ListJobs(r.Context(), filter)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	writePage(w, jobs, limit, offset, func(j *store.Job) server.JobDTO {
+		return a.jobDTO(r.Context(), j)
+	})
+}
+
+// jobFilterParams reads the shared job list query parameters: ?status= and
+// ?order= (oldest first unless desc). Invalid values are 400.
+func jobFilterParams(r *http.Request, w http.ResponseWriter) (store.JobFilter, bool) {
+	filter := store.JobFilter{}
+	if status := r.URL.Query().Get("status"); status != "" {
+		if !validJobStatus(status) {
+			writeError(w, http.StatusBadRequest, "invalid_request",
+				"invalid status filter: want one of "+strings.Join(store.JobStatusValues(), ", "))
+			return filter, false
+		}
+		filter.Status = status
+	}
+	switch order := r.URL.Query().Get("order"); order {
+	case "":
+	case "desc":
+		filter.Order = order
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "order must be desc")
+		return filter, false
+	}
+	return filter, true
 }
 
 // getJob returns one job including its log tail.

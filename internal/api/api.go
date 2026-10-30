@@ -101,6 +101,9 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("GET /api/v1/jobs/{id}", a.requireAdmin(a.getJob))
 		mux.HandleFunc("POST /api/v1/jobs/{id}/cancel", a.requireAdmin(a.cancelJob))
 		mux.HandleFunc("POST /api/v1/jobs/{id}/retry", a.requireAdmin(a.retryJob))
+		// One file's job history (task 19): the panel on the library
+		// detail page shows what happened to a file over time.
+		mux.HandleFunc("GET /api/v1/files/{id}/jobs", a.requireAdmin(a.fileJobs))
 		mux.HandleFunc("GET /api/v1/events", a.requireAdmin(a.events))
 		mux.HandleFunc("GET /api/v1/fs/browse", a.requireAdmin(a.browse))
 		mux.HandleFunc("GET /api/v1/stats", a.requireAdmin(a.getStats))

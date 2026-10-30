@@ -403,6 +403,70 @@ func TestLibraryFilesSearchAndSort(t *testing.T) {
 	require.Equal(t, []string{"alpha.mkv", "Beta.mkv", "gamma.mkv", "inside.mkv"}, names(get("")))
 }
 
+// TestFileJobsEndpoint is acceptance item 5 (task 19): GET
+// /files/{id}/jobs returns that file's jobs oldest first and 404s for an
+// unknown file. The DTO shape is the same JobDTO every job response uses.
+func TestFileJobsEndpoint(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	ctx := context.Background()
+
+	f1 := &store.File{LibraryID: lib.ID, Path: filepath.Join(h.root, "one.mkv"), Size: 100, Status: store.FileStatusNew}
+	f2 := &store.File{LibraryID: lib.ID, Path: filepath.Join(h.root, "two.mkv"), Size: 100, Status: store.FileStatusNew}
+	require.NoError(t, h.st.UpsertFile(ctx, f1))
+	require.NoError(t, h.st.UpsertFile(ctx, f2))
+
+	// Three jobs for f1 (created in order) and one for f2.
+	mkJob := func(fileID string, n int, status string) {
+		t.Helper()
+		require.NoError(t, h.st.CreateJob(ctx, &store.Job{
+			FileID: fileID, LibraryID: lib.ID, Status: status, Attempt: n,
+		}))
+	}
+	mkJob(f1.ID, 0, store.JobStatusFailed)
+	mkJob(f1.ID, 1, store.JobStatusFailed)
+	mkJob(f2.ID, 0, store.JobStatusDone)
+	mkJob(f1.ID, 2, store.JobStatusDone)
+
+	rec := h.do(http.MethodGet, "/api/v1/files/"+f1.ID+"/jobs", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var page struct {
+		Items []server.JobDTO `json:"items"`
+		Total int             `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &page))
+	require.Equal(t, 3, page.Total)
+	attempts := []int{}
+	for _, j := range page.Items {
+		require.Equal(t, f1.ID, j.FileID, "only this file's jobs")
+		attempts = append(attempts, j.Attempt)
+	}
+	require.Equal(t, []int{0, 1, 2}, attempts, "oldest first")
+
+	// The DTO carries the file identity (task 18).
+	require.Equal(t, "one.mkv", page.Items[0].FileName)
+	require.Equal(t, filepath.Join(h.root, "one.mkv"), page.Items[0].FilePath)
+
+	// The status filter narrows to that file's matching jobs.
+	rec = h.do(http.MethodGet, "/api/v1/files/"+f1.ID+"/jobs?status=failed", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var failed struct {
+		Items []server.JobDTO `json:"items"`
+		Total int             `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &failed))
+	require.Equal(t, 2, failed.Total)
+
+	// Unknown file is 404 not_found.
+	rec = h.do(http.MethodGet, "/api/v1/files/does-not-exist/jobs", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	var body struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "not_found", body.Code)
+}
+
 func TestJobsEndpointsListGetCancelRetry(t *testing.T) {
 	h := newAPIHarness(t)
 	h.stated.mu.Lock()
