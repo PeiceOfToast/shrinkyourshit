@@ -234,6 +234,11 @@ export interface Job {
   eta_seconds: number
   bytes_before: number
   bytes_after: number
+  /** The live output size the worker reported (task 18). */
+  bytes_so_far: number
+  /** The file's basename and full path, resolved from file_id (task 18). */
+  file_name: string
+  file_path: string
   log: string
   error: string
   created_at: string
@@ -407,6 +412,8 @@ export interface Node {
   state_error?: string
   /** The oldest claimed/running job on this node; absent when idle. */
   current_job_id?: string
+  /** Finished-job totals (task 18): files done, bytes saved. */
+  stats?: { files_done: number; bytes_saved: number }
   status: string
   enabled: boolean
   last_heartbeat_at?: string

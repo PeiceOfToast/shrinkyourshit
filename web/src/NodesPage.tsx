@@ -10,6 +10,11 @@
  * dialog text that says what happens (rejecting a node, stopping one mid
  * job), and every dialog is a native <dialog> — Escape closes it and
  * focus returns to the trigger.
+ *
+ * Task 18: a real on/off switch per card (off stops gracefully — the
+ * current file finishes; "Stop now" is the hard stop behind a confirm),
+ * one condensed live line for the file being encoded, per node totals in
+ * the footer, and page-level Pause all / Resume all in the header.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -19,6 +24,8 @@ import {
   deleteNode,
   getJobs,
   getNodes,
+  pauseAllNodes,
+  resumeAllNodes,
   revokeNode,
   startNode,
   stopNode,
@@ -29,10 +36,13 @@ import {
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
 import ModalDialog from './dialog'
+import NodeJobLine from './NodeJobLine'
 import PageContainer from './PageContainer'
 import { SkeletonCard } from './skeleton'
+import Switch from './Switch'
 import { useToast } from './toastContext'
 import ErrorBox from './ErrorBox'
+import { formatBytes } from './easyModel'
 
 const statusStyles: Record<string, string> = {
   pending: 'bg-amber-500/20 text-amber-300',
@@ -427,6 +437,8 @@ function NodeRow({
     },
     onError: (err: unknown) => toast.failure('Starting failed', err),
   })
+  // The switch's off side is the graceful stop (drain: the current file
+  // finishes); "Stop now" is the hard stop behind a confirmation.
   const stop = useMutation({
     mutationFn: (args: { id: string; drain: boolean }) =>
       stopNode(args.id, args.drain),
@@ -450,10 +462,10 @@ function NodeRow({
     onError: (err: unknown) =>
       toast.failure('Changing parallel jobs failed', err),
   })
-  const [drain, setDrain] = useState(false)
   const [confirming, setConfirming] = useState<null | 'stop' | 'reject'>(null)
   const encoders = node.capabilities?.encoders ?? []
   const ffmpeg = node.capabilities?.ffmpeg_version
+  const running = node.desired_state === 'running'
 
   return (
     <li
@@ -538,41 +550,68 @@ function NodeRow({
 
       {node.status === 'approved' && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          {node.desired_state === 'running' ? (
-            <>
-              <label className="flex items-center gap-2 text-xs text-slate-400">
-                <input
-                  type="checkbox"
-                  checked={drain}
-                  onChange={(e) => setDrain(e.target.checked)}
-                  data-testid={`node-drain-${node.id}`}
-                />
-                Finish the current job first
-              </label>
-              <button
-                type="button"
-                onClick={() => setConfirming('stop')}
-                disabled={stop.isPending}
-                className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-                data-testid={`node-stop-${node.id}`}
-              >
-                {stop.isPending ? 'Stopping…' : 'Stop'}
-              </button>
-            </>
-          ) : (
+          <Switch
+            checked={running}
+            onChange={(on) =>
+              on ? start.mutate(node.id) : stop.mutate({ id: node.id, drain: true })
+            }
+            label={`Encoding on ${node.name}`}
+            testId={`node-switch-${node.id}`}
+            disabled={start.isPending || stop.isPending}
+          />
+          {(node.desired_state === 'running' ||
+            node.desired_state === 'draining') && (
             <button
               type="button"
-              onClick={() => start.mutate(node.id)}
-              disabled={start.isPending}
-              className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-              data-testid={`node-start-${node.id}`}
+              onClick={() => setConfirming('stop')}
+              disabled={stop.isPending}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-slate-800 disabled:opacity-50"
+              data-testid={`node-stop-now-${node.id}`}
             >
-              {start.isPending ? 'Starting…' : 'Start'}
+              {stop.isPending ? 'Stopping…' : 'Stop now'}
             </button>
           )}
+        </div>
+      )}
 
+      {currentJob && node.status === 'approved' && (
+        <div data-testid={`node-current-job-${node.id}`}>
+          <NodeJobLine job={currentJob} />
+        </div>
+      )}
+
+      <p className="mt-1 text-sm text-slate-500">
+        {node.os || '?'}/{node.arch || '?'} · last check-in{' '}
+        {timeAgo(node.last_heartbeat_at)}
+        {node.status === 'pending' && ' · asked to join just now'}
+      </p>
+      {encoders.length > 0 && (
+        <div
+          className="mt-2 flex flex-wrap items-center gap-1"
+          data-testid={`node-encoders-${node.id}`}
+        >
+          {encoders.map((e) => (
+            <span
+              key={e.name}
+              className="rounded-md bg-slate-800 px-2 py-0.5 text-xs text-slate-300"
+            >
+              {e.name}
+            </span>
+          ))}
+          {ffmpeg && <span className="text-xs text-slate-500">{ffmpeg}</span>}
+        </div>
+      )}
+
+      {/* Footer (task 18): this node's own totals, and its parallel-job cap. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs text-slate-400">
+        <span data-testid={`node-stats-${node.id}`}>
+          {node.stats?.files_done ?? 0}{' '}
+          {(node.stats?.files_done ?? 0) === 1 ? 'file' : 'files'},{' '}
+          {formatBytes(node.stats?.bytes_saved ?? 0)} saved
+        </span>
+        {node.status === 'approved' && (
           <span
-            className="flex items-center gap-1 text-xs text-slate-400"
+            className="flex items-center gap-1"
             data-testid={`node-concurrency-${node.id}`}
           >
             Parallel jobs
@@ -610,61 +649,22 @@ function NodeRow({
               +
             </button>
           </span>
-        </div>
-      )}
-
-      {currentJob && node.status === 'approved' && (
-        <p
-          className="mt-2 text-xs text-slate-400"
-          data-testid={`node-current-job-${node.id}`}
-        >
-          Current job: {Math.round(currentJob.percent)}% done
-          {currentJob.eta_seconds > 0
-            ? `, about ${Math.ceil(currentJob.eta_seconds / 60)} min left`
-            : ''}
-        </p>
-      )}
-
-      <p className="mt-1 text-sm text-slate-500">
-        {node.os || '?'}/{node.arch || '?'} · last check-in{' '}
-        {timeAgo(node.last_heartbeat_at)}
-        {node.status === 'pending' && ' · asked to join just now'}
-      </p>
-      {encoders.length > 0 && (
-        <div
-          className="mt-2 flex flex-wrap items-center gap-1"
-          data-testid={`node-encoders-${node.id}`}
-        >
-          {encoders.map((e) => (
-            <span
-              key={e.name}
-              className="rounded-md bg-slate-800 px-2 py-0.5 text-xs text-slate-300"
-            >
-              {e.name}
-            </span>
-          ))}
-          {ffmpeg && <span className="text-xs text-slate-500">{ffmpeg}</span>}
-        </div>
-      )}
+        )}
+      </div>
 
       {confirming === 'stop' && (
         <ConfirmDialog
-          title={`Stop ${node.name}?`}
+          title={`Stop ${node.name} now?`}
           confirmLabel="Stop node"
           cancelLabel="Keep running"
           busy={stop.isPending}
-          onConfirm={() => stop.mutate({ id: node.id, drain })}
+          onConfirm={() => stop.mutate({ id: node.id, drain: false })}
           onClose={() => setConfirming(null)}
           testId={`node-stop-dialog-${node.id}`}
           confirmTestId={`node-stop-confirm-${node.id}`}
           cancelTestId={`node-stop-cancel-${node.id}`}
         >
-          {drain ? (
-            <p>
-              {node.name} finishes the file it is working on first, then stops
-              and takes no new work. Nothing is deleted.
-            </p>
-          ) : currentJob ? (
+          {currentJob ? (
             <p>
               The file being worked on right now stops mid-way. Its unfinished
               temporary copy is thrown away, the job returns to the queue to try
@@ -703,15 +703,49 @@ function NodeRow({
 export default function NodesPage() {
   const client = useQueryClient()
   const toast = useToast()
-  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
+  // SSE (node.updated / job.updated) invalidates both caches; the 5s
+  // refetch is the fallback for a missed or stalled event stream. Last
+  // write wins: each refetch carries the server's current heartbeat_at.
+  const nodes = useQuery({
+    queryKey: ['nodes'],
+    queryFn: getNodes,
+    refetchInterval: 5000,
+  })
   // Distinct key from the dashboard's jobs list (different params); the
   // SSE invalidation of ['jobs'] still covers it (prefix match).
   const jobs = useQuery({
     queryKey: ['jobs', 'running'],
     queryFn: () => getJobs({ status: 'running', limit: 100 }),
+    refetchInterval: 5000,
   })
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Node | null>(null)
+
+  const refresh = () => void client.invalidateQueries({ queryKey: ['nodes'] })
+  const pauseAll = useMutation({
+    mutationFn: pauseAllNodes,
+    onSuccess: (r) => {
+      toast.success(
+        r.paused > 0
+          ? `Paused ${r.paused} node${r.paused === 1 ? '' : 's'}. Running files stop; the queue waits.`
+          : 'Everything was already paused.',
+      )
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Pausing all nodes failed', err),
+  })
+  const resumeAll = useMutation({
+    mutationFn: resumeAllNodes,
+    onSuccess: (r) => {
+      toast.success(
+        r.resumed > 0
+          ? `Resumed ${r.resumed} node${r.resumed === 1 ? '' : 's'}.`
+          : 'There is nothing remembered to resume.',
+      )
+      refresh()
+    },
+    onError: (err: unknown) => toast.failure('Resuming all nodes failed', err),
+  })
 
   const save = useMutation({
     mutationFn: (input: {
@@ -740,19 +774,57 @@ export default function NodesPage() {
       runningByNode.set(j.node_id, (runningByNode.get(j.node_id) ?? 0) + 1)
     }
   }
+  const approved = sorted.filter((n) => n.status === 'approved')
+  // Page-level controls (task 18). The switch is per node; pause-all is
+  // page level. Disabled when they would be a no-op: pausing needs
+  // something running or draining, resuming needs every node stopped —
+  // the state a pause leaves behind.
+  const anythingRunning = approved.some(
+    (n) => n.desired_state === 'running' || n.desired_state === 'draining',
+  )
+  const allStopped =
+    approved.length > 0 && approved.every((n) => n.desired_state === 'stopped')
 
   return (
     <PageContainer className="space-y-4" data-testid="nodes-page">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Nodes</h1>
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-          data-testid="nodes-add"
-        >
-          Add node
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {approved.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => pauseAll.mutate()}
+                disabled={!anythingRunning || pauseAll.isPending}
+                title={
+                  anythingRunning ? undefined : 'Nothing is running right now'
+                }
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                data-testid="nodes-pause-all"
+              >
+                {pauseAll.isPending ? 'Pausing…' : 'Pause all'}
+              </button>
+              <button
+                type="button"
+                onClick={() => resumeAll.mutate()}
+                disabled={!allStopped || resumeAll.isPending}
+                title={allStopped ? undefined : 'Stop every node first'}
+                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                data-testid="nodes-resume-all"
+              >
+                {resumeAll.isPending ? 'Resuming…' : 'Resume all'}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            data-testid="nodes-add"
+          >
+            Add node
+          </button>
+        </div>
       </div>
 
       {nodes.isPending && (
