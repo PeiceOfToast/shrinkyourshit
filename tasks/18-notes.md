@@ -70,4 +70,35 @@
 
 ## Summary
 
-(5-line summary at the end of the run)
+- Built the task-18 node control surface: an accessible on/off switch per
+  card (on = start, off = graceful `drain:true` stop, "Stop now" = the old
+  confirmed `drain:false`), one condensed live line per busy node (name
+  with full path on hover, percent bar, speed, ETA, `before → so far`),
+  per node `files_done`/`bytes_saved` in the card footer from one grouped
+  store query, and page-level Pause all / Resume all that disable when
+  they would be a no-op.
+- Backend: migration 0008 adds `jobs.bytes_so_far`; the worker stats its
+  scratch output once per progress tick and reports it; the server keeps
+  the last positive value, stamps it to `bytes_after` on complete and
+  resets it on requeue/retry; every job DTO/event now carries
+  `file_name`/`file_path` resolved from `file_id` (one file lookup,
+  nil-safe).
+- Tests: 4 new Go tests (`TestJobDTOCarriesFileName`,
+  `TestProgressStoresBytesSoFar`, `TestWorkerReportsBytesSoFar`,
+  `TestNodeStatsAggregate` — the last counts stats queries through a
+  wrapping store to prove one grouped query), `NodeJobLine.test.tsx`,
+  and reworked `NodesPage.test.tsx` (14 tests: switch, stop now,
+  pause/resume, footer totals). Full `go test ./...`, `go test
+  -tags=integration ./...` (ffmpeg present) and web suites green; Playwright
+  passes all /nodes tests at 390/768/1280 (run locally after extracting
+  chromium's missing system libs to a user dir — no sudo in this env).
+- Skipped (out of scope): library page changes (task 19), scheduling
+  policy, queue reordering. Pause/resume disabled states are UI
+  heuristics — the server's pause snapshot is not exposed (recorded
+  above); `job.updated` SSE still refreshes the live line through the
+  existing invalidation, with a 5s `refetchInterval` fallback.
+- Next task (19) should know: job DTOs now always carry
+  `file_name`/`file_path`/`bytes_so_far` (events included), so the file
+  list's per-file job history can use `GET /api/v1/jobs?file_id=…`
+  payloads as-is; node list responses always include `stats`, zeros
+  included.

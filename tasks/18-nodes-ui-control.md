@@ -26,12 +26,12 @@ Current state: `NodesPage.tsx` already renders Start and Stop buttons, a drain c
 The flow editor, library page changes (task 19), scheduling policy, queue reordering.
 
 ## Acceptance
-- [ ] `JobDTO` carries `file_name` and `file_path` for a job with a known file. (`TestJobDTOCarriesFileName`)
-- [ ] Progress reported with `bytes_so_far` is stored and returned on the job. (`TestProgressStoresBytesSoFar`, `TestWorkerReportsBytesSoFar`)
-- [ ] `GET /api/v1/nodes` includes per node `files_done` and `bytes_saved`, correct with a second node that has no finished jobs, and uses a single query. (`TestNodeStatsAggregate`)
-- [ ] The card exposes a `role="switch"` whose `aria-checked` follows `desired_state`, calling start when off and stop with `drain: true` when on. (`NodesPage.test.tsx`)
-- [ ] "Stop now" sends `drain: false` behind a confirmation. (`NodesPage.test.tsx`)
-- [ ] The live line renders name, percent with `aria-valuenow`, speed, ETA, and `before → so far`. (`NodeJobLine.test.tsx`)
-- [ ] Pause all and Resume all call the right endpoints and are disabled when redundant. (`NodesPage.test.tsx`)
-- [ ] Playwright passes at 390, 768 and 1280 on `/nodes` with no horizontal overflow.
-- [ ] `API.md` documents `file_name`, `file_path`, `bytes_so_far`, node `stats`, and that the switch maps to start and to stop with drain.
+- [x] `JobDTO` carries `file_name` and `file_path` for a job with a known file. (`TestJobDTOCarriesFileName`)
+- [x] Progress reported with `bytes_so_far` is stored and returned on the job. (`TestProgressStoresBytesSoFar`, `TestWorkerReportsBytesSoFar`)
+- [x] `GET /api/v1/nodes` includes per node `files_done` and `bytes_saved`, correct with a second node that has no finished jobs, and uses a single query. (`TestNodeStatsAggregate`)
+- [x] The card exposes a `role="switch"` whose `aria-checked` follows `desired_state`, calling start when off and stop with `drain: true` when on. (`NodesPage.test.tsx`)
+- [x] "Stop now" sends `drain: false` behind a confirmation. (`NodesPage.test.tsx`)
+- [x] The live line renders name, percent with `aria-valuenow`, speed, ETA, and `before → so far`. (`NodeJobLine.test.tsx`)
+- [x] Pause all and Resume all call the right endpoints and are disabled when redundant. (`NodesPage.test.tsx`)
+- [x] Playwright passes at 390, 768 and 1280 on `/nodes` with no horizontal overflow.
+- [x] `API.md` documents `file_name`, `file_path`, `bytes_so_far`, node `stats`, and that the switch maps to start and to stop with drain.
