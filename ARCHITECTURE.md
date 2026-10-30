@@ -57,7 +57,7 @@ Workers, local or remote            (internal/worker)
 
 Status enums are fixed strings; do not add values without updating this file.
 
-**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), watch bool, schedule (cron string or empty), result_policy, created_at, updated_at`
+**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), watch bool, schedule (cron string or empty), result_policy, created_at, updated_at`
 
 **File:** `id, library_id, path (absolute), size, mtime, fingerprint, probe (JSON), status, satisfied_reason, last_job_id, bytes_saved, created_at, updated_at`
 - `status`: `new | satisfied | queued | processing | done | failed | missing`
@@ -201,9 +201,10 @@ stopped --start--> running --stop(drain)--> draining --idle--> stopped
 - A fresh install and a completed setup wizard leave the built in node `stopped`. Encoding never starts because a wizard was finished.
 - Stopping never deletes a job. A claimed job whose worker stops returns to `queued` after the heartbeat timeout, unchanged on disk.
 
-## Flow schema (v1.2)
+## Flow schema (v1, task 14)
 
-The canonical rule object is a graph. `Target` remains as the compiled easy mode shape and is always accompanied by the generated flow.
+The canonical rule object is a graph. `Target` remains as the compiled easy
+mode shape and is always accompanied by the generated flow.
 
 ```
 Graph{ schema, nodes: [Step], edges: [Edge] }
@@ -211,11 +212,64 @@ Step{ id, type, params }
 Edge{ from, to, when }
 ```
 
-- Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`, `transcode_video`, `remux_container`, `convert_audio`, `subtitles`, `rename`, `skip_if_smaller`.
-- The server validates: unique ids, existing edge endpoints, acyclic, exactly one entry step, and per type parameters. `POST /api/v1/flows/validate` exposes the same checks so the UI never reimplements them.
-- `flow.Compile(Graph)` produces the ordered plan the worker runs. Parity with the pre-flow command builder is a test gate, not an aspiration.
-- Library rows carry `flow_json` plus `source` of `easy`, `steps` or `advanced`. When both `target` and `flow` exist, `flow` wins and a mismatch is logged.
-- The step palette ships from `GET /api/v1/flows/step-types` so the UI holds no second copy of the step list.
+- `schema` is 1. `Edge.When` is reserved for the task-15 canvas; v1
+  conditions are `if_*` guard steps, so compile ignores a non-empty `when`.
+- Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`,
+  `transcode_video`, `remux_container`, `convert_audio`, `subtitles`,
+  `rename`, `skip_if_smaller`. A graph is a single linear chain: at most one
+  edge in and one out per node, exactly one entry step of type `probe`, no
+  loops, no unreachable steps, and a guard always has a following step.
+- Parameters per type (validated with unknown-field rejection):
+  - `if_codec_not {codec: hevc|av1|h264}` — runs the next step only when
+    the video is not that codec.
+  - `if_bitrate_above {mbps: >0}` — runs the next step only above this
+    video bitrate.
+  - `transcode_video {codec: hevc|av1|h264, quality: 1..5}` — `copy` is
+    expressed by omitting the step, so it is a validation error here.
+  - `remux_container {container: mkv|mp4}` — exactly one per graph; it
+    decides the output file type, which also rejects an empty graph.
+  - `convert_audio {mode, languages, compact_codec}` — the audio policy
+    (same modes as `Target.audio`).
+  - `subtitles {mode, languages, extract_removed}` — the subtitle policy.
+  - `rename {template}` — names the produced output for keep-both results;
+    `{name}` is the original base name, `{ext}` the extension, no path
+    separators, `{name}` required.
+  - `skip_if_smaller` and `probe` take no parameters.
+- At most one step of each shaping type (transcode, container, audio,
+  subtitles, rename, skip); a graph always describes one policy.
+- `flow.Validate(Graph) []FieldError` checks all of the above; field errors
+  name the path so the UI can attach them to a row.
+- `flow.Compile(Graph) (Plan, error)` flattens the chain into ordered plan
+  steps, each carrying the conditions gathered from the guards before it.
+- `flow.ResolvePlan(plan, probe)` evaluates the conditions per file and
+  yields the effective `Target` (the shape the satisfied rule and the
+  command builder already speak) plus the flow-only outcomes:
+  - a guarded transcode that passes becomes the effective video with
+    `reencode_if_same_codec=false` when the only guards are
+    `if_codec_not` (the guard already excludes the same codec — this is
+    what makes `Compile(TargetToFlow(t))` byte-identical to `t`, the
+    parity gate); guarded by anything else, or unguarded, it runs with
+    `reencode_if_same_codec=true` (a bitrate-gated re-encode must really
+    run even on same-codec files);
+  - a skipped transcode leaves the video at copy (never re-encode);
+  - a `skip_if_smaller` step overrides the library's result policy with
+    `replace_if_smaller` for the job (flow wins);
+  - a `rename` step names the keep-both output; with replace policies it
+    cannot rename over the original, so it is logged and ignored.
+- Storage: libraries carry `flow_json` plus `flow_source` of `easy`,
+  `steps` or `advanced`. Easy mode and target-only saves keep writing
+  `target` and regenerate the equivalent flow
+  (`flow.TargetToFlow`); a target-only save with an unchanged Target
+  keeps a hand-built flow, so name/watch edits never destroy manual
+  steps. When both `target` and `flow` exist, `flow` wins and a mismatch
+  is logged at warn; `PUT /libraries/{id}/flow` re-syncs the stored Target
+  from the compiled flow so the compat column never lies. Legacy rows are
+  backfilled at startup and lazily compiled on read — no manual migration.
+- The step palette ships from `GET /api/v1/flows/step-types` so the UI
+  holds no second copy of the step list. `POST /api/v1/flows/preview`
+  renders the plain-language lines (one per compiled step) that the easy
+  screen's "what this does" panel shows; the UI never duplicates the
+  compiler.
 
 ## UI routes (v1.1)
 

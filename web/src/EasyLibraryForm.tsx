@@ -17,6 +17,7 @@ import {
   RemoveSubtitlesCheckbox,
 } from './easyControls'
 import FolderPickerModal from './FolderPickerModal'
+import FlowPreviewPanel from './FlowPreviewPanel'
 import { useToast } from './toastContext'
 
 export default function EasyLibraryForm({
@@ -108,6 +109,16 @@ export default function EasyLibraryForm({
           </span>
         </label>
       </section>
+
+      {/* The generated rule in plain language (task 14): one line per
+          step, the bridge that teaches the step stack's vocabulary. */}
+      <FlowPreviewPanel
+        easy={{
+          quality: value.quality,
+          remove_subtitles: value.remove_subtitles,
+          audio: value.audio,
+        }}
+      />
 
       {create.isError && (
         <ErrorBox

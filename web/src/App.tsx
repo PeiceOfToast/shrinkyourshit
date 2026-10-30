@@ -10,6 +10,7 @@ import LibraryEditPage from './LibraryEditPage'
 import LoginPage from './LoginPage'
 import NewLibraryPage from './NewLibraryPage'
 import NodesPage from './NodesPage'
+import RulesPage from './RulesPage'
 import EncodeSettingsPage from './EncodeSettingsPage'
 import AppSettingsPage from './AppSettingsPage'
 import SetupPage from './SetupPage'
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="libraries/new" element={<NewLibraryPage />} />
           <Route path="libraries/:id" element={<LibraryDetailPage />} />
           <Route path="libraries/:id/edit" element={<LibraryEditPage />} />
+          <Route path="libraries/:id/rules" element={<RulesPage />} />
           <Route path="nodes" element={<NodesPage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />
           <Route path="app" element={<AppSettingsPage />} />

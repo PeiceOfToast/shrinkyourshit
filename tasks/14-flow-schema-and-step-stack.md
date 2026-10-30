@@ -30,10 +30,10 @@ UI review at `docs/ui-review-2026-10-29.md` section 3. ARCHITECTURE.md (Target s
 The canvas editor (task 15), plugin steps, conditional branches beyond a single linear chain with conditions.
 
 ## Acceptance
-- [ ] Flow round trip: write a flow via the API, read it back byte identical, and the library reports `source` correctly. (`TestFlowRoundTrip`)
-- [ ] `POST /api/v1/flows/validate` returns 200 for a valid graph and 400 with a field error for a cycle, a dangling edge, an unknown step type, and a missing required parameter. (`TestFlowValidate`)
-- [ ] Parity: for every row of the easy mode table, the compiled plan matches the current command builder output exactly. (`TestEasyFlowParity`)
-- [ ] An existing library created before this task still encodes correctly with no manual migration. (`TestLegacyTargetStillRuns`)
-- [ ] The step stack editor reorders, adds, removes and saves, and a validation failure renders on the offending row. (`StepStack.test.tsx`)
-- [ ] The easy mode "what this does" panel lists one plain language line per generated step. (`EasyLibraryForm.test.tsx`)
-- [ ] API.md and ARCHITECTURE.md updated with the graph schema, the step type list and the new endpoints.
+- [x] Flow round trip: write a flow via the API, read it back byte identical, and the library reports `source` correctly. (`TestFlowRoundTrip`)
+- [x] `POST /api/v1/flows/validate` returns 200 for a valid graph and 400 with a field error for a cycle, a dangling edge, an unknown step type, and a missing required parameter. (`TestFlowValidate`)
+- [x] Parity: for every row of the easy mode table, the compiled plan matches the current command builder output exactly. (`TestEasyFlowParity`)
+- [x] An existing library created before this task still encodes correctly with no manual migration. (`TestLegacyTargetStillRuns`)
+- [x] The step stack editor reorders, adds, removes and saves, and a validation failure renders on the offending row. (`StepStack.test.tsx`)
+- [x] The easy mode "what this does" panel lists one plain language line per generated step. (`EasyLibraryForm.test.tsx`)
+- [x] API.md and ARCHITECTURE.md updated with the graph schema, the step type list and the new endpoints.

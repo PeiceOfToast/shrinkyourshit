@@ -157,10 +157,6 @@ type ErrInvalidFlow struct {
 }
 
 func (e *ErrInvalidFlow) Error() string {
-	msgs := make([]string, 0, len(e.Errors))
-	for _, fe := range e.Errors {
-		msgs = append(msgs, fe.Error())
-	}
 	return "invalid flow: " + joinFlowErrors(e.Errors)
 }
 

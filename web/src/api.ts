@@ -192,6 +192,10 @@ export interface Library {
   path: string
   target: Target
   easy: EasyInput | null
+  /** The canonical rule graph (task 14); null only on transport errors. */
+  flow: FlowGraph | null
+  /** Who owns the flow: easy, steps or advanced. */
+  flow_source: string
   watch: boolean
   schedule: string
   result_policy: string
@@ -497,4 +501,108 @@ export interface DiscoveredServer {
 
 export function getSetupServers(): Promise<{ servers: DiscoveredServer[] }> {
   return api<{ servers: DiscoveredServer[] }>('/api/v1/setup/servers')
+}
+
+/**
+ * Flow API (task 14). The graph is the canonical rule object every tier
+ * generates and edits; the server owns validation, compilation and the
+ * plain-language rendering, so the UI never hardcodes the step list twice.
+ */
+export interface FlowStep {
+  id: string
+  type: string
+  params?: Record<string, unknown>
+}
+
+export interface FlowEdge {
+  from: string
+  to: string
+  when?: string
+}
+
+export interface FlowGraph {
+  schema: number
+  nodes: FlowStep[]
+  edges: FlowEdge[]
+}
+
+export interface FlowFieldError {
+  path: string
+  message: string
+}
+
+export interface FlowResponse {
+  library_id: string
+  source: string
+  graph: FlowGraph
+}
+
+export function getLibraryFlow(id: string): Promise<FlowResponse> {
+  return api<FlowResponse>(`/api/v1/libraries/${id}/flow`)
+}
+
+export function putLibraryFlow(
+  id: string,
+  body: { source: string; graph: FlowGraph },
+): Promise<FlowResponse> {
+  return api<FlowResponse>(`/api/v1/libraries/${id}/flow`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function validateFlow(
+  graph: FlowGraph,
+): Promise<{ valid: boolean; errors?: FlowFieldError[] }> {
+  return api<{ valid: boolean; errors?: FlowFieldError[] }>(
+    '/api/v1/flows/validate',
+    { method: 'POST', body: JSON.stringify({ graph }) },
+  )
+}
+
+/** One parameter schema entry of a step type. */
+export interface StepParamField {
+  name: string
+  label: string
+  kind: 'select' | 'number' | 'text' | 'languages' | 'toggle'
+  options?: string[]
+  min?: number
+  max?: number
+  required?: boolean
+  default?: unknown
+  help?: string
+}
+
+export interface StepTypeInfo {
+  type: string
+  label: string
+  description: string
+  condition: boolean
+  params: StepParamField[]
+}
+
+export function getFlowStepTypes(): Promise<ListResponse<StepTypeInfo>> {
+  return api<ListResponse<StepTypeInfo>>('/api/v1/flows/step-types')
+}
+
+export interface FlowPreviewStep {
+  id: string
+  type: string
+  plain: string
+}
+
+export interface FlowPreviewResponse {
+  graph: FlowGraph
+  steps: FlowPreviewStep[]
+}
+
+/** POST /flows/preview: canonical graph + plain lines, nothing saved. */
+export function previewFlow(body: {
+  easy?: EasyInput
+  graph?: FlowGraph
+}): Promise<FlowPreviewResponse> {
+  return api<FlowPreviewResponse>('/api/v1/flows/preview', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }

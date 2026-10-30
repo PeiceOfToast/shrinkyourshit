@@ -140,6 +140,88 @@ describe('EasyLibraryForm', () => {
     )
   })
 
+  it('lists one plain language line per generated step in "what this does"', async () => {
+    // The server compiles the easy input; the panel shows one line per
+    // step (task 14 acceptance). The lines arrive from POST /flows/preview.
+    const steps = [
+      {
+        id: 'probe',
+        type: 'probe',
+        plain: 'Look inside the file to see what it is.',
+      },
+      {
+        id: 'transcode_video',
+        type: 'transcode_video',
+        plain:
+          'Only when the video is not HEVC: Encode the video as HEVC at quality 3 of 5.',
+      },
+      {
+        id: 'remux_container',
+        type: 'remux_container',
+        plain: 'Put everything into a MKV file.',
+      },
+      {
+        id: 'convert_audio',
+        type: 'convert_audio',
+        plain: 'Keep every audio track exactly as it is.',
+      },
+      { id: 'subtitles', type: 'subtitles', plain: 'Keep all subtitles.' },
+    ]
+    mock = installFetchMock([
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        bodyFn: (ctx) => {
+          // The preview carries the easy input the panel compiled.
+          expect(ctx.body).toMatchObject({ easy: { quality: 3, audio: 1 } })
+          return { graph: { schema: 1, nodes: [], edges: [] }, steps }
+        },
+      },
+    ])
+    renderForm()
+
+    // Collapsed by default.
+    expect(screen.queryByTestId('flow-preview')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('flow-preview-toggle'))
+
+    const lines = await waitFor(() => {
+      const els = screen.getAllByTestId('flow-preview-line')
+      expect(els).toHaveLength(steps.length)
+      return els
+    })
+    lines.forEach((line, i) => {
+      expect(line.textContent).toContain(steps[i].plain)
+    })
+  })
+
+  it('updates the preview lines when the sliders move', async () => {
+    mock = installFetchMock([
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: {
+          graph: { schema: 1, nodes: [], edges: [] },
+          steps: [
+            {
+              id: 'probe',
+              type: 'probe',
+              plain: 'Look inside the file to see what it is.',
+            },
+          ],
+        },
+      },
+    ])
+    renderForm()
+    fireEvent.click(screen.getByTestId('flow-preview-toggle'))
+    await waitFor(() => screen.getAllByTestId('flow-preview-line'))
+    // Moving the audio slider re-runs the preview with the new input.
+    fireEvent.click(screen.getByTestId('audio-stop-4'))
+    await waitFor(() => {
+      const posts = mock.calls('POST', /\/api\/v1\/flows\/preview$/)
+      expect(posts.at(-1)?.body).toMatchObject({ easy: { audio: 4 } })
+    })
+  })
+
   it('shows the failure message when the server rejects the request', async () => {
     mock = installFetchMock([
       {

@@ -53,4 +53,34 @@
 
 ## Summary
 
-(5-line summary at the end of the run.)
+- Built the canonical flow engine (`internal/flow/graph.go`, `plan.go`,
+  `targetflow.go`): graph types, validation with field-scoped errors,
+  compile to an ordered plan, per-file resolution to the effective Target,
+  the plain-language renderer and the step palette. `TargetToFlow` keeps
+  easy mode and target-only saves speaking the flow format; the parity
+  suite (unit, no ffmpeg) proves the flow path produces byte-identical
+  ffmpeg args for every easy-mode row on cpu, nvenc and qsv.
+- Storage and server: `flow_json`/`flow_source` columns (migration 0007),
+  startup backfill plus lazy compile for legacy rows (TestLegacyTargetStillRuns
+  proves no manual migration), scanner/re-evaluate resolve per file, job
+  specs carry the graph, transfer-mode container/policy/rename follow the
+  flow; a stored target-vs-flow mismatch is logged at warn.
+- Worker: consumes `Compile` + `ResolvePlan` — one path; the resolved
+  target, skip_if_smaller policy override and rename template drive the
+  encode and result apply. The old separate Target branch is gone (the
+  JobSpec always carries a flow now; a missing flow falls back defensively
+  to the spec Target).
+- API: GET/PUT `/libraries/{id}/flow`, `POST /flows/validate`,
+  `GET /flows/step-types`, plus `POST /flows/preview` (added per AGENTS
+  rule 4 — the easy screen's live "what this does" panel compiles
+  server-side, so the UI never duplicates the compiler). API.md and
+  ARCHITECTURE.md updated.
+- UI: `RulesPage` at `/libraries/:id/rules` with the Easy/Steps/Advanced
+  tier selector (backwards switching warns about lost manual steps), the
+  step stack editor (drag + up/down reorder, add from palette, remove,
+  params, chips, condition text, row-scoped validation errors), and
+  `FlowPreviewPanel` on the easy form. Skipped: the canvas (task 15) and
+  transfer-mode subtitle-extract upload (pre-existing task-09 limitation,
+  logged). Next task should know: `Edge.When` is reserved (compile
+  ignores it) and flows require exactly one `remux_container` step.
+

@@ -189,6 +189,13 @@ export default function LibraryDetailPage() {
         </div>
         <div className="flex gap-2">
           <Link
+            to={`/libraries/${lib.id}/rules`}
+            className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700"
+            data-testid="library-detail-rules"
+          >
+            Rules
+          </Link>
+          <Link
             to={`/libraries/${lib.id}/edit`}
             className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700"
             data-testid="library-detail-edit"
