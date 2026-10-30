@@ -139,3 +139,8 @@ self updating a container image from inside the container, update UI
   actions scope (same block the PM logged on 2026-10-29T02:46:14Z), so
   the dry run needs one click from the owner/PM (Actions tab → release →
   Run workflow, on main after merge, or on this branch before it).
+- CI on the PR: run 41009567692 green on all eight jobs (go, web, docker,
+  e2e, installer, installer-powershell, report and the new cross job).
+  The first run failed only the installer job — scripts/test-installer.sh
+  still pinned `Restart=on-failure`; the assertion now expects
+  `Restart=always` (task 16's unit requirement), second run green.
