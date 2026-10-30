@@ -23,9 +23,9 @@ UI review at `docs/ui-review-2026-10-29.md` section 3. ARCHITECTURE.md (flow sch
 Branching beyond conditions, loops, custom code steps, collaborative editing, undo history beyond a single step undo.
 
 ## Acceptance
-- [ ] The flow for an easy mode library renders read only with the correct number of nodes and edges, on the same graph object the API returns. (`FlowCanvas.test.tsx`)
-- [ ] Adding a step, connecting it, and saving persists it, and `GET /api/v1/libraries/{id}/flow` returns `source=advanced`. (`TestFlowCanvasSave`, plus a Go round trip)
-- [ ] An invalid edit (an orphan node or a missing parameter) shows the server's field error on the node and blocks Save. (`FlowCanvas.test.tsx`)
-- [ ] Switching a Steps library to Advanced keeps every step; switching back to Steps warns that manual graph structure will be lost. (`RulesPage.test.tsx`)
-- [ ] The palette is built from the API response, verified by adding a step type in a test fixture and seeing it appear. (`FlowCanvas.test.tsx`)
-- [ ] No regression: the easy mode and step stack editors still pass their tests and still produce identical compiled plans.
+- [x] The flow for an easy mode library renders read only with the correct number of nodes and edges, on the same graph object the API returns. (`FlowCanvas.test.tsx`)
+- [x] Adding a step, connecting it, and saving persists it, and `GET /api/v1/libraries/{id}/flow` returns `source=advanced`. (`TestFlowCanvasSave`, plus a Go round trip)
+- [x] An invalid edit (an orphan node or a missing parameter) shows the server's field error on the node and blocks Save. (`FlowCanvas.test.tsx`)
+- [x] Switching a Steps library to Advanced keeps every step; switching back to Steps warns that manual graph structure will be lost. (`RulesPage.test.tsx`)
+- [x] The palette is built from the API response, verified by adding a step type in a test fixture and seeing it appear. (`FlowCanvas.test.tsx`)
+- [x] No regression: the easy mode and step stack editors still pass their tests and still produce identical compiled plans.

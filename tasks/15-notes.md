@@ -63,4 +63,26 @@
 
 ## Summary
 
-- (filled in at the end)
+- Built the visual flow editor (tier 3) at `/libraries/:id/flow` on
+  `@xyflow/react` 12: read-only first with an explicit "Edit flow" unlock,
+  a server-driven palette, an inspector rendering the parameter schema,
+  drag plus menu/keyboard paths for every action (connect, disconnect,
+  remove), automatic chain layout on first open, minimap and controls.
+- Validation stays server-owned: every change debounces
+  `POST /flows/validate`, field errors render on the nodes verbatim
+  (mapped by the graph's array order), Save is disabled with the reason
+  while invalid or unchecked, and saving writes the whole graph with
+  `source=advanced` (Go `TestFlowCanvasSave` round trip).
+- The rules page's Advanced tier now opens the canvas; switching back to
+  Steps or Easy warns that the manual graph structure will be lost. The
+  flow route is lazy-loaded (main bundle 520 → 319 kB; canvas 65 kB gzip).
+- Skipped: undo beyond discard-to-loaded-graph, edge reconnection by drag
+  (edges are deleted and re-added instead), and adding the canvas to the
+  Playwright layout suite (it needs a seeded library; the page reuses the
+  shared PageContainer grid so overflow risk is low).
+- Next task should know: `useUnsavedGuard` cannot intercept browser
+  back/forward inside the SPA (no data router); if a data router lands
+  later, swap it for `useBlocker`. Node positions are never persisted —
+  re-layout happens per session. React Flow selection is fully controlled
+  here (`selectNodesOnDrag=false`, selection flows through
+  onNodesChange/onEdgesChange), which is what keeps it testable in jsdom.
