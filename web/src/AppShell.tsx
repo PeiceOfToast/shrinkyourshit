@@ -6,7 +6,9 @@
  * - Under `md`: a top bar with the product name, a menu button that opens
  *   the nav as a slide-over drawer, and a live job indicator. The drawer
  *   closes on route change and on Escape.
- * - `md` and up: the left rail, collapsible to icons.
+ * - `md` and up: the left rail. It shows labels at `lg` and up and icons
+ *   only below that (task 21); the toggle sets an explicit override that
+ *   sticks across reloads in `localStorage` under `sys.rail`.
  *
  * The shell paints `min-h-dvh` so mobile browser chrome cannot clip it;
  * the page background itself is painted on html/body (index.css) so no
@@ -232,9 +234,30 @@ function PauseAllSwitch() {
 export default function AppShell() {
   const health = useQuery({ queryKey: ['health'], queryFn: getHealth })
   const isDesktop = useMediaQuery('(min-width: 768px)')
+  const wide = useMediaQuery('(min-width: 1024px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [railCollapsed, setRailCollapsed] = useState(false)
   const location = useLocation()
+
+  // The rail collapses itself below lg (task 21). `auto` follows the
+  // viewport; an explicit toggle wins until it is toggled back, and the
+  // choice survives a reload via localStorage. Anything unrecognised in
+  // storage is treated as auto, not as a choice.
+  const [override, setOverride] = useState<'auto' | 'expanded' | 'collapsed'>(
+    () => {
+      const saved =
+        typeof localStorage === 'undefined'
+          ? null
+          : localStorage.getItem('sys.rail')
+      return saved === 'expanded' || saved === 'collapsed' ? saved : 'auto'
+    },
+  )
+  const showLabels = override === 'auto' ? wide : override === 'expanded'
+
+  function toggleRail() {
+    const next = showLabels ? 'collapsed' : 'expanded'
+    setOverride(next)
+    localStorage.setItem('sys.rail', next)
+  }
 
   // The drawer closes on every route change, including plain link clicks.
   useEffect(() => {
@@ -258,36 +281,33 @@ export default function AppShell() {
       {isDesktop && (
         <aside
           className={`flex shrink-0 flex-col border-r border-slate-800 bg-slate-900 ${
-            railCollapsed ? 'w-16' : 'w-56'
+            showLabels ? 'w-56' : 'w-16'
           }`}
           data-testid="nav-rail"
         >
-          <div
-            className={`py-5 ${railCollapsed ? 'px-2 text-center' : 'px-4'}`}
-          >
-            {railCollapsed ? (
+          <div className={`py-5 ${showLabels ? 'px-4' : 'px-2 text-center'}`}>
+            {showLabels ? (
+              brand
+            ) : (
               <span
                 className="text-lg font-bold tracking-tight"
                 title="ShrinkYourShit"
               >
                 SYS
               </span>
-            ) : (
-              brand
             )}
           </div>
-          <NavLinks showLabels={!railCollapsed} />
-          <div className={`mt-auto p-3 ${railCollapsed ? 'px-2' : ''}`}>
+          <NavLinks showLabels={showLabels} />
+          <div className={`mt-auto p-3 ${showLabels ? '' : 'px-2'}`}>
             <button
               type="button"
-              onClick={() => setRailCollapsed((c) => !c)}
-              aria-label={
-                railCollapsed ? 'Expand navigation' : 'Collapse navigation'
-              }
+              onClick={toggleRail}
+              aria-label={showLabels ? 'Collapse navigation' : 'Show labels'}
+              aria-expanded={showLabels}
               className="flex min-h-[44px] w-full items-center justify-center rounded-lg px-3 text-slate-400 hover:bg-slate-800 hover:text-white"
               data-testid="nav-toggle"
             >
-              <Icon path={railCollapsed ? ICONS.expand : ICONS.collapse} />
+              <Icon path={showLabels ? ICONS.collapse : ICONS.expand} />
             </button>
           </div>
         </aside>

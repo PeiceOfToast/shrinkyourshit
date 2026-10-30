@@ -23,6 +23,7 @@ import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
 import { formatBytes, formatEta, statusLabel } from './easyModel'
 import { useUpdateStatus } from './queries'
 import { Skeleton, SkeletonRows, SkeletonStatCards } from './skeleton'
+import StatCard from './StatCard'
 
 function progressWidth(percent: number): string {
   return `${Math.max(0, Math.min(100, percent))}%`
@@ -241,47 +242,32 @@ export default function DashboardPage() {
       {stats.isPending ? (
         <SkeletonStatCards />
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div
-            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-            data-testid="stat-space-saved"
-          >
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Space saved
-            </p>
-            <p className="mt-1 text-xl font-bold text-emerald-400">
-              {formatBytes(stats.data?.bytes_saved ?? 0)}
-            </p>
-          </div>
-          <div
-            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-            data-testid="stat-files"
-          >
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Files
-            </p>
-            <p className="mt-1 text-xl font-bold">{stats.data?.files ?? 0}</p>
-          </div>
-          <div
-            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-            data-testid="stat-satisfied"
-          >
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Nothing to do
-            </p>
-            <p className="mt-1 text-xl font-bold">
-              {stats.data?.satisfied ?? 0}
-            </p>
-          </div>
-          <div
-            className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-            data-testid="stat-queued"
-          >
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Waiting
-            </p>
-            <p className="mt-1 text-xl font-bold">{stats.data?.queued ?? 0}</p>
-          </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+          <StatCard
+            testid="stat-space-saved"
+            label="Space saved"
+            tone="good"
+            value={formatBytes(stats.data?.bytes_saved ?? 0)}
+            icon="M4 17l6-6 4 4 6-6"
+          />
+          <StatCard
+            testid="stat-files"
+            label="Files"
+            value={stats.data?.files ?? 0}
+            icon="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
+          />
+          <StatCard
+            testid="stat-satisfied"
+            label="Nothing to do"
+            value={stats.data?.satisfied ?? 0}
+            icon="M20 6 9 17l-5-5"
+          />
+          <StatCard
+            testid="stat-queued"
+            label="Waiting"
+            value={stats.data?.queued ?? 0}
+            icon="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+          />
         </div>
       )}
 

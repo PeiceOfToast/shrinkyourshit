@@ -284,7 +284,7 @@ Edge{ from, to, when }
 | `/encode` | Encode settings | codec, quality, container, audio, subtitles, result policy |
 | `/app` | App settings | server, auth, paths, logs, about |
 
-Shell rules: under `md` the nav is a drawer behind a top bar, at `md` and up it is the left rail. The page background is painted on `html, body` so no region outside the shell renders white. Every page uses one container, `mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8`. `settings` redirects to `app`.
+Shell rules: under `md` the nav is a drawer behind a top bar, at `md` and up it is the left rail. The rail shows labels at `lg` and up and icons only below that; the toggle writes an explicit override to `localStorage` under `sys.rail` (`expanded`/`collapsed`; anything else means auto). Stat tiles use `clamp()` type and scale with the viewport (`web/src/StatCard.tsx`). The page background is painted on `html, body` so no region outside the shell renders white. Every page uses one container, `mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8`. `settings` redirects to `app`.
 
 ## Update path
 
