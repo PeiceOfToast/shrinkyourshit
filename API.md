@@ -13,7 +13,7 @@ Shared contract for all tasks. Add endpoints here when a task introduces them; d
   - **Admin (UI):** session cookie `sys_session`, HttpOnly, SameSite=Lax. When login is disabled, every admin endpoint is open.
   - **Node (workers):** header `Authorization: Bearer <node-key>`. The built-in worker uses a key generated at first run and stored in the data dir.
 - Admin endpoints never accept node keys and node endpoints never accept session cookies.
-- Events: `GET /api/v1/events` is Server-Sent Events. Each event has `event: <type>` and `data: <json>`. Types: `file.updated`, `job.updated`, `node.updated`, `library.updated`.
+- Events: `GET /api/v1/events` is Server-Sent Events. Each event has `event: <type>` and `data: <json>`. Types: `file.updated`, `job.updated`, `node.updated`, `library.updated`, `update.progress`, `update.succeeded`, `update.failed` (the update events are task 17).
 
 ## Endpoints by task
 
@@ -403,8 +403,41 @@ No new endpoints. The canvas uses `GET` and `PUT /api/v1/libraries/{id}/flow`, `
 
 Details:
 
-- Progress streams on the existing events channel as `update.progress`, `update.succeeded` and `update.failed`.
-- The status endpoint never blocks on the network at startup; the first answer may be `{update_available: false, reason: "not checked yet"}`.
+- `GET /api/v1/version` — `update_check_enabled` and `channel` mirror the
+  settings (`update_check`, `update_channel`; defaults `true` / `stable`
+  when no server is wired). Runtime detection (`/.dockerenv`,
+  `SHRINK_IN_CONTAINER=1`) is the single source both the version and the
+  update endpoints read.
+- `GET /api/v1/update/status` never blocks on the network at startup; the
+  first answer may be `{update_available: false, reason: "not checked
+  yet"}`. `reason` priorities: the self-update fix (container: the exact
+  `docker compose pull` / `docker compose up -d` lines plus the image name
+  `ghcr.io/peiceoftoast/shrinkyourshit`; dev build `v0.0.0`: rebuild
+  note; read-only install folder: permission note) wins over a failed
+  check ("Could not check for updates: …") and an up-to-date check
+  ("already on the latest release"). `published_at` is RFC 3339.
+  `update_available` is tag inequality, the same comparison `shrink
+  update` uses.
+- The status response carries an optional `progress` snapshot
+  (`{active, stage, error}`) while an in-app apply has run in this
+  process: `active` is true until the apply finishes, `stage` is the last
+  progress stage (`checking`, `backup`, `downloading`, `verifying`,
+  `swapping`, then `done` on success), and `error` is the failure text of
+  a failed apply.
+- Progress streams on the existing events channel as `update.progress`
+  (`{stage}`), `update.succeeded` (`{from, to}`) and `update.failed`
+  (`{error}`).
+- `POST /api/v1/update/check` — `200` with the fresh status document. The
+  refresh is rate limited to once per minute (the background startup
+  check counts toward the same window); `429 {"code":"rate_limited"}`
+  beyond it. A failed network check is a `200` whose status carries the
+  quiet reason — only the rate limit is an error status.
+- `POST /api/v1/update/apply` — `202 {"started": true}` on a binary
+  install; the update then runs in the background (events above) and the
+  process restarts itself onto the new binary once it succeeds. Refused
+  with `409 {"code":"self_update_unsupported"}` and the fix in `error`
+  for containers, dev builds and read-only install folders, and with
+  `409 {"code":"update_in_progress"}` while another apply runs.
 - Nothing in this API applies an update on its own. There is no auto apply endpoint and none is planned.
 
 ### Task 18

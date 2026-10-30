@@ -63,7 +63,12 @@ type apiHarness struct {
 	mux    http.Handler
 }
 
-func newAPIHarness(t *testing.T) *apiHarness {
+// newAPIHarness is a full stack (store + server services + API handler) for
+// endpoint tests. It does NOT start background scanning: the library
+// create-scan hook is disabled and tests scan via the API. Optional
+// mutators tweak the server config before construction (the update tests
+// wire the update service this way).
+func newAPIHarness(t *testing.T, mutators ...func(*server.Config)) *apiHarness {
 	t.Helper()
 	h := &apiHarness{
 		t:      t,
@@ -77,7 +82,7 @@ func newAPIHarness(t *testing.T) *apiHarness {
 	t.Cleanup(func() { _ = st.Close() })
 	h.st = st
 
-	h.svc = server.New(server.Config{
+	cfg := server.Config{
 		Store:             st,
 		Prober:            h.stated.Probe,
 		Debounce:          200 * time.Millisecond,
@@ -86,7 +91,11 @@ func newAPIHarness(t *testing.T) *apiHarness {
 		HeartbeatTimeout:  time.Hour,
 		WatchPollInterval: time.Hour,
 		ScratchDir:        filepath.Join(t.TempDir(), "scratch"),
-	})
+	}
+	for _, m := range mutators {
+		m(&cfg)
+	}
+	h.svc = server.New(cfg)
 	h.svc.Libraries().SetScanHook(func(string) {})
 	h.svc.Start(context.Background())
 	t.Cleanup(h.svc.Stop)

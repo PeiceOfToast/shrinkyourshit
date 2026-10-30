@@ -37,6 +37,7 @@ import (
 // cmd/shrinkyourshit). On any failure before the swap, nothing on disk
 // changed but the scratch dir.
 func Apply(ctx context.Context, opts Options) (Applied, error) {
+	opts.progress(StageChecking)
 	if IsContainer() {
 		return Applied{}, &ContainerError{Instruction: composePullInstruction}
 	}
@@ -53,6 +54,7 @@ func Apply(ctx context.Context, opts Options) (Applied, error) {
 	}
 
 	log := opts.logger()
+	opts.progress(StageBackup)
 	backupPath, err := backupDatabase(ctx, opts, rel.Tag)
 	if err != nil {
 		return Applied{}, fmt.Errorf("update: database backup: %w", err)
@@ -69,6 +71,7 @@ func Apply(ctx context.Context, opts Options) (Applied, error) {
 	if err != nil {
 		return Applied{}, err
 	}
+	opts.progress(StageSwapping)
 	prev, err := swapBinary(exe, newBin)
 	if err != nil {
 		return Applied{}, fmt.Errorf("update: swap binary: %w", err)
@@ -109,10 +112,12 @@ func fetchAndVerify(ctx context.Context, opts Options, rel Release) (string, err
 		return "", fmt.Errorf("update: %w (%s)", ErrNoChecksumEntry, asset.Name)
 	}
 
+	opts.progress(StageDownloading)
 	archivePath := filepath.Join(work, asset.Name)
 	if err := downloadFile(ctx, opts, asset.URL, archivePath); err != nil {
 		return "", fmt.Errorf("update: download %s: %w", asset.Name, err)
 	}
+	opts.progress(StageVerifying)
 	actual, err := fileSHA256(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("update: hash %s: %w", asset.Name, err)

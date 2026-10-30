@@ -30,6 +30,9 @@ type API struct {
 	version string
 	commit  string
 	date    string
+	// runtimeFn overrides the runtime the version endpoint reports
+	// (task 17); nil uses update.Runtime().
+	runtimeFn func() string
 	// logins rate-limits failed login attempts per IP (task 06).
 	logins *loginLimiter
 	// join records a setup "join" decision (task 08); main owns the
@@ -62,6 +65,12 @@ func WithBuiltinNode(nodeID string) Option {
 // reports.
 func WithBuild(commit, date string) Option {
 	return func(a *API) { a.commit, a.date = commit, date }
+}
+
+// WithRuntime overrides the runtime string /api/v1/version reports
+// (task 17 tests); nil keeps update.Runtime().
+func WithRuntime(fn func() string) Option {
+	return func(a *API) { a.runtimeFn = fn }
 }
 
 // New builds the root HTTP handler. version is reported by /api/v1/health;
@@ -130,6 +139,13 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("GET /api/v1/flows/step-types", a.requireAdmin(a.stepTypes))
 		mux.HandleFunc("POST /api/v1/flows/preview", a.requireAdmin(a.previewFlow))
 
+		// Update check and in-app apply (task 17). The version endpoint
+		// carries the update settings; the status endpoint answers from
+		// the last check without touching the network.
+		mux.HandleFunc("GET /api/v1/update/status", a.requireAdmin(a.updateStatus))
+		mux.HandleFunc("POST /api/v1/update/check", a.requireAdmin(a.updateCheck))
+		mux.HandleFunc("POST /api/v1/update/apply", a.requireAdmin(a.updateApply))
+
 		// Node administration (task 08) plus lifecycle controls (task 11).
 		// The lifecycle endpoints move desired_state only: start sets
 		// running, stop chooses stopped or draining, pause-all/resume-all
@@ -188,22 +204,49 @@ func health(version string) http.HandlerFunc {
 }
 
 // versionResponse is the /api/v1/version body (API.md, task 16): the full
-// build identity plus how this install runs (binary or container).
-// Task 17 adds the update check fields to this endpoint.
+// build identity plus how this install runs (binary or container). Task 17
+// adds the update check fields to this endpoint.
 type versionResponse struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit"`
 	Date    string `json:"date"`
 	Runtime string `json:"runtime"`
+	// Task 17: whether automatic update checks are on and which release
+	// feed is configured. Defaults apply when no server is wired.
+	UpdateCheckEnabled bool   `json:"update_check_enabled"`
+	Channel            string `json:"channel"`
 }
 
 func (a *API) buildVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, versionResponse{
+	out := versionResponse{
 		Version: a.version,
 		Commit:  a.commit,
 		Date:    a.date,
-		Runtime: update.Runtime(),
-	})
+		// Settings defaults; a wired server overrides these below.
+		UpdateCheckEnabled: server.DefaultUpdateCheck,
+		Channel:            update.ChannelStable,
+	}
+	// The runtime comes from the update service when one is wired, so the
+	// version and update-status endpoints always agree (one override in
+	// tests); without a server the API-level override applies.
+	if a.svc != nil {
+		out.Runtime = a.svc.Update().Runtime()
+		if values, err := a.svc.Settings().Get(r.Context()); err == nil {
+			out.UpdateCheckEnabled = values.UpdateCheck
+			out.Channel = values.UpdateChannel
+		}
+	} else {
+		out.Runtime = a.runtime()
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// runtime returns how this install runs, honouring the test override.
+func (a *API) runtime() string {
+	if a.runtimeFn != nil {
+		return a.runtimeFn()
+	}
+	return update.Runtime()
 }
 
 // apiNotFound returns JSON errors for unknown API paths instead of the HTML

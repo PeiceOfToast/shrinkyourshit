@@ -37,6 +37,22 @@ const (
 // update (a container image cannot meaningfully replace its own file).
 const composePullInstruction = "docker compose pull && docker compose up -d"
 
+// composeImage is the container image releases are published to
+// (STACK.md). The in-app update UI shows it with the pull commands.
+const composeImage = "ghcr.io/peiceoftoast/shrinkyourshit"
+
+// ContainerReason is the human-facing why-and-how for a container install:
+// self update is impossible and the fix is the exact host-side commands.
+// The update-status endpoint reports it as the reason, and a refused
+// apply carries it in the error message.
+func ContainerReason() string {
+	return "This app runs in a container, so it cannot update itself. " +
+		"Update it from the host instead:\n" +
+		"docker compose pull\n" +
+		"docker compose up -d\n" +
+		"(image: " + composeImage + ")"
+}
+
 // IsContainer reports whether this process runs inside a container:
 // /.dockerenv exists or SHRINK_IN_CONTAINER=1 (ARCHITECTURE.md).
 func IsContainer() bool {
@@ -90,9 +106,23 @@ type Options struct {
 	Now func() time.Time
 	// Executable overrides os.Executable (tests only).
 	Executable func() (string, error)
+	// Progress receives one call per apply stage (the Stage constants),
+	// just before that stage starts. Nil is fine; the in-app UI (task 17)
+	// turns the calls into update.progress events.
+	Progress func(stage string)
 	// Log receives progress; nil falls back to slog.Default().
 	Log *slog.Logger
 }
+
+// Stage names reported through Options.Progress during Apply, in the
+// order they run.
+const (
+	StageChecking    = "checking"
+	StageBackup      = "backup"
+	StageDownloading = "downloading"
+	StageVerifying   = "verifying"
+	StageSwapping    = "swapping"
+)
 
 // Applied is the result of a successful update.
 type Applied struct {
@@ -138,6 +168,14 @@ func (o Options) logger() *slog.Logger {
 		return o.Log
 	}
 	return slog.Default()
+}
+
+// progress reports one apply stage when a Progress hook is set; a panic
+// or blocking callback would stall the update, so callers keep it cheap.
+func (o Options) progress(stage string) {
+	if o.Progress != nil {
+		o.Progress(stage)
+	}
 }
 
 // now returns the (overridable) current time.

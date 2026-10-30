@@ -12,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import DashboardPage from './DashboardPage'
 import { LiveEvents } from './events'
+import { updateStatusKey } from './queries'
 import {
   FakeEventSource,
   installFetchMock,
@@ -103,10 +104,22 @@ function nodeFixture(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function renderDashboard(withEvents = false) {
+function renderDashboard(
+  withEvents = false,
+  updateStatus: Record<string, unknown> = {
+    current: 'v1.0.0',
+    update_available: false,
+    self_update_supported: true,
+    reason: 'already on the latest release',
+  },
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  // The update status (task 17) is seeded so the warning logic is the
+  // only thing under test here; the update-specific flow lives in the
+  // AboutCard tests.
+  client.setQueryData(updateStatusKey, updateStatus)
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
@@ -463,6 +476,47 @@ describe('DashboardPage', () => {
     renderDashboard()
     await waitFor(() => expect(screen.getByTestId('dashboard')).toBeTruthy())
     expect(screen.queryByTestId('dashboard-warnings')).not.toBeInTheDocument()
+  })
+
+  it('warns about an available update and points at the About card (task 17)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/update\/status$/,
+        body: {
+          current: 'v1.0.0',
+          latest: 'v1.1.0',
+          update_available: true,
+          self_update_supported: true,
+          release_url: 'https://example.com/releases/tag/v1.1.0',
+        },
+      },
+    ])
+
+    renderDashboard(true, undefined)
+    const warning = await waitFor(() =>
+      screen.getByTestId('warning-update-available'),
+    )
+    expect(warning).toHaveTextContent('Version v1.1.0 is available')
+    expect(
+      screen.getByRole('link', { name: 'Go to App settings' }),
+    ).toHaveAttribute('href', '/app')
   })
 
   it('does not open a stream when the page fails to load', async () => {

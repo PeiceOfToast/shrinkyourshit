@@ -26,9 +26,9 @@ API.md (task 17), ARCHITECTURE.md (update path). Depends on task 16 and task 10 
 Auto apply on a schedule, staged rollouts, telemetry about which versions are in use.
 
 ## Acceptance
-- [ ] `GET /api/v1/version` reports the right runtime for a binary and inside the container. (`TestVersionEndpoint`)
-- [ ] `GET /api/v1/update/status` reports `update_available` correctly against a fixture release, and `self_update_supported` is false in a container with a reason that names the fix. (`TestUpdateStatus`)
-- [ ] `POST /api/v1/update/apply` is refused with 409 and the instruction text inside a container, and starts a streamed update for a binary install. (`TestApplyRefusedInContainer`, `TestApplyEmitsProgressEvents`)
-- [ ] The About card renders the version, the runtime, and the right action for each runtime. (`AboutCard.test.tsx`)
-- [ ] The app starts and serves normally with no network access; the update card shows a quiet failure and nothing else changes. (`TestOfflineStartup`)
-- [ ] No path applies an update without an explicit click, verified by a test that asserts no apply call happens on load. (`AboutCard.test.tsx`)
+- [x] `GET /api/v1/version` reports the right runtime for a binary and inside the container. (`TestVersionEndpoint`)
+- [x] `GET /api/v1/update/status` reports `update_available` correctly against a fixture release, and `self_update_supported` is false in a container with a reason that names the fix. (`TestUpdateStatus`)
+- [x] `POST /api/v1/update/apply` is refused with 409 and the instruction text inside a container, and starts a streamed update for a binary install. (`TestApplyRefusedInContainer`, `TestApplyEmitsProgressEvents`)
+- [x] The About card renders the version, the runtime, and the right action for each runtime. (`AboutCard.test.tsx`)
+- [x] The app starts and serves normally with no network access; the update card shows a quiet failure and nothing else changes. (`TestOfflineStartup`)
+- [x] No path applies an update without an explicit click, verified by a test that asserts no apply call happens on load. (`AboutCard.test.tsx`)

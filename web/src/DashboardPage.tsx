@@ -21,6 +21,7 @@ import {
 import PageContainer from './PageContainer'
 import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
 import { formatBytes, formatEta, statusLabel } from './easyModel'
+import { useUpdateStatus } from './queries'
 import { Skeleton, SkeletonRows, SkeletonStatCards } from './skeleton'
 
 function progressWidth(percent: number): string {
@@ -197,6 +198,7 @@ export default function DashboardPage() {
     queryFn: () => getJobs({ order: 'desc', limit: 50 }),
   })
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
+  const update = useUpdateStatus()
 
   if (libraries.data && libraries.data.total === 0) {
     return (
@@ -224,6 +226,10 @@ export default function DashboardPage() {
     jobs: allJobs,
     stats: { queued: stats.data?.queued ?? 0 },
     now: Date.now(),
+    // Quiet when the check failed or has not run (task 17).
+    update: update.data
+      ? { available: update.data.update_available, version: update.data.latest }
+      : undefined,
   })
 
   return (

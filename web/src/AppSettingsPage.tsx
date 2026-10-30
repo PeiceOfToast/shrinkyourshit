@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings, updateSettings, type SettingsUpdate } from './api'
+import AboutCard from './AboutCard'
 import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
@@ -290,6 +291,8 @@ export default function AppSettingsPage() {
       >
         {save.isPending ? 'Saving…' : 'Save settings'}
       </button>
+
+      <AboutCard />
     </PageContainer>
   )
 }

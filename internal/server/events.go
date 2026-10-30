@@ -14,6 +14,11 @@ const (
 	EventJobUpdated     = "job.updated"
 	EventNodeUpdated    = "node.updated"
 	EventLibraryUpdated = "library.updated"
+	// The in-app update (task 17): progress carries the stage name,
+	// succeeded and failed carry the outcome.
+	EventUpdateProgress  = "update.progress"
+	EventUpdateSucceeded = "update.succeeded"
+	EventUpdateFailed    = "update.failed"
 )
 
 // Event is one SSE message: the type plus pre-marshaled JSON data.

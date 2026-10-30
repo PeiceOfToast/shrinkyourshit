@@ -14,6 +14,11 @@ const EVENT_QUERY_KEYS: Record<string, string[][]> = {
   'file.updated': [['files'], ['stats']],
   'library.updated': [['libraries'], ['library'], ['stats']],
   'node.updated': [['nodes']],
+  // The in-app update (task 17): progress, success and failure all change
+  // what the About card and the dashboard warning show.
+  'update.progress': [['update-status']],
+  'update.succeeded': [['update-status']],
+  'update.failed': [['update-status']],
 }
 
 /**
