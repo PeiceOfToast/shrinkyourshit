@@ -8,7 +8,8 @@
 # Subcommands:
 #   build <version> [dist-dir]  cross compile all five targets, embedding
 #                               version, commit and build date via ldflags
-#   package [dist-dir]          archive each binary and write checksums.txt
+#   package [dist-dir]          archive each binary, then write checksums.txt
+#   checksums [dist-dir]        write checksums.txt over the archives present
 #   verify [dist-dir]           re-hash every archive against checksums.txt
 #
 # Artifact names (STACK.md release section):
@@ -84,6 +85,11 @@ cmd_package() {
 				;;
 		esac
 	done
+	cmd_checksums "$dist"
+}
+
+cmd_checksums() {
+	dist="${1:-dist}"
 	# checksums.txt over every archive, sha256sum format (two spaces).
 	{
 		for a in "$dist"/*.tar.gz "$dist"/*.zip; do
@@ -132,6 +138,7 @@ cmd_verify() {
 case "${1:-}" in
 	build) shift; cmd_build "$@" ;;
 	package) shift; cmd_package "$@" ;;
+	checksums) shift; cmd_checksums "$@" ;;
 	verify) shift; cmd_verify "$@" ;;
 	*) usage ;;
 esac
