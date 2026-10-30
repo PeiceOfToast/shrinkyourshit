@@ -286,6 +286,17 @@ Edge{ from, to, when }
 
 Shell rules: under `md` the nav is a drawer behind a top bar, at `md` and up it is the left rail. The rail shows labels at `lg` and up and icons only below that; the toggle writes an explicit override to `localStorage` under `sys.rail` (`expanded`/`collapsed`; anything else means auto). Stat tiles use `clamp()` type and scale with the viewport (`web/src/StatCard.tsx`). The page background is painted on `html, body` so no region outside the shell renders white. Every page uses one container, `mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8`. `settings` redirects to `app`.
 
+Layout rules: every interactive control is at least 44px tall (`web/src/uiControls.ts`).
+Tables above `sm` render as cards below it via `web/src/DataList.tsx`. Stat tiles use
+`clamp()` type and scale with the viewport (`web/src/StatCard.tsx`). The rail auto
+collapses below `lg` and remembers an explicit override in `localStorage` under `sys.rail`.
+The flow canvas (`/libraries/:id/flow`) is view only below `md`: no palette, inspector
+or edit controls, just `flow-mobile-notice` plus the canvas with pan/pinch zoom; editing
+state is `requested && wide`, so a resize mid-edit degrades to viewing with the unsaved
+guard armed, and the step-types `params` is normalized to `[]` client-side (`web/src/api.ts`).
+`web/e2e/mobile.spec.ts` fails CI on any horizontal overflow or sub 44px control at
+320, 390, 414 and 768 px, including the library detail and flow routes.
+
 ## Update path
 
 Three install shapes, three update paths, and the app always says which one applies.

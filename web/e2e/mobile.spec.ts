@@ -21,11 +21,22 @@
  * loop), it must start icons only below `lg`, the toggle must show the
  * labels again, and the expanded rail must not overflow the page.
  *
+ * Task 22 adds the flow canvas: the library id is fetched at runtime from
+ * the API (not the setup env var), the flow page is audited at every
+ * width — it is view only below md, so no editing UI may render — and the
+ * Zoom In control must actually move the viewport at phone widths. Both
+ * routes skip cleanly when the server has no libraries.
+ *
  * Runs only under the `phone` project (playwright.config.ts sets
  * `testIgnore` on the other two projects, which exist for layout.spec);
  * the widths are set per test below.
  */
-import { expect, test, type Page } from '@playwright/test'
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from '@playwright/test'
 
 const WIDTHS = [320, 390, 414, 768]
 
@@ -93,6 +104,23 @@ async function settle(page: Page, settled: string): Promise<void> {
   }
 }
 
+/**
+ * The id of the seeded library, fetched at runtime from the API (task 22)
+ * instead of trusting the setup env var. Empty when the server has no
+ * libraries — the detail and flow audits then skip, as when ffmpeg was
+ * unavailable and the seed produced nothing to show.
+ */
+async function fetchLibraryId(request: APIRequestContext): Promise<string> {
+  try {
+    const res = await request.get('/api/v1/libraries')
+    if (!res.ok()) return ''
+    const body = (await res.json()) as { items?: Array<{ id?: string }> }
+    return body.items?.find((l) => l.id)?.id ?? ''
+  } catch {
+    return ''
+  }
+}
+
 async function auditPage(
   page: Page,
   path: string,
@@ -140,6 +168,7 @@ test.describe('mobile audit', () => {
   for (const width of WIDTHS) {
     test(`no overflow and 44px touch targets at ${width}px`, async ({
       page,
+      request,
     }) => {
       await page.setViewportSize({ width, height: 844 })
       for (const { path, ready, settled } of PAGES) {
@@ -147,16 +176,50 @@ test.describe('mobile audit', () => {
         await settle(page, settled)
         await auditPage(page, path, width)
       }
-      // The detail page joins when the seeded library exists.
-      const libraryId = process.env.SHRINK_E2E_LIBRARY_ID ?? ''
+      // The detail and flow pages join when the seeded library exists;
+      // the id comes from the API at runtime, not the setup env var.
+      const libraryId = await fetchLibraryId(request)
       if (libraryId) {
-        const path = `/libraries/${libraryId}`
-        await open(page, path, 'library-detail')
+        const detail = `/libraries/${libraryId}`
+        await open(page, detail, 'library-detail')
         await settle(
           page,
           '[data-testid="file-cards"], [data-testid="file-table"]',
         )
-        await auditPage(page, path, width)
+        await auditPage(page, detail, width)
+
+        // Task 22: the flow canvas is view only below md — no palette,
+        // no inspector, no edit controls — and the canvas chrome (zoom
+        // buttons, attribution link) meets the 44px minimum.
+        const flow = `/libraries/${libraryId}/flow`
+        await open(page, flow, 'flow-canvas-page')
+        await settle(page, '[data-testid="flow-summary"]')
+        await expect(
+          page.getByTestId('flow-summary'),
+          `${flow} at ${width}px: the step count is not visible`,
+        ).toContainText('steps')
+        await auditPage(page, flow, width)
+        // The zoom controls are real buttons in main at every width, so
+        // they must actually work on a phone: clicking Zoom In has to
+        // move the viewport transform.
+        await expect(
+          page.getByRole('button', { name: 'Zoom In' }),
+          `${flow} at ${width}px: the Zoom In control is missing`,
+        ).toBeEnabled()
+        const transform = () =>
+          page.evaluate(
+            () =>
+              document.querySelector('.react-flow__viewport')?.style
+                .transform ?? '',
+          )
+        const before = await transform()
+        await page.getByRole('button', { name: 'Zoom In' }).click()
+        await expect
+          .poll(
+            transform,
+            `${flow} at ${width}px: Zoom In did not change the viewport (before "${before}")`,
+          )
+          .not.toBe(before)
       }
       // The rail exists only at `md` and up (task 21): below `lg` it must
       // show icons without any click, the toggle must bring the labels

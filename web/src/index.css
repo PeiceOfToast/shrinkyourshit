@@ -36,3 +36,26 @@ html {
 dialog::backdrop {
   background: rgb(0 0 0 / 0.6);
 }
+
+/*
+ * The flow canvas chrome (task 22): React Flow's zoom controls default to
+ * 26px buttons — well under the 44px touch minimum the mobile audit
+ * enforces — and the attribution link (a real <a> inside main) has no tap
+ * target at all. Scoped under main (the canvas only ever renders inside
+ * the shell's main) so the rules win on specificity: FlowCanvasPage is a
+ * lazy route, and its stylesheet loads into the document after this file,
+ * which would let the library defaults win an equal-specificity cascade.
+ */
+main .react-flow__controls-button {
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+}
+
+main .react-flow__attribution a {
+  display: inline-block;
+  min-width: 44px;
+  min-height: 44px;
+  line-height: 44px;
+  text-align: center;
+}
