@@ -98,7 +98,12 @@ type Job struct {
 	Error           string
 	// AccessMode is how the node actually reached the source: shared or
 	// transfer. Empty until the node reports it (task 09).
-	AccessMode  string
+	AccessMode string
+	// BytesSoFar is the live output size the worker reported on its last
+	// progress tick (task 18): the scratch output's size at report time.
+	// 0 means nothing reported yet; on completion it is stamped to
+	// BytesAfter so a done job shows its final size.
+	BytesSoFar  int64
 	ClaimedAt   time.Time
 	StartedAt   time.Time
 	FinishedAt  time.Time
@@ -134,6 +139,13 @@ const (
 	NodeAccessShared   = "shared"
 	NodeAccessTransfer = "transfer"
 )
+
+// NodeStat is one node's finished-job totals (task 18): how many jobs it
+// completed and how many bytes they saved (positive savings only).
+type NodeStat struct {
+	FilesDone  int64
+	BytesSaved int64
+}
 
 // Node is a registered worker machine.
 type Node struct {

@@ -118,12 +118,13 @@ func (s *SQLite) RequeueStaleJobs(ctx context.Context, cutoff time.Time, maxAtte
 			updated.Percent = 0
 			updated.Speed = 0
 			updated.ETASeconds = 0
+			updated.BytesSoFar = 0
 		}
 		res, err := tx.ExecContext(ctx,
 			`UPDATE jobs SET status = ?, attempt = ?, node_id = ?, claimed_at = ?, heartbeat_at = ?,
-			   percent = ?, speed = ?, eta_seconds = ?, error = ?, finished_at = ? WHERE id = ? AND status = ? AND heartbeat_at = ?`,
+			   percent = ?, speed = ?, eta_seconds = ?, bytes_so_far = ?, error = ?, finished_at = ? WHERE id = ? AND status = ? AND heartbeat_at = ?`,
 			updated.Status, updated.Attempt, updated.NodeID, fmtTime(updated.ClaimedAt), fmtTime(updated.HeartbeatAt),
-			updated.Percent, updated.Speed, updated.ETASeconds, updated.Error, fmtTime(updated.FinishedAt),
+			updated.Percent, updated.Speed, updated.ETASeconds, updated.BytesSoFar, updated.Error, fmtTime(updated.FinishedAt),
 			j.ID, j.Status, fmtTime(j.HeartbeatAt))
 		if err != nil {
 			return nil, fmt.Errorf("store: requeue update %s: %w", j.ID, err)
@@ -153,9 +154,9 @@ func (s *SQLite) UpdateJobIfActive(ctx context.Context, j *Job) (bool, error) {
 	if err := validateJobStatus(j.Status); err != nil {
 		return false, err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, log = ?, error = ?, access_mode = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ?
+	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET file_id = ?, library_id = ?, node_id = ?, status = ?, priority = ?, attempt = ?, encoder_used = ?, fallback_reasons = ?, percent = ?, speed = ?, eta_seconds = ?, bytes_before = ?, bytes_after = ?, bytes_so_far = ?, log = ?, error = ?, access_mode = ?, claimed_at = ?, started_at = ?, finished_at = ?, heartbeat_at = ?
 		WHERE id = ? AND status IN (?, ?)`,
-		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.Log, j.Error, j.AccessMode,
+		j.FileID, j.LibraryID, j.NodeID, j.Status, j.Priority, j.Attempt, j.EncoderUsed, j.FallbackReasons, j.Percent, j.Speed, j.ETASeconds, j.BytesBefore, j.BytesAfter, j.BytesSoFar, j.Log, j.Error, j.AccessMode,
 		fmtTime(j.ClaimedAt), fmtTime(j.StartedAt), fmtTime(j.FinishedAt), fmtTime(j.HeartbeatAt),
 		j.ID, JobStatusClaimed, JobStatusRunning)
 	if err != nil {
