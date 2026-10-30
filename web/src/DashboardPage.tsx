@@ -180,7 +180,7 @@ function Warnings({ warnings }: { warnings: DashboardWarning[] }) {
           <p className="text-sm text-amber-200">{warning.message}</p>
           <Link
             to={warning.linkTo}
-            className="mt-2 inline-flex min-h-[36px] items-center rounded-lg bg-amber-800/60 px-3 text-sm font-semibold text-amber-100 hover:bg-amber-700/60"
+            className="mt-2 inline-flex min-h-11 items-center rounded-lg bg-amber-800/60 px-3 text-sm font-semibold text-amber-100 hover:bg-amber-700/60"
           >
             {warning.linkLabel}
           </Link>

@@ -15,6 +15,7 @@ import PageContainer from './PageContainer'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
+import { btn, btnPrimary, input } from './uiControls'
 
 export default function AppSettingsPage() {
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
@@ -120,7 +121,7 @@ export default function AppSettingsPage() {
             max={16}
             value={form.worker_concurrency}
             onChange={(e) => set({ worker_concurrency: e.target.value })}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
+            className={input}
             data-testid="worker-concurrency"
           />
         </label>
@@ -132,7 +133,7 @@ export default function AppSettingsPage() {
             type="text"
             value={form.scratch_dir}
             onChange={(e) => set({ scratch_dir: e.target.value })}
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
+            className={input}
             data-testid="scratch-dir"
           />
         </label>
@@ -155,7 +156,7 @@ export default function AppSettingsPage() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 autoComplete="current-password"
-                className="w-full rounded-lg bg-slate-800 px-3 py-2"
+                className={input}
                 data-testid="current-password"
               />
             </label>
@@ -166,7 +167,7 @@ export default function AppSettingsPage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
-                className="w-full rounded-lg bg-slate-800 px-3 py-2"
+                className={input}
                 data-testid="new-password"
               />
             </label>
@@ -176,7 +177,7 @@ export default function AppSettingsPage() {
               disabled={
                 newPassword === '' || currentPassword === '' || save.isPending
               }
-              className="justify-self-start rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+              className={`${btn} justify-self-start`}
               data-testid="change-password"
             >
               Change password
@@ -189,7 +190,7 @@ export default function AppSettingsPage() {
             <button
               type="button"
               onClick={() => setConfirmingOff(true)}
-              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700"
+              className={btn}
               data-testid="turn-login-off"
             >
               Turn login off
@@ -206,7 +207,7 @@ export default function AppSettingsPage() {
                   type="button"
                   onClick={confirmLoginOff}
                   disabled={save.isPending}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+                  className={`${btnPrimary} !bg-red-600 hover:!bg-red-500`}
                   data-testid="confirm-off"
                 >
                   Yes, turn it off
@@ -214,7 +215,7 @@ export default function AppSettingsPage() {
                 <button
                   type="button"
                   onClick={() => setConfirmingOff(false)}
-                  className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                  className={btn}
                   data-testid="cancel-off"
                 >
                   Cancel
@@ -226,7 +227,7 @@ export default function AppSettingsPage() {
             <button
               type="button"
               onClick={() => setEnablingLogin(true)}
-              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700"
+              className={btn}
               data-testid="turn-login-on"
             >
               Turn login on
@@ -240,7 +241,7 @@ export default function AppSettingsPage() {
                   type="text"
                   value={form.admin_username}
                   onChange={(e) => set({ admin_username: e.target.value })}
-                  className="w-full rounded-lg bg-slate-800 px-3 py-2"
+                  className={input}
                   data-testid="enable-username"
                 />
               </label>
@@ -251,7 +252,7 @@ export default function AppSettingsPage() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
-                  className="w-full rounded-lg bg-slate-800 px-3 py-2"
+                  className={input}
                   data-testid="enable-password"
                 />
               </label>
@@ -260,7 +261,7 @@ export default function AppSettingsPage() {
                   type="button"
                   onClick={confirmLoginOn}
                   disabled={newPassword === '' || save.isPending}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className={btnPrimary}
                   data-testid="confirm-on"
                 >
                   Save and require login
@@ -271,7 +272,7 @@ export default function AppSettingsPage() {
                     setEnablingLogin(false)
                     setNewPassword('')
                   }}
-                  className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                  className={btn}
                   data-testid="cancel-on"
                 >
                   Cancel
@@ -286,7 +287,7 @@ export default function AppSettingsPage() {
         type="button"
         onClick={savePlain}
         disabled={save.isPending}
-        className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+        className={btnPrimary}
         data-testid="save-settings"
       >
         {save.isPending ? 'Saving…' : 'Save settings'}

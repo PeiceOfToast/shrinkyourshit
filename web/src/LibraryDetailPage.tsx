@@ -23,6 +23,7 @@ import {
   type FileItem,
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
+import DataList, { type Column } from './DataList'
 import { formatBytes, statusLabel, truncateMiddle } from './easyModel'
 import ErrorBox from './ErrorBox'
 import FileHistory from './FileHistory'
@@ -30,6 +31,7 @@ import PageContainer from './PageContainer'
 import StatusChip from './StatusChip'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
+import { btn } from './uiControls'
 
 const FILE_STATUSES = [
   'new',
@@ -239,7 +241,7 @@ export default function LibraryDetailPage() {
       <button
         type="button"
         onClick={() => setToCancel(f)}
-        className={`rounded-lg bg-slate-800 px-2 py-1 text-xs text-amber-300 hover:bg-slate-700 ${
+        className={`${btn} !text-amber-300 hover:!bg-slate-700 ${
           onCard ? 'shrink-0' : ''
         }`}
         aria-label={`Cancel the job for ${name}`}
@@ -255,7 +257,7 @@ export default function LibraryDetailPage() {
       <button
         type="button"
         onClick={() => setHistoryFile(f)}
-        className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+        className={btn}
         aria-label={`Job history and log for ${name}`}
         data-testid={`file-log-${f.id}${onCard ? '-card' : ''}`}
       >
@@ -263,6 +265,166 @@ export default function LibraryDetailPage() {
       </button>
     )
   }
+
+  // The table and the phone cards carry the same columns (task 20).
+  const columns: Column<FileItem>[] = [
+    {
+      key: 'name',
+      header: 'File',
+      primary: true,
+      cell: (f) => {
+        const name = f.path.split('/').pop() ?? f.path
+        return (
+          <span
+            className="block max-w-[16rem] truncate text-slate-200"
+            title={f.path}
+          >
+            {name}
+          </span>
+        )
+      },
+      cardCell: (f) => {
+        const name = f.path.split('/').pop() ?? f.path
+        return (
+          <span
+            className="min-w-0 break-words font-medium text-slate-200"
+            title={f.path}
+          >
+            {name}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      cell: (f) => (
+        <span
+          className={`font-medium ${statusColor(f.status)}`}
+          data-testid={`file-status-${f.id}`}
+        >
+          {statusLabel(f.status)}
+        </span>
+      ),
+      cardCell: (f) => (
+        <span
+          className={`font-medium ${statusColor(f.status)}`}
+          data-testid={`file-card-status-${f.id}`}
+        >
+          {statusLabel(f.status)}
+        </span>
+      ),
+      cardLabel: 'Status',
+    },
+    {
+      key: 'reason',
+      header: 'Why',
+      cell: (f) => (
+        <span
+          className="break-words text-slate-500"
+          data-testid={`file-reason-${f.id}`}
+        >
+          {f.satisfied_reason || '—'}
+        </span>
+      ),
+      cardCell: (f) => (
+        <span className="break-words" data-testid={`file-card-reason-${f.id}`}>
+          Why: {f.satisfied_reason}
+        </span>
+      ),
+      cardNoLabel: true,
+      hideInCard: (f) => !f.satisfied_reason,
+    },
+    {
+      key: 'before',
+      header: 'Before',
+      cell: (f) => (
+        <span className="text-slate-400" data-testid={`file-before-${f.id}`}>
+          {formatBytes(f.size + f.bytes_saved)}
+        </span>
+      ),
+      cardCell: (f) => (
+        <span className="text-slate-400">
+          {formatBytes(f.size + f.bytes_saved)}
+          {f.bytes_saved > 0
+            ? ` → ${formatBytes(f.size)} (${formatRatio(
+                f.size + f.bytes_saved,
+                f.size,
+              )})`
+            : ''}
+        </span>
+      ),
+      cardLabel: 'Size:',
+    },
+    {
+      key: 'after',
+      header: 'After',
+      cell: (f) => (
+        <span className="text-slate-300" data-testid={`file-after-${f.id}`}>
+          {f.bytes_saved > 0 ? formatBytes(f.size) : '—'}
+        </span>
+      ),
+      hideInCard: true,
+    },
+    {
+      key: 'saved',
+      header: 'Saved',
+      cell: (f) => (
+        <span className="text-emerald-400" data-testid={`file-saved-${f.id}`}>
+          {f.bytes_saved > 0 ? formatBytes(f.bytes_saved) : '—'}
+        </span>
+      ),
+      cardCell: (f) => (
+        <span className="whitespace-nowrap text-emerald-400">
+          {formatBytes(f.bytes_saved)}
+        </span>
+      ),
+      cardLabel: 'Saved',
+      hideInCard: (f) => f.bytes_saved <= 0,
+    },
+    {
+      key: 'ratio',
+      header: 'Ratio',
+      cell: (f) => (
+        <span className="text-emerald-400" data-testid={`file-ratio-${f.id}`}>
+          {f.bytes_saved > 0
+            ? formatRatio(f.size + f.bytes_saved, f.size)
+            : '—'}
+        </span>
+      ),
+      hideInCard: true,
+    },
+    {
+      key: 'encoder',
+      header: 'Encoder',
+      cell: (f) => (
+        <span className="text-slate-400" data-testid={`file-encoder-${f.id}`}>
+          {f.last_job_encoder || '—'}
+        </span>
+      ),
+      cardCell: (f) => (
+        <span className="text-slate-400">{f.last_job_encoder || '—'}</span>
+      ),
+      cardLabel: 'Encoder:',
+    },
+    {
+      key: 'actions',
+      header: '',
+      cell: (f) => (
+        <div className="flex flex-wrap justify-end gap-2">
+          {logButton(f, false)}
+          {cancelButton(f, false)}
+        </div>
+      ),
+      cardCell: (f) => (
+        <div className="flex flex-wrap justify-end gap-2">
+          {logButton(f, true)}
+          {cancelButton(f, true)}
+        </div>
+      ),
+      cardNoLabel: true,
+    },
+  ]
 
   return (
     <PageContainer className="space-y-4" data-testid="library-detail">
@@ -274,14 +436,14 @@ export default function LibraryDetailPage() {
         <div className="flex gap-2">
           <Link
             to={`/libraries/${lib.id}/rules`}
-            className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700"
+            className={btn}
             data-testid="library-detail-rules"
           >
             Rules
           </Link>
           <Link
             to={`/libraries/${lib.id}/edit`}
-            className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700"
+            className={btn}
             data-testid="library-detail-edit"
           >
             Edit
@@ -354,7 +516,7 @@ export default function LibraryDetailPage() {
           <select
             value={status}
             onChange={(e) => changeStatus(e.target.value)}
-            className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+            className="min-h-11 rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
             data-testid="file-status-filter"
           >
             <option value="">All</option>
@@ -372,7 +534,7 @@ export default function LibraryDetailPage() {
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             placeholder="File name…"
-            className="w-full min-w-0 rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200 placeholder:text-slate-500"
+            className="min-h-11 w-full min-w-0 rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200 placeholder:text-slate-500"
             aria-label="Search files by name"
             data-testid="file-search"
           />
@@ -382,7 +544,7 @@ export default function LibraryDetailPage() {
           <select
             value={sort}
             onChange={(e) => changeSort(e.target.value as typeof sort)}
-            className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+            className="min-h-11 rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
             data-testid="file-sort"
           >
             {FILE_SORTS.map((s) => (
@@ -395,7 +557,7 @@ export default function LibraryDetailPage() {
         <button
           type="button"
           onClick={flipDir}
-          className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-700"
+          className={btn}
           aria-label="Flip the sort direction"
           data-testid="file-sort-dir"
         >
@@ -405,7 +567,7 @@ export default function LibraryDetailPage() {
           type="button"
           onClick={() => retry.mutate()}
           disabled={failedOnPage.length === 0 || retry.isPending}
-          className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-50"
+          className={btn}
           data-testid="retry-failed"
         >
           {retry.isPending
@@ -425,7 +587,7 @@ export default function LibraryDetailPage() {
             <button
               type="button"
               onClick={() => setSearchText('')}
-              className="text-emerald-400 underline"
+              className="inline-flex min-h-11 items-center text-emerald-400 underline"
               data-testid="files-clear-search"
             >
               Clear the search.
@@ -438,150 +600,17 @@ export default function LibraryDetailPage() {
         )
       ) : (
         <>
-          {/* From `sm` up: the real table, scrollable so wide content
-              (long paths, long reasons) never forces the page wide.
-              `relative` keeps the header's sr-only th span (position
-              absolute) inside this scroll container instead of letting it
-              paint at the table's far edge and widen the page. */}
-          <div className="hidden sm:block">
-            <div className="relative overflow-x-auto rounded-2xl ring-1 ring-slate-800">
-              <table
-                className="w-full text-left text-sm"
-                data-testid="file-table"
-              >
-                <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">File</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Why</th>
-                    <th className="px-4 py-3">Before</th>
-                    <th className="px-4 py-3">After</th>
-                    <th className="px-4 py-3">Ratio</th>
-                    <th className="px-4 py-3">Encoder</th>
-                    <th className="px-4 py-3">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800 bg-slate-900/50">
-                  {files.data.items.map((f) => {
-                    const name = f.path.split('/').pop() ?? f.path
-                    return (
-                      <tr key={f.id} data-testid={`file-row-${f.id}`}>
-                        <td
-                          className="max-w-[16rem] truncate px-4 py-2 text-slate-200"
-                          title={f.path}
-                        >
-                          {name}
-                        </td>
-                        <td
-                          className={`px-4 py-2 font-medium ${statusColor(f.status)}`}
-                          data-testid={`file-status-${f.id}`}
-                        >
-                          {statusLabel(f.status)}
-                        </td>
-                        <td
-                          className="break-words px-4 py-2 text-slate-500"
-                          data-testid={`file-reason-${f.id}`}
-                        >
-                          {f.satisfied_reason || '—'}
-                        </td>
-                        <td
-                          className="px-4 py-2 text-slate-400"
-                          data-testid={`file-before-${f.id}`}
-                        >
-                          {formatBytes(f.size + f.bytes_saved)}
-                        </td>
-                        <td
-                          className="px-4 py-2 text-slate-300"
-                          data-testid={`file-after-${f.id}`}
-                        >
-                          {f.bytes_saved > 0 ? formatBytes(f.size) : '—'}
-                        </td>
-                        <td
-                          className="px-4 py-2 text-emerald-400"
-                          data-testid={`file-ratio-${f.id}`}
-                        >
-                          {f.bytes_saved > 0
-                            ? formatRatio(f.size + f.bytes_saved, f.size)
-                            : '—'}
-                        </td>
-                        <td
-                          className="px-4 py-2 text-slate-400"
-                          data-testid={`file-encoder-${f.id}`}
-                        >
-                          {f.last_job_encoder || '—'}
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <div className="flex justify-end gap-2">
-                            {logButton(f, false)}
-                            {cancelButton(f, false)}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Under `sm`: the same list as stacked cards. File name and
-              status stay visible; the secondary columns become label/value
-              pairs so nothing is squeezed into a 300 px table. */}
-          <ul className="space-y-2 sm:hidden" data-testid="file-cards">
-            {files.data.items.map((f) => {
-              const name = f.path.split('/').pop() ?? f.path
-              return (
-                <li
-                  key={f.id}
-                  className="min-w-0 rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-                  data-testid={`file-card-${f.id}`}
-                >
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span
-                      className="min-w-0 break-words font-medium text-slate-200"
-                      title={f.path}
-                    >
-                      {name}
-                    </span>
-                    <span
-                      className={`shrink-0 font-medium ${statusColor(f.status)}`}
-                      data-testid={`file-card-status-${f.id}`}
-                    >
-                      {statusLabel(f.status)}
-                    </span>
-                  </div>
-                  {f.satisfied_reason && (
-                    <p
-                      className="mt-2 break-words text-sm text-slate-500"
-                      data-testid={`file-card-reason-${f.id}`}
-                    >
-                      <span className="text-slate-600">Why: </span>
-                      {f.satisfied_reason}
-                    </p>
-                  )}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-                    <span className="text-slate-400">
-                      <span className="text-slate-600">Size: </span>
-                      {formatBytes(f.size + f.bytes_saved)}
-                      {f.bytes_saved > 0
-                        ? ` → ${formatBytes(f.size)} (${formatRatio(f.size + f.bytes_saved, f.size)})`
-                        : ''}
-                    </span>
-                    <span className="text-slate-400">
-                      <span className="text-slate-600">Encoder: </span>
-                      {f.last_job_encoder || '—'}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    {logButton(f, true)}
-                    {cancelButton(f, true)}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+          {/* One column definition, two layouts (task 20): the table from
+              `sm` up, stacked cards below it. The table wrapper scrolls
+              sideways, so long paths and reasons never force the page wide. */}
+          <DataList
+            rows={files.data.items}
+            columns={columns}
+            testid="file-table"
+            cardTestid="file-cards"
+            rowTestId={(f) => `file-row-${f.id}`}
+            cardRowTestId={(f) => `file-card-${f.id}`}
+          />
 
           {/* Pagination (task 13): server side, so 40k files never load at
               once. The status filter, search, sort and page size reset to
@@ -596,7 +625,7 @@ export default function LibraryDetailPage() {
                 <select
                   value={pageSize}
                   onChange={(e) => changePageSize(Number(e.target.value))}
-                  className="rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
+                  className="min-h-11 rounded-lg bg-slate-800 px-2 py-1.5 text-sm text-slate-200"
                   data-testid="files-page-size"
                 >
                   {PAGE_SIZES.map((n) => (
@@ -616,7 +645,7 @@ export default function LibraryDetailPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-40"
+                className={btn}
                 data-testid="files-prev"
               >
                 ← Previous
@@ -625,7 +654,7 @@ export default function LibraryDetailPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
                 disabled={page >= pages - 1}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm hover:bg-slate-700 disabled:opacity-40"
+                className={btn}
                 data-testid="files-next"
               >
                 Next →

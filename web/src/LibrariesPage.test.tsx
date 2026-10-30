@@ -168,6 +168,27 @@ describe('LibrariesPage', () => {
       'href',
       '/libraries/lib-1',
     )
+    // The table stays in the DOM for assistive tech (task 20).
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  it('uses 44px controls on the library list (task 20)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+    ])
+    renderPage()
+    await screen.findByTestId('libraries-table')
+    for (const el of [
+      ...screen.getAllByRole('button'),
+      ...screen.getAllByRole('link'),
+    ]) {
+      expect(el.className).toContain('min-h-11')
+    }
   })
 
   it('scans a library on request', async () => {

@@ -344,6 +344,33 @@ describe('LibraryDetailPage', () => {
     // The long path is deliberately wrapped or truncated, never forcing
     // width: the name span carries break-words.
     expect(card.querySelector('.break-words')).not.toBeNull()
+    // The table stays in the DOM for assistive tech (task 20).
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
+  it('uses 44px controls on the library detail page (task 20)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc(),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files$/,
+        body: { items: [file('f1', 'new')], total: 1 },
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('file-table')
+    for (const el of [
+      ...screen.getAllByRole('button'),
+      ...screen.getAllByRole('combobox'),
+      ...screen.getAllByRole('searchbox'),
+      ...screen.getAllByRole('link'),
+    ]) {
+      expect(el.className).toContain('min-h-11')
+    }
   })
 
   it('filters files by status and keeps the filter in the request', async () => {

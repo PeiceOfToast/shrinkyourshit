@@ -25,6 +25,7 @@ import {
   runtimeLabel,
   stageLabel,
 } from './updateModel'
+import { btn, btnPrimary, input } from './uiControls'
 
 function Row({
   label,
@@ -107,7 +108,7 @@ export default function AboutCard() {
           type="button"
           onClick={() => check.mutate()}
           disabled={check.isPending}
-          className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+          className={btn}
           data-testid="check-now"
         >
           {check.isPending ? 'Checking…' : 'Check now'}
@@ -119,7 +120,7 @@ export default function AboutCard() {
             onChange={(e) =>
               saveSettings.mutate({ update_check: e.target.checked })
             }
-            className="h-4 w-4 rounded accent-emerald-500"
+            className="h-11 min-h-11 w-11 shrink-0 accent-emerald-500"
             data-testid="update-check-toggle"
           />
           Check for updates automatically
@@ -150,7 +151,7 @@ export default function AboutCard() {
               href={update.release_url}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 inline-block text-sm text-sky-300 underline"
+              className="mt-1 inline-flex min-h-11 items-center text-sm text-sky-300 underline"
               data-testid="release-notes-link"
             >
               Release notes
@@ -166,7 +167,7 @@ export default function AboutCard() {
                 type="button"
                 onClick={() => apply.mutate()}
                 disabled={applying || apply.isPending}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                className={btnPrimary}
                 data-testid="apply-update"
               >
                 {applying || apply.isPending ? 'Updating…' : 'Update now'}
@@ -225,7 +226,7 @@ export default function AboutCard() {
             onChange={(e) =>
               saveSettings.mutate({ update_channel: e.target.value })
             }
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
+            className={input}
             data-testid="update-channel"
           >
             <option value="stable">Stable releases</option>
