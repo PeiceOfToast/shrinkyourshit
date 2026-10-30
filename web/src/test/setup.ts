@@ -20,6 +20,21 @@ const host = globalThis as unknown as { EventSource?: unknown }
 host.EventSource ??= FakeEventSource
 
 /*
+ * jsdom has no ResizeObserver and @xyflow/react (task 15 canvas) observes
+ * node/container sizes with one. The stub never fires callbacks (no layout
+ * engine in jsdom); the canvas tests do not depend on measured sizes.
+ */
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver =
+    ResizeObserverStub as unknown as typeof ResizeObserver
+}
+
+/*
  * jsdom 25 has no dialog implementation at all (no showModal/show/close —
  * verified), so the dialog components would be invisible in tests. Give
  * the element a minimal version of the native contract: opening sets the
