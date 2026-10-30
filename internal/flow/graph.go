@@ -254,8 +254,9 @@ func Validate(g Graph) []FieldError {
 			add(fmt.Sprintf("nodes[%d].type", byID[n.ID]), "only one %s step is allowed", n.Type)
 		}
 	}
-	// The container decides the output file type; every flow states it.
-	if len(g.Nodes) > 0 && counts[StepRemuxContainer] == 0 {
+	// The container decides the output file type; every flow states it,
+	// which also rejects an empty graph (no steps can run anything).
+	if counts[StepRemuxContainer] == 0 {
 		add("graph", "the flow needs exactly one %s step", StepRemuxContainer)
 	}
 	return errs

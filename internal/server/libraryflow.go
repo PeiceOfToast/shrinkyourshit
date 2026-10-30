@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -172,6 +173,13 @@ func joinFlowErrors(errs []flow.FieldError) string {
 		out += fe.Error()
 	}
 	return out
+}
+
+// IsInvalidFlow reports whether err is a flow validation failure (the API
+// maps it to 400 invalid_flow with the field errors).
+func IsInvalidFlow(err error) bool {
+	var e *ErrInvalidFlow
+	return errors.As(err, &e)
 }
 
 // backfillFlows compiles and persists the flow of every library that
