@@ -126,3 +126,8 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-30T06:53:00Z task 17: note on a pre-existing flake, not caused by this task: the first full make test run failed FlowCanvas.test.tsx "flow-inspector" (task 15 surface, untouched by task 17); the file passes 5 of 5 alone and the full suite was green on rerun. Fixed on CI (web job green). Candidate for a small fix unit later.
 - 2026-10-30T06:55:00Z task 17: CI run 41016391819 green on all eight jobs (go, web, docker, e2e, cross, installer, installer-powershell, report); PR #20 merged squash 93a0fc8, branch task/17-update-ui deleted, main pulled on the VM to 93a0fc8.
 - 2026-10-30T06:56:00Z task 17: last scheduled task. All 19 roadmap tasks 01 to 19 are done and merged; STATUS.md has 0 todo rows. Only the open ended "After v1.2 (order flexible)" list in ROADMAP.md remains, unscheduled. Michael notified of the milestone.
+
+## 2026-10-30 mobile portability planning
+- 2026-10-30T17:45:00Z mobile audit: measured the running build at 390x844. No horizontal overflow on any page and the nav already collapses to `Open menu` (task 10 held). Interior is desktop sized: controls under 44px on /nodes (8), /libraries (9), /libraries/:id (11), /encode (4), /app (6); /libraries still renders a raw table.
+- 2026-10-30T17:45:00Z plan written: /home/mb/.hermes/plans/2026-10-30_134143-sys-mobile-portability.md, copied into the repo as docs/mobile-portability-2026-10-30.md.
+- 2026-10-30T17:45:00Z authored tasks 20 (touch targets, DataList, mobile audit gate), 21 (StatCard clamp type, auto collapsing rail), 22 (canvas view only below md, audit on every route). ROADMAP v1.5 added, STATUS rows 20-22 todo. DECISIONS.md untouched.

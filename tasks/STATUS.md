@@ -23,5 +23,8 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 15 | 15-visual-flow-editor.md | done | PR #16 https://github.com/PeiceOfToast/shrinkyourshit/pull/16 |
 | 16 | 16-release-and-self-update.md | done | PR #19 https://github.com/PeiceOfToast/shrinkyourshit/pull/19 |
 | 17 | 17-update-ui.md | done | PR #20 https://github.com/PeiceOfToast/shrinkyourshit/pull/20 |
+| 20 | 20-mobile-touch-targets.md | todo | mobile pass, depends on 12/18/19 |
+| 21 | 21-fluid-dashboard-and-rail.md | todo | depends on 20 |
+| 22 | 22-flow-canvas-mobile.md | todo | depends on 20 |
 
 Dependencies are listed in ROADMAP.md. Do not start a task whose dependencies are not `done`.

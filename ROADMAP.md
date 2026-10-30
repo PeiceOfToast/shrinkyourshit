@@ -56,6 +56,18 @@ From the second UI planning session. The owner's answers drove this: a real on/o
 | 18 | Node on/off switch, live job line, per node totals, pause all | 11 |
 | 19 | Library list and detail: savings, search, sort, per file job history | 13, 18 |
 
+## v1.5: Mobile portability (scheduled)
+
+The frame was made responsive in v1.1. This makes the interior work on a phone.
+
+| Task | File | What it does |
+|------|------|--------------|
+| 20 | `tasks/20-mobile-touch-targets.md` | Mobile audit gate in Playwright (320, 390, 414, 768), shared 44px control classes, `DataList` cards below `sm`, five pages migrated |
+| 21 | `tasks/21-fluid-dashboard-and-rail.md` | `StatCard` icons with `clamp()` type, 2 to 4 column stat grid, rail auto collapses below `lg` with a remembered override |
+| 22 | `tasks/22-flow-canvas-mobile.md` | Flow canvas is view only below `md`, canvas chrome is 44px, audit covers every route, layout rules documented |
+
+Measured baseline and reasoning: `docs/mobile-portability-2026-10-30.md`.
+
 ## After v1.2 (order flexible)
 
 1. Remux-only, audio-only conversion, subtitle extract, health check, rename/move as first-class actions with UI.
