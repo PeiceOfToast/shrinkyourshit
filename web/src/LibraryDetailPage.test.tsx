@@ -12,7 +12,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import LibraryDetailPage from './LibraryDetailPage'
-import { installFetchMock, type FetchMock, type MockRoute } from './test/fetchMock'
+import {
+  installFetchMock,
+  type FetchMock,
+  type MockRoute,
+} from './test/fetchMock'
 import { ToastProvider } from './toast'
 
 function file(id: string, status: string, extra: Record<string, unknown> = {}) {
@@ -403,9 +407,7 @@ describe('LibraryDetailPage', () => {
     // Typing searches by name, server side (debounced).
     fireEvent.change(search, { target: { value: 'movie' } })
     await waitFor(() => {
-      expect(
-        mock.requests.some((r) => r.url.includes('q=movie')),
-      ).toBe(true)
+      expect(mock.requests.some((r) => r.url.includes('q=movie'))).toBe(true)
     })
 
     // Changing the sort key and flipping the direction ride along.
@@ -413,19 +415,17 @@ describe('LibraryDetailPage', () => {
       target: { value: 'size' },
     })
     await waitFor(() => {
-      expect(
-        mock.requests.some((r) => r.url.includes('sort=size')),
-      ).toBe(true)
+      expect(mock.requests.some((r) => r.url.includes('sort=size'))).toBe(true)
     })
     fireEvent.click(screen.getByTestId('file-sort-dir'))
     await waitFor(() => {
-      expect(
-        mock.requests.some((r) => r.url.includes('dir=desc')),
-      ).toBe(true)
+      expect(mock.requests.some((r) => r.url.includes('dir=desc'))).toBe(true)
     })
     // A search change resets to the first page.
     expect(
-      mock.requests.some((r) => r.url.includes('q=movie') && r.url.includes('offset=50')),
+      mock.requests.some(
+        (r) => r.url.includes('q=movie') && r.url.includes('offset=50'),
+      ),
     ).toBe(false)
   })
 

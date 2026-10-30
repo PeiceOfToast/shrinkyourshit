@@ -21,50 +21,15 @@ import {
   type LibraryStats,
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
-import { formatBytes, statusLabel } from './easyModel'
+import { formatBytes } from './easyModel'
 import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
+import StatusChip from './StatusChip'
 import { SkeletonCard } from './skeleton'
 import { useToast } from './toastContext'
 
 /** The per-status chips a row shows, in table order. */
 const SHOWN_STATUSES = ['satisfied', 'queued', 'done', 'failed'] as const
-
-function chipColor(status: string): string {
-  switch (status) {
-    case 'satisfied':
-    case 'done':
-      return 'bg-emerald-900/60 text-emerald-300 ring-emerald-800'
-    case 'failed':
-      return 'bg-red-900/60 text-red-300 ring-red-800'
-    case 'queued':
-      return 'bg-amber-900/60 text-amber-300 ring-amber-800'
-    default:
-      return 'bg-slate-800 text-slate-300 ring-slate-700'
-  }
-}
-
-/** One status count as a small pill: the count plus its plain label. */
-function Chip({
-  status,
-  count,
-  testId,
-}: {
-  status: string
-  count: number
-  testId: string
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${chipColor(status)} ${
-        count === 0 ? 'opacity-50' : ''
-      }`}
-      data-testid={testId}
-    >
-      {count} {statusLabel(status)}
-    </span>
-  )
-}
 
 export default function LibrariesPage() {
   const client = useQueryClient()
@@ -216,7 +181,7 @@ export default function LibrariesPage() {
                     <td className="px-4 py-3">
                       <div className="flex max-w-[18rem] flex-wrap gap-1.5">
                         {SHOWN_STATUSES.map((s) => (
-                          <Chip
+                          <StatusChip
                             key={s}
                             status={s}
                             count={counts?.[s] ?? 0}
@@ -275,7 +240,7 @@ export default function LibrariesPage() {
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {SHOWN_STATUSES.map((s) => (
-                  <Chip
+                  <StatusChip
                     key={s}
                     status={s}
                     count={counts?.[s] ?? 0}

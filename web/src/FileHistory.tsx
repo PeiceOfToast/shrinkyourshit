@@ -70,7 +70,10 @@ function JobRow({ job }: { job: Job }) {
         </ul>
       )}
       {job.error && (
-        <p className="mt-2 break-words text-sm text-red-400" data-testid="file-history-error-text">
+        <p
+          className="mt-2 break-words text-sm text-red-400"
+          data-testid="file-history-error-text"
+        >
           {job.error}
         </p>
       )}
@@ -118,16 +121,19 @@ export default function FileHistory({
 
       <div className="mt-4">
         {jobs.isPending ? (
-          <p className="text-sm text-slate-500" data-testid="file-history-loading">
+          <p
+            className="text-sm text-slate-500"
+            data-testid="file-history-loading"
+          >
             Loading the history…
           </p>
         ) : jobs.isError ? (
-          <ErrorBox
-            title="Cannot load the job history."
-            error={jobs.error}
-          />
+          <ErrorBox title="Cannot load the job history." error={jobs.error} />
         ) : jobs.data.total === 0 ? (
-          <p className="text-sm text-slate-400" data-testid="file-history-empty">
+          <p
+            className="text-sm text-slate-400"
+            data-testid="file-history-empty"
+          >
             No jobs have run for this file yet.
           </p>
         ) : (

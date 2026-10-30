@@ -105,9 +105,9 @@ describe('LibrariesPage', () => {
     // Per-library counts come from the per-library breakdown of /stats,
     // shown as status chips (task 19).
     await waitFor(() =>
-      expect(screen.getByTestId('library-chip-satisfied-lib-1')).toHaveTextContent(
-        '2 Nothing to do',
-      ),
+      expect(
+        screen.getByTestId('library-chip-satisfied-lib-1'),
+      ).toHaveTextContent('2 Nothing to do'),
     )
     expect(screen.getByTestId('library-chip-queued-lib-1')).toHaveTextContent(
       '1 Waiting',
@@ -154,10 +154,12 @@ describe('LibrariesPage', () => {
     const card = screen.getByTestId('library-card-lib-1')
     expect(card).toHaveTextContent('Movies')
     expect(card).toHaveTextContent('/media/movies')
-    expect(screen.getByTestId('library-files-lib-1-card')).toHaveTextContent('3')
-    expect(screen.getByTestId('library-chip-satisfied-lib-1-card')).toHaveTextContent(
-      '2 Nothing to do',
+    expect(screen.getByTestId('library-files-lib-1-card')).toHaveTextContent(
+      '3',
     )
+    expect(
+      screen.getByTestId('library-chip-satisfied-lib-1-card'),
+    ).toHaveTextContent('2 Nothing to do')
     expect(screen.getByTestId('library-saved-lib-1-card')).toHaveTextContent(
       '2.0 GB saved',
     )

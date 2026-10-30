@@ -296,7 +296,10 @@ export default function LibraryDetailPage() {
         data-testid="library-summary"
       >
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex flex-wrap gap-1.5" data-testid="library-summary-chips">
+          <div
+            className="flex flex-wrap gap-1.5"
+            data-testid="library-summary-chips"
+          >
             {FILE_STATUSES.map((s) => (
               <StatusChip
                 key={s}
@@ -322,7 +325,10 @@ export default function LibraryDetailPage() {
           </span>
         </div>
         {plain.data && plain.data.steps.length > 0 && (
-          <div className="mt-3 border-t border-slate-800 pt-3" data-testid="library-target-plain">
+          <div
+            className="mt-3 border-t border-slate-800 pt-3"
+            data-testid="library-target-plain"
+          >
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               What this library does
             </p>
@@ -477,13 +483,22 @@ export default function LibraryDetailPage() {
                         >
                           {f.satisfied_reason || '—'}
                         </td>
-                        <td className="px-4 py-2 text-slate-400" data-testid={`file-before-${f.id}`}>
+                        <td
+                          className="px-4 py-2 text-slate-400"
+                          data-testid={`file-before-${f.id}`}
+                        >
                           {formatBytes(f.size + f.bytes_saved)}
                         </td>
-                        <td className="px-4 py-2 text-slate-300" data-testid={`file-after-${f.id}`}>
+                        <td
+                          className="px-4 py-2 text-slate-300"
+                          data-testid={`file-after-${f.id}`}
+                        >
                           {f.bytes_saved > 0 ? formatBytes(f.size) : '—'}
                         </td>
-                        <td className="px-4 py-2 text-emerald-400" data-testid={`file-ratio-${f.id}`}>
+                        <td
+                          className="px-4 py-2 text-emerald-400"
+                          data-testid={`file-ratio-${f.id}`}
+                        >
                           {f.bytes_saved > 0
                             ? formatRatio(f.size + f.bytes_saved, f.size)
                             : '—'}

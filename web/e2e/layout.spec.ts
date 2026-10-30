@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Layout regression suite (task 12). For each of the five pages, at each
- * of the three viewports: no horizontal overflow, the shell covers the
- * viewport (no unpainted region below or beside it), and the nav is
- * reachable — drawer under `md`, left rail at `md` and up. Plus the
- * file-table card assertion at phone width. A failure leaves a screenshot
- * per page per viewport in web/test-results (the CI artifact).
+ * Layout regression suite (tasks 12 and 19). For each of the five pages
+ * plus the library detail page, at each of the three viewports: no
+ * horizontal overflow, the shell covers the viewport (no unpainted region
+ * below or beside it), and the nav is reachable — drawer under `md`, left
+ * rail at `md` and up. Plus the file-table card assertion at phone width.
+ * A failure leaves a screenshot per page per viewport in web/test-results
+ * (the CI artifact). The detail page joins when the global setup seeded a
+ * library; it skips cleanly when ffmpeg was unavailable.
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -32,7 +34,9 @@ async function open(page: Page, path: string, ready: string): Promise<void> {
   await expect(page.getByTestId(ready), `${path} did not render`).toBeVisible()
 }
 
-for (const { path, ready } of PAGES) {
+/** Registers the three layout assertions for one page (task 19: shared
+ * with the library detail page, which needs the seeded library id). */
+function layoutSuite(path: string, ready: string): void {
   test.describe(`layout: ${path}`, () => {
     test('no horizontal overflow', async ({ page }) => {
       await open(page, path, ready)
@@ -125,6 +129,18 @@ for (const { path, ready } of PAGES) {
       }
     })
   })
+}
+
+for (const { path, ready } of PAGES) {
+  layoutSuite(path, ready)
+}
+
+// The library detail page (task 19): same assertions, at the seeded
+// library. The setup exports the id; without one (no ffmpeg) the page
+// would render its error state, which is not a layout fixture.
+const libraryId = process.env.SHRINK_E2E_LIBRARY_ID ?? ''
+if (libraryId) {
+  layoutSuite(`/libraries/${libraryId}`, 'library-detail')
 }
 
 test.describe('file table responsive', () => {
