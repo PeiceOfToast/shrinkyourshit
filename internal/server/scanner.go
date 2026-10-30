@@ -153,10 +153,11 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	if err != nil {
 		return ScanResult{}, err
 	}
-	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
+	plan, _, err := LibraryPlan(lib)
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("scanner: library %s: %w", lib.ID, err)
 	}
+	logFlowTargetMismatch(s.log, lib, plan)
 
 	paths, err := collectMediaPaths(lib.Path)
 	if err != nil {
@@ -204,7 +205,7 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 		seen[p] = true
 	}
 	for _, f := range findings {
-		queued, satisfied, err := s.apply(ctx, lib, target, f)
+		queued, satisfied, err := s.apply(ctx, lib, plan, f)
 		if err != nil {
 			s.log.Error("scanner: apply", "library", lib.ID, "path", f.path, "err", err)
 			res.Errors++
@@ -379,8 +380,11 @@ func (s *Scanner) waitStable(ctx context.Context, path string) error {
 }
 
 // apply stores one examined file and reports what happened: whether a job
-// was queued and whether the file ended up satisfied.
-func (s *Scanner) apply(ctx context.Context, lib *store.Library, target flow.Target, f *finding) (queued, satisfied bool, err error) {
+// was queued and whether the file ended up satisfied. The library's flow is
+// resolved against this file's probe, so guarded encodes (encode only when
+// the codec differs, only above a bitrate) satisfy files that match
+// without queueing them.
+func (s *Scanner) apply(ctx context.Context, lib *store.Library, plan flow.Plan, f *finding) (queued, satisfied bool, err error) {
 	var (
 		probeJSON string
 		decision  flow.Decision
@@ -390,7 +394,11 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, target flow.Tar
 		if err := json.Unmarshal([]byte(f.existing.ProbeJSON), &cached); err != nil {
 			return false, false, fmt.Errorf("decode cached probe: %w", err)
 		}
-		decision = flow.Evaluate(cached, target)
+		eff, err := flow.ResolvePlan(plan, cached)
+		if err != nil {
+			return false, false, fmt.Errorf("resolve flow: %w", err)
+		}
+		decision = flow.Evaluate(cached, eff.Target)
 		probeJSON = f.existing.ProbeJSON
 	} else {
 		data, err := json.Marshal(f.info)
@@ -398,7 +406,11 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, target flow.Tar
 			return false, false, fmt.Errorf("marshal probe: %w", err)
 		}
 		probeJSON = string(data)
-		decision = flow.Evaluate(f.info, target)
+		eff, err := flow.ResolvePlan(plan, f.info)
+		if err != nil {
+			return false, false, fmt.Errorf("resolve flow: %w", err)
+		}
+		decision = flow.Evaluate(f.info, eff.Target)
 	}
 
 	file := &store.File{

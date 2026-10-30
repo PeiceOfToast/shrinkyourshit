@@ -29,16 +29,20 @@ const (
 	FileStatusMissing    = "missing"
 )
 
-// Library is a folder plus a Target and watch/schedule settings. Target and
-// easy are opaque JSON validated by internal/flow (easy is the easy-screen
-// input that compiled to Target; empty when the library was created from a
-// full Target).
+// Library is a folder plus a Target and watch/schedule settings. Target,
+// easy and flow are opaque JSON validated by internal/flow (easy is the
+// easy-screen input that compiled to Target; empty when the library was
+// created from a full Target). flow_json is the canonical rule graph every
+// tier generates and edits; flow_source records its owner (easy, steps or
+// advanced). flow wins over target when both disagree (ARCHITECTURE.md).
 type Library struct {
 	ID           string
 	Name         string
 	Path         string
 	TargetJSON   string
 	EasyJSON     string
+	FlowJSON     string
+	FlowSource   string // easy | steps | advanced; empty on legacy rows
 	Watch        bool
 	Schedule     string // cron string or empty
 	ResultPolicy string // replace_if_smaller | replace | keep_both

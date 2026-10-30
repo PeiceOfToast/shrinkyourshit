@@ -161,15 +161,23 @@ func TestScannerNewTargetQueuesFromCacheOnScan(t *testing.T) {
 	fs := h.files(lib.ID)
 	require.Equal(t, store.FileStatusSatisfied, fs["movie.mkv"].Status)
 
-	// Swap the Target to h264 directly in the store (the manager path is
-	// tested separately): the scan must notice via status==new... it does
-	// not — satisfied files with unchanged fingerprints stay put. The
-	// update-triggered re-evaluation is the mechanism (library_test).
+	// Swap the rule to h264 directly in the store (the manager path is
+	// tested separately): since task 14 the flow is the rule, so the test
+	// stores the matching flow graph beside the target. The scan must
+	// notice via status==new... it does not — satisfied files with
+	// unchanged fingerprints stay put. The update-triggered re-evaluation
+	// is the mechanism (library_test).
 	target := flow.Default()
 	target.Video.Codec = flow.CodecH264
-	raw, err := json.Marshal(target)
+	graph, err := flow.TargetToFlow(target)
 	require.NoError(t, err)
-	lib.TargetJSON = string(raw)
+	raw, err := json.Marshal(graph)
+	require.NoError(t, err)
+	rawTarget, err := json.Marshal(target)
+	require.NoError(t, err)
+	lib.TargetJSON = string(rawTarget)
+	lib.FlowJSON = string(raw)
+	lib.FlowSource = flow.FlowSourceAdvanced
 	require.NoError(t, h.st.UpdateLibrary(context.Background(), lib))
 
 	// Force the file back to new to simulate a fresh classification need.
