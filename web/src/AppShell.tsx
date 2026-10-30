@@ -285,9 +285,7 @@ export default function AppShell() {
           }`}
           data-testid="nav-rail"
         >
-          <div
-            className={`py-5 ${showLabels ? 'px-4' : 'px-2 text-center'}`}
-          >
+          <div className={`py-5 ${showLabels ? 'px-4' : 'px-2 text-center'}`}>
             {showLabels ? (
               brand
             ) : (

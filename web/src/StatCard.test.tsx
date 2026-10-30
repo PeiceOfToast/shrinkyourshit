@@ -12,7 +12,9 @@ import StatCard from './StatCard'
 
 describe('StatCard', () => {
   it('renders label, value, an aria hidden icon and a fluid value size', () => {
-    render(<StatCard testid="stat-files" label="Files" value="12" icon="M4 6h16" />)
+    render(
+      <StatCard testid="stat-files" label="Files" value="12" icon="M4 6h16" />,
+    )
     const card = screen.getByTestId('stat-files')
     expect(card).toHaveTextContent('Files')
     expect(card).toHaveTextContent('12')
@@ -43,9 +45,7 @@ describe('StatCard', () => {
         tone="good"
       />,
     )
-    const value = screen
-      .getByTestId('stat-saved')
-      .querySelector('p.font-bold')
+    const value = screen.getByTestId('stat-saved').querySelector('p.font-bold')
     expect(value?.className).toContain('text-emerald-400')
     expect(value?.className).not.toContain('text-slate-100')
   })

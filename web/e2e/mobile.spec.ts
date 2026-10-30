@@ -177,9 +177,7 @@ test.describe('mobile audit', () => {
           overflow,
           `the expanded rail at ${width}px overflows by ${overflow}px (scrollWidth ${scrollWidth} > viewport ${innerWidth})`,
         ).toBeLessThanOrEqual(0)
-        await page
-          .getByRole('button', { name: 'Collapse navigation' })
-          .click()
+        await page.getByRole('button', { name: 'Collapse navigation' }).click()
         await expect(rail.getByText('Encode settings')).toHaveCount(0)
       }
     })

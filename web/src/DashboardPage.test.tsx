@@ -239,8 +239,16 @@ describe('DashboardPage', () => {
         body: { items: [library], total: 1 },
       },
       { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
-      { method: 'GET', match: /\/api\/v1\/nodes$/, body: { items: [], total: 0 } },
-      { method: 'GET', match: /\/api\/v1\/jobs$/, body: { items: [], total: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderDashboard()
@@ -252,7 +260,7 @@ describe('DashboardPage', () => {
     // One grid produces the geometry jsdom cannot measure: 2 columns on a
     // phone, 4 from sm up. Testids and order are the dashboard's contract.
     const ids = Array.from(grid?.children ?? []).map(
-      (el) => (el as HTMLElement).dataset.testid,
+      (el) => (el as HTMLElement).dataset.testid ?? '',
     )
     expect(ids).toEqual([
       'stat-space-saved',
