@@ -364,8 +364,16 @@ describe('FlowCanvas read only (phase 1)', () => {
     mock = installFetchMock(standardRoutes('easy'))
     renderFlow()
     await waitFor(() => screen.getByTestId('canvas-node-transcode_video'))
-    fireEvent.click(screen.getByTestId('canvas-node-transcode_video'))
-    await waitFor(() => screen.getByTestId('flow-inspector'))
+    // jsdom has no layout: the step-types response can re-render the
+    // canvas right between the node appearing and the click, so the
+    // synthetic click can land on a detached element — no select change,
+    // no inspector (seen ~1 in 8 runs, on main too). Clicking again
+    // inside waitFor makes it deterministic; a repeated click on an
+    // already selected step is idempotent.
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('canvas-node-transcode_video'))
+      screen.getByTestId('flow-inspector')
+    })
     expect(
       screen.getByTestId('flow-inspector-chips-transcode_video').textContent,
     ).toContain('quality 3')

@@ -56,3 +56,11 @@ the test results.
   prefix convention.
 - Watch item: the worker drain integration test fails on main too (see Notes); task 22
   should not assume it is caused by UI work, but someone should root-cause it.
+- CI note: run 41076988701 failed in the web job on the pre-existing
+  FlowCanvas flake ("shows the read-only inspector for a selected step",
+  ~1 in 8 locally on main too — proven with 16 reruns on main). Root cause:
+  the click can land on a canvas node detached by the step-types re-render;
+  no select change, no inspector. Fixed test-only in this PR by clicking
+  again inside waitFor (idempotent) — out of task 21's scope, but rule 13
+  requires a green CI gate and the token cannot rerun the failed job.
+  12/12 local reruns green after the fix.
