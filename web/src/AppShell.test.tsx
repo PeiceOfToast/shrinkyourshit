@@ -31,10 +31,10 @@ type MediaStub = ReturnType<typeof stubMatchMedia>
  * Installs a matchMedia stub that answers every query with `matches`.
  * Returns the change listeners so a test can simulate a rotation.
  */
-function stubMatchMedia(matches: boolean) {
+function stubMatchMediaWhere(matches: (query: string) => boolean) {
   const listeners: Array<(event: { matches: boolean }) => void> = []
   const impl = (query: string) => ({
-    matches,
+    matches: matches(query),
     media: query,
     onchange: null,
     addEventListener: (_: string, cb: (event: { matches: boolean }) => void) =>
@@ -57,6 +57,22 @@ function stubMatchMedia(matches: boolean) {
       for (const cb of [...listeners]) cb({ matches: matchesNow })
     },
   }
+}
+
+function stubMatchMedia(matches: boolean) {
+  return stubMatchMediaWhere(() => matches)
+}
+
+/**
+ * A viewport-sized stub (task 21): every `min-width` query answers by
+ * comparison, so 900 px is desktop (768) but not wide (1024) — the one
+ * width where the rail auto collapses while the drawer is gone.
+ */
+function stubViewport(px: number) {
+  return stubMatchMediaWhere((query) => {
+    const match = query.match(/min-width:\s*(\d+)px/)
+    return px >= (match ? Number(match[1]) : 0)
+  })
 }
 
 const openNoLogin = { setup_complete: true, login_enabled: false }
@@ -284,5 +300,74 @@ describe('AppShell wide (md and up, min-width: 768px = true)', () => {
     expect(
       screen.getByRole('link', { name: 'Encode settings' }),
     ).toHaveAttribute('title', 'Encode settings')
+  })
+})
+
+describe('AppShell rail override (task 21)', () => {
+  beforeEach(() => {
+    // jsdom's localStorage persists across tests in this file.
+    localStorage.clear()
+  })
+
+  it('at 900 px (md, below lg) hides the labels with no click; the toggle shows them and remembers it', async () => {
+    stubViewport(900)
+    renderShell('/')
+    await waitFor(() => {
+      expect(screen.getByTestId('nav-rail')).toBeInTheDocument()
+    })
+
+    // Auto mode below lg: icons only, without any click.
+    const rail = screen.getByTestId('nav-rail')
+    expect(rail.className).toContain('w-16')
+    expect(screen.queryByText('Encode settings')).not.toBeInTheDocument()
+
+    const toggle = screen.getByTestId('nav-toggle')
+    expect(toggle).toHaveAttribute('aria-label', 'Show labels')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(await screen.findByText('Encode settings')).toBeInTheDocument()
+    expect(rail.className).toContain('w-56')
+    expect(toggle).toHaveAttribute('aria-label', 'Collapse navigation')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // The deliberate choice is written back for the next load.
+    expect(localStorage.getItem('sys.rail')).toBe('expanded')
+  })
+
+  it('a saved collapsed override wins over a wide viewport', async () => {
+    stubViewport(1280)
+    localStorage.setItem('sys.rail', 'collapsed')
+    renderShell('/')
+    await waitFor(() => {
+      expect(screen.getByTestId('nav-rail')).toBeInTheDocument()
+    })
+
+    const rail = screen.getByTestId('nav-rail')
+    expect(rail.className).toContain('w-16')
+    expect(screen.queryByText('Encode settings')).not.toBeInTheDocument()
+    expect(screen.getByTestId('nav-toggle')).toHaveAttribute(
+      'aria-label',
+      'Show labels',
+    )
+
+    // An override is deliberate but still reversible in place.
+    fireEvent.click(screen.getByTestId('nav-toggle'))
+    expect(await screen.findByText('Encode settings')).toBeInTheDocument()
+    expect(rail.className).toContain('w-56')
+    expect(localStorage.getItem('sys.rail')).toBe('expanded')
+  })
+
+  it('an unrecognised saved value falls back to auto (labels at lg and up)', async () => {
+    stubViewport(1280)
+    localStorage.setItem('sys.rail', 'bogus')
+    renderShell('/')
+    await waitFor(() => {
+      expect(screen.getByTestId('nav-rail')).toBeInTheDocument()
+    })
+
+    // Auto at 1280 px means labels, and the junk value is not a choice:
+    // it stays untouched until the user actually toggles.
+    expect(screen.getByTestId('nav-rail').className).toContain('w-56')
+    expect(screen.getByText('Encode settings')).toBeInTheDocument()
+    expect(localStorage.getItem('sys.rail')).toBe('bogus')
   })
 })
