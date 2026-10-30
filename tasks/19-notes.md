@@ -60,8 +60,51 @@ past tasks; if it cannot start, record that and let CI's e2e job decide).
 
 ## Progress log
 
-(written at the end)
+- Backend commits landed one per unit: last scan time (migration 0009,
+  store, scanner, DTO, docs), files search/sort/encoder, file jobs endpoint.
+- `TestLibraryFilesSearchAndSort` needed two expectation fixes: the seeded
+  sizes sort inside→alpha, and stable sorting keeps store order on ties
+  (documented in the test).
+- Web: `StatusChip` extracted and shared by the list and the detail header;
+  card variants of list testids carry the `-card` suffix (task 12 pattern).
+- `easyModel.STATUS_LABELS` gained the job-only labels (claimed, running,
+  cancelled) so the history panel speaks plain language too.
+- `make test` exit 0 (Go + 153 web tests in 23 files), `make lint` exit 0
+  (golangci 0 issues, eslint 0 warnings, prettier clean).
+- `make test-integration`: one flake — `TestNodeStartTakesEffectOnHeartbeat`
+  timed out at 64 s during the full-suite run (VM saturated by the many
+  concurrent server+worker+ffmpeg stacks); it passes in isolation (4.5 s)
+  and the whole worker integration package passes on re-run (113 s). Same
+  timing-test behaviour the repo has seen before; not a regression — the
+  task touches nothing on the claim path.
+- e2e: this VM cannot launch chromium (`libatk-1.0.so.0` missing, no
+  sudo/apt — the standing limitation tasks 10, 12 and 13 recorded). The
+  layout suite gains `/libraries/{id}` at 390/768/1280 as a pure refactor
+  of the same three assertions the five existing pages run, registered
+  under the `library-detail` ready marker the task 12 card tests already
+  use; the pixel-true verdict comes from CI's e2e job on the PR.
+- `LibraryDetailPage` plain-language block reuses the server's
+  `POST /flows/preview {graph}` — the same renderer the easy screen uses,
+  so the UI keeps no second copy (task 14 rule).
 
 ## Summary
 
-(written at the end)
+- Built: last scan time end to end (migration 0009, scanner stamp,
+  `LibraryDTO.last_scan_at`); `q`/`sort`/`dir` server side on the files
+  endpoint with per-page `last_job_encoder`; `GET /files/{id}/jobs`; the
+  libraries list as a table with status chips (cards under sm); the detail
+  header summary (counts, saved, plain-language target, last scan); the
+  file table with before/after/ratio/encoder and a job-log link; the
+  FileHistory panel with attempts, fallbacks and log disclosures; e2e
+  layout coverage for both library pages.
+- Skipped: charts over time, bulk actions, flow editors (out of scope);
+  no SQL-level file filtering (handler-side, the documented home-lab
+  pattern); job history capped at the newest 100 per file.
+- Next task should know: `FileItem.last_job_encoder` and
+  `Library.last_scan_at` are optional JSON fields (omitempty); the
+  list/detail chips share `StatusChip`; the stores' `SetLibraryScanTime`
+  is deliberately not part of `UpdateLibrary`.
+- Verification: make test 0, make lint 0, integration re-run green after
+  one load flake; e2e verdict delegated to CI (no launchable chromium on
+  this VM, libatk missing, no sudo).
+- PR: (opened after this commit — see tasks/STATUS.md row 19.)
