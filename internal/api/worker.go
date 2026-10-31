@@ -213,13 +213,16 @@ func (a *API) workerComplete(w http.ResponseWriter, r *http.Request, node *store
 		params.OutputPath = transferOut.OutputPath
 		params.SkippedReason = transferOut.SkipReason
 		params.BytesAfter = transferOut.BytesAfter
+		// The upload has served its purpose: the result was applied to
+		// the library above and Complete below only records state. Drop
+		// the scratch before the job is recorded done, so a done job
+		// never owns upload scratch (if the job left the active state
+		// meanwhile, the cancel path discards it anyway).
+		a.svc.Transfer().Discard(r.PathValue("id"))
 	}
 	job, err := a.svc.Queue().Complete(workerCtx(r), r.PathValue("id"), node.ID, params)
 	if a.queueError(w, err) {
 		return
-	}
-	if body.AccessMode == store.NodeAccessTransfer {
-		a.svc.Transfer().Discard(r.PathValue("id"))
 	}
 	writeJSON(w, http.StatusOK, a.jobDTO(workerCtx(r), job))
 }
