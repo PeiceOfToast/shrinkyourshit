@@ -53,10 +53,10 @@ Publish the port mapping the app actually uses. This step is the whole point of 
 Regenerating the release binaries (they already cover arm64), a native arm64 runner, Windows containers, tagging a release (the owner does that).
 
 ## Acceptance
-- [ ] `docker buildx build --platform linux/amd64,linux/arm64` succeeds locally or in CI, and both digests appear in `docker buildx imagetools inspect` of the locally built tag.
-- [ ] The arm64 image starts under emulation, answers `GET /api/v1/health`, and its bundled ffmpeg runs. Paste the health JSON and the ffmpeg banner from the CI log into the PR body.
-- [ ] The amd64 image still reports `commit` and `build_date` from the build args, and the existing smoke check still passes.
-- [ ] An unsupported `TARGETARCH` fails the Docker build with a message naming the arch. Proven by building with `--build-arg TARGETARCH=riscv64` and pasting the failure.
-- [ ] Both sha256 digests for the two debs are in `docker/Dockerfile` and match a fresh `sha256sum` of each downloaded file.
-- [ ] `docs/container-architectures.md`, `README.md`, `CHANGELOG.md` and `docs/releasing.md` describe the new reality.
-- [ ] `make test` and `make lint` are green.
+- [x] `docker buildx build --platform linux/amd64,linux/arm64` succeeds locally or in CI, and both digests appear in `docker buildx imagetools inspect` of the locally built tag. — CI run 41222785022 (PR #29), `docker-arm64` job: multi-platform build pushed to the local proof registry; `imagetools inspect` printed `Platform: linux/amd64` and `Platform: linux/arm64`.
+- [x] The arm64 image starts under emulation, answers `GET /api/v1/health`, and its bundled ffmpeg runs. Paste the health JSON and the ffmpeg banner from the CI log into the PR body. — Same run, `Smoke test the arm64 image (boot under emulation)` step: `{"status":"ok","version":"v0.0.0-ci"}`, `ffmpeg version 7.1.4-Jellyfin ...`, `built with gcc 12 (Debian 12.2.0-14)`; pasted into the PR body.
+- [x] The amd64 image still reports `commit` and `build_date` from the build args, and the existing smoke check still passes. — Same run, `docker` job `Image reports version, commit and build date` step green; the version-endpoint check is unchanged in `release.yml` and `ci.yml`.
+- [x] An unsupported `TARGETARCH` fails the Docker build with a message naming the arch. Proven by building with `--build-arg TARGETARCH=riscv64` and pasting the failure. — Same run, `docker` job `Unsupported TARGETARCH fails the build` step: build failed with exit 1 and the step's grep gate confirmed the message names `riscv64`; pasted into the PR body.
+- [x] Both sha256 digests for the two debs are in `docker/Dockerfile` and match a fresh `sha256sum` of each downloaded file. — Both debs downloaded and hashed twice locally (amd64 `0cf62bc2…`, arm64 `9de240f9…`, stable), digests checked into the Dockerfile, and each build runs `sha256sum -c -` on the downloaded deb (green in both the `docker` and `docker-arm64` jobs).
+- [x] `docs/container-architectures.md`, `README.md`, `CHANGELOG.md` and `docs/releasing.md` describe the new reality. — All four updated on this branch; the doc-assertion tests in `internal/update/release_hygiene_test.go` pin the new facts and pass.
+- [x] `make test` and `make lint` are green. — Run locally on the dev VM: `go test ./...` (unit + integration) and the web vitest suite pass, `make lint` (go vet, golangci-lint, eslint, prettier) passes.
