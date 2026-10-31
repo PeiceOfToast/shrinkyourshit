@@ -166,3 +166,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-31T04:04:00Z task 24: PR #25 merged squash f82b8e7, remote branch task/24-health-check-and-move deleted, main fast-forwarded ce45d61..f82b8e7
 - 2026-10-31T04:04:00Z note: task 25 (webhooks and openapi, depends on 23 done) is next; will start on the next tick
 - 2026-10-31T04:16:20Z task 25 started on VM 201, session ses_e6fd3d726ffeL50EOPD4po4lIW (webhooks with Discord/Slack shaping, delivery log, OpenAPI gated against real route table), fire and forget
+- 2026-10-31T05:20:53Z task 25: verified by PM: STATUS done, 7/7 acceptance boxes ticked, DECISIONS.md identical to origin/main (0 diff lines), make test exit 0 (go suites ok, vitest 197 tests in 28 files), make lint exit 0 (go vet, golangci 0 issues, spdx, eslint, prettier clean), PR CI run 41171494446 green on all 8 jobs (go, web, docker, e2e, cross, installer, installer-powershell, report)
+- 2026-10-31T05:20:53Z task 25: PR #26 merged squash f34ed49, remote branch task/25-webhooks-and-openapi deleted, main fast-forwarded 0197249..f34ed49
+- 2026-10-31T05:20:53Z note: task 26 (release hygiene, depends on 16 done) is next; will start on the next tick
