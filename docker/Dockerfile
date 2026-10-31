@@ -45,6 +45,8 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # exact filename is pinned even though latest-7.x is a rolling channel;
 # the sha256 check fails the build on mismatch. apt installs the local deb
 # and resolves its dependencies from Debian bookworm.
+# The arm64 investigation notes and the CI proof live in
+# docs/container-architectures.md.
 FROM debian:bookworm-slim AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
