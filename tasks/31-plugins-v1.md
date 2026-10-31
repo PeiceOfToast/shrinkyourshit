@@ -68,10 +68,18 @@ A plugin as a flow step, a plugin marketplace or index, signing or sandboxing be
 
 ## Acceptance
 - [x] A plugin directory with a valid manifest installs, appears disabled, and does nothing until enabled. Proven end to end in a test.
+  Proof: `TestPluginInstalledDisabledDoesNothing` (internal/server/plugins_test.go) — installs from a directory, asserts the row is `enabled=false` with no values, claims a job with the plugin disabled and asserts zero `plugin` log lines, then enables it and the same plugin's verdict now fails the next claim. The HTTP surface is covered by `TestPluginsEndpointsCRUD` (internal/api/plugins_test.go, install answers 201 with `enabled=false`).
 - [x] Installing from a git URL works against a local `file://` repository inside the test, and an invalid manifest is rejected with a message naming the field.
+  Proof: `TestInstallFromGitFileURL` and `TestInstallFromGitWithRef` (internal/plugin/install_test.go) build a local `file://` repository in the test and install from it; `TestInstallFromGitBadManifestRejected` and `TestInstallFromPathInvalidManifestNamesField` assert the rejection message names the field; `TestPluginsGitInstall` drives the same path through the admin API.
 - [x] `preflight` output appears in the job log with `source: plugin`; `postprocess` failure leaves the job `done` with a warning; `preflight` failure fails the job with the plugin name in the error.
+  Proof: `TestPreflightPluginFailsJob` asserts the stdout line lands in the job log with `source: plugin` and the job failed with `gate-guard` + `exit status 3` in the error; `TestPostprocessFailureLeavesJobDone` asserts the job stays `done` and the failure is a warn line naming the plugin.
 - [x] A plugin that sleeps past its timeout is killed and the job continues, proven by a test with a 1 second timeout.
+  Proof: `TestPreflightPluginTimeoutContinuesJob` (internal/server) claims with a `sleep 30` plugin at `timeout_seconds: 1`: the claim succeeds, the timeout is a warn line. `TestRunTimeoutKillsAndJobContextReachesStdin` (internal/plugin) asserts the run is marked timed out and returns well under 10s (the group kill).
 - [x] A plugin requiring a missing setting does not run, and the job log says why.
+  Proof: `TestPreflightMissingSettingSkipped` — the job proceeds, the plugin's stdout never appears, and the single warn line names the plugin and the missing `token` key ("not set"). `TestRunMissingRequiredSettingDoesNotRun` covers the runner level.
 - [x] Unknown manifest fields, a bad name and a bad command shape are each rejected with a test.
+  Proof: `TestRejectUnknownField`, `TestRejectBadName`, `TestRejectBadCommand` (internal/plugin/manifest_test.go) — plus `TestRejectBadType`, `TestRejectBadEnvName`, `TestRejectBadSettings` for the neighbours.
 - [x] The plugins tab lists, enables, tests and removes a plugin, with tests; `docs/plugins.md` exists and is linked.
+  Proof: `web/src/PluginsPage.test.tsx` (6 tests: list + security statement + disabled switch, git install body, path install body, enable PUT, manifest-driven settings form, Test output, remove confirm). `docs/plugins.md` is linked from the README docs table and from the tab itself (`plugins-docs-link`, rendered in the component).
 - [x] `make test`, `make test-integration` and `make lint` are green.
+  Proof: all three run fresh on the continuation (go test + 214 web tests; a forced `go test -count=1 -tags=integration ./...`; `go vet` + golangci-lint + spdx + eslint + prettier) — see the notes' Gates line. CI runs the same on the PR.
