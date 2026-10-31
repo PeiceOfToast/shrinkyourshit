@@ -89,6 +89,15 @@ type Store interface {
 	// 18). Nodes without finished jobs are absent from the result.
 	NodeJobStats(ctx context.Context) (map[string]NodeStat, error)
 	UpdateNode(ctx context.Context, n *Node) error
+	// TouchNodeHeartbeat records a heartbeat without writing the whole
+	// row: a heartbeat loads the node before the lifecycle endpoints may
+	// have moved desired_state, and a whole-row write resurrected that
+	// state (a stop or start lost under a running heartbeat, task 11).
+	// Only the heartbeat's own columns change; capabilities is stored
+	// verbatim when non-empty. completingDrain moves a draining node to
+	// stopped — conditionally, so it cannot override a concurrent
+	// stop-now that landed while the heartbeat was in flight.
+	TouchNodeHeartbeat(ctx context.Context, id string, capabilities string, completingDrain bool, now time.Time) error
 	DeleteNode(ctx context.Context, id string) error
 	// ConsumeNodeKeyOnce atomically returns and clears the node's one-time
 	// raw key (pairing, task 08): the first caller gets the key, later

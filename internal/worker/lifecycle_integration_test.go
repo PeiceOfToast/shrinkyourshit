@@ -9,6 +9,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -81,12 +82,30 @@ func TestNodeDrainFinishesCurrentJob(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s.runWorker(ctx, s.workerConfig(func(c *Config) { c.Key = key }))
+	// One slot: the test's premise is a single in-flight job with the
+	// second queued behind it. The shared stack default is two slots, and
+	// a second claim landing between the "one running" observation and
+	// the queued-count assertion made this test fail intermittently
+	// (proven flaky on main before any plugin code existed).
+	s.runWorker(ctx, s.workerConfig(func(c *Config) { c.Key = key; c.MaxSlots = 1 }))
 
-	// The long job is in flight and a second one is queued behind it.
-	s.waitFor("long job running", func() bool {
-		jobs, err := s.st.ListJobs(context.Background(), store.JobFilter{LibraryID: lib.ID, Status: store.JobStatusRunning})
-		return err == nil && len(jobs) == 1
+	// The long job is in flight and a second one is queued behind it. The
+	// wait pins the running job to the long fixture's job (the library's
+	// oldest, ListJobs orders by created_at): a first poll that lands
+	// after a too-quick encode — or a claim in the other order — would
+	// otherwise observe the second job running and make the queued-count
+	// assertion below fail with a misleading message.
+	longJob := s.jobFor(lib.ID)
+	require.NotNil(t, longJob)
+	s.waitForDesc("long job running", func() bool {
+		j, err := s.st.GetJob(context.Background(), longJob.ID)
+		return err == nil && j.Status == store.JobStatusRunning
+	}, func() string {
+		j, err := s.st.GetJob(context.Background(), longJob.ID)
+		if err != nil {
+			return "long job lookup: " + err.Error()
+		}
+		return "long job " + j.Status + ", attempt " + fmt.Sprint(j.Attempt) + ", error " + j.Error
 	})
 	jobs, err := s.st.ListJobs(context.Background(), store.JobFilter{LibraryID: lib.ID, Status: store.JobStatusQueued})
 	require.NoError(t, err)
@@ -96,19 +115,28 @@ func TestNodeDrainFinishesCurrentJob(t *testing.T) {
 	// Drain: finish what is held, claim nothing new.
 	s.stopNode(nodeID, true)
 
-	s.waitFor("drained job done", func() bool {
+	// drainState renders the state a wait is looking at, so a timeout
+	// names the situation instead of just the wait.
+	drainState := func() string {
+		long, err2 := s.st.GetJob(context.Background(), s.jobFor(lib.ID).ID)
+		second, err3 := s.st.GetJob(context.Background(), secondJob.ID)
+		return fmt.Sprintf("long job %s (err %v), second job %s (err %v), node desired_state %s",
+			long.Status, err2, second.Status, err3, s.nodeRow(nodeID).DesiredState)
+	}
+
+	s.waitForDesc("drained job done", func() bool {
 		j, err := s.st.GetJob(context.Background(), secondJob.ID)
 		return err == nil && j.Status == store.JobStatusQueued
-	})
-	s.waitFor("drain completes", func() bool {
+	}, drainState)
+	s.waitForDesc("drain completes", func() bool {
 		j, err := s.st.GetJob(context.Background(), s.jobFor(lib.ID).ID)
 		return err == nil && j.Status == store.JobStatusDone
-	})
+	}, drainState)
 
 	// The worker went idle and reported stopped: the node ends stopped.
-	s.waitFor("node ends stopped", func() bool {
+	s.waitForDesc("node ends stopped", func() bool {
 		return s.nodeRow(nodeID).DesiredState == store.NodeStateStopped
-	})
+	}, drainState)
 
 	// The second job was never claimed.
 	second, err := s.st.GetJob(context.Background(), secondJob.ID)

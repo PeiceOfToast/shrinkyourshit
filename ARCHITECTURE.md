@@ -83,6 +83,7 @@ Status enums are fixed strings; do not add values without updating this file.
 - `throughput_limit_mbps`: cap on this node's transfer speed (MB/s, 0 = unlimited; task 09)
 - `capabilities`: `{encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}`
 - `key_once`: the raw key between admin approval and the node's first retrieval; wiped on retrieval, revoke and delete (only the hash remains afterwards).
+- Heartbeats write only their own columns (`capabilities`, `last_heartbeat_at`, plus the conditional drain completion): a heartbeat loads the node before the lifecycle endpoints may have moved `desired_state`, and a whole-row write would resurrect the state it loaded — a stop or start silently lost under a running heartbeat. The same guard the job side already had (`UpdateJobIfActive`).
 
 **PairingToken:** `id, token_hash, expires_at, used_at`
 
