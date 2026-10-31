@@ -155,6 +155,19 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("DELETE /api/v1/integrations/{id}", a.requireAdmin(a.deleteIntegration))
 		mux.HandleFunc("POST /api/v1/integrations/{id}/test", a.requireAdmin(a.testIntegration))
 
+		// Webhooks (task 25): the outbound hooks the dispatcher notifies on
+		// job.done, job.failed and library.scanned. All admin only; the
+		// secret is returned exactly once, on create, and never again —
+		// every other response carries secret_set instead. Deliveries are
+		// the recorded outcomes per hook.
+		mux.HandleFunc("GET /api/v1/webhooks", a.requireAdmin(a.listWebhooks))
+		mux.HandleFunc("POST /api/v1/webhooks", a.requireAdmin(a.createWebhook))
+		mux.HandleFunc("GET /api/v1/webhooks/{id}", a.requireAdmin(a.getWebhook))
+		mux.HandleFunc("PUT /api/v1/webhooks/{id}", a.requireAdmin(a.updateWebhook))
+		mux.HandleFunc("DELETE /api/v1/webhooks/{id}", a.requireAdmin(a.deleteWebhook))
+		mux.HandleFunc("POST /api/v1/webhooks/{id}/test", a.requireAdmin(a.testWebhook))
+		mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", a.requireAdmin(a.webhookDeliveries))
+
 		// Node administration (task 08) plus lifecycle controls (task 11).
 		// The lifecycle endpoints move desired_state only: start sets
 		// running, stop chooses stopped or draining, pause-all/resume-all
