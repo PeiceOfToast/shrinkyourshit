@@ -80,7 +80,10 @@ func (a *API) workerClaim(w http.ResponseWriter, r *http.Request, node *store.No
 		return
 	}
 	job, err := a.svc.Queue().Claim(workerCtx(r), node.ID)
-	if errors.Is(err, store.ErrQueueEmpty) {
+	if errors.Is(err, store.ErrQueueEmpty) || errors.Is(err, server.ErrPreflightRejected) {
+		// An empty queue, or a queue whose freshly claimed job was just
+		// rejected by a preflight plugin (task 31): the job is failed
+		// already and the node polls again later. Same 204 either way.
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

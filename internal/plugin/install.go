@@ -18,6 +18,11 @@ import (
 // target directory) already exists. The API maps it to a 409.
 var ErrAlreadyInstalled = errors.New("plugin: already installed")
 
+// ErrEnabled is returned when removing a plugin that is still enabled
+// (task 31: removal refuses while the plugin is enabled). The API maps it
+// to a 409.
+var ErrEnabled = errors.New("plugin: still enabled")
+
 // ErrGitUnavailable is returned when a git install was asked for but the
 // git binary is missing on this host. The API maps it to a 400.
 var ErrGitUnavailable = errors.New("plugin: git is not available")

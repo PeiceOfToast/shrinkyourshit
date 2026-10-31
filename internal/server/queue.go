@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
@@ -24,6 +25,10 @@ var (
 	ErrFileSatisfied = errors.New("queue: file no longer needs work")
 	// ErrJobNotClaimed: a worker touching a job another node owns.
 	ErrJobNotClaimed = errors.New("queue: job is not claimed by this node")
+	// ErrPreflightRejected: a preflight plugin rejected the freshly claimed
+	// job (task 31). The job is already failed; the claim is answered as
+	// an empty queue so the worker polls again later.
+	ErrPreflightRejected = errors.New("queue: preflight plugin rejected the job")
 )
 
 // MaxLogTail is the size cap of the ffmpeg stderr tail kept on the job
@@ -53,6 +58,12 @@ type Queue struct {
 	// a done completion whose output was actually used. Nil (the default)
 	// means completions notify nothing.
 	notifier Notifier
+	// plugins is the preflight plugin gate (task 31): a synchronous
+	// claim-time check. Nil (the default) means claims run no plugins.
+	// The postprocess and notify phases hang off the notifier router
+	// instead, so they share one notifier path with the webhooks and the
+	// refresher.
+	plugins *PluginService
 }
 
 // NewQueue builds a Queue. events may be nil (no publishing); log may be nil.
@@ -79,6 +90,14 @@ func (q *Queue) SetInspector(inspect ResultInspector, ffprobePath string) {
 // integrations keep working unchanged.
 func (q *Queue) SetNotifier(n Notifier) {
 	q.notifier = n
+}
+
+// SetPlugins wires the preflight plugin gate (task 31): a synchronous
+// claim-time check whose verdict can fail the job. Nil (the default)
+// means claims run no plugins. The postprocess/notify phases do not go
+// through this field — they hang off the notifier router.
+func (q *Queue) SetPlugins(p *PluginService) {
+	q.plugins = p
 }
 
 // QueueJob creates a queued job for a file that needs work and moves the
@@ -148,6 +167,21 @@ func (q *Queue) Claim(ctx context.Context, nodeID string) (*store.Job, error) {
 			q.log.Error("queue: claim file update", "file", f.ID, "err", err)
 		} else {
 			q.publish(EventFileUpdated, f)
+		}
+
+		// Preflight plugins (task 31) run synchronously right here: a
+		// plugin verdict can fail the job before it is ever handed to the
+		// node. A rejection leaves the claim empty (the worker polls again
+		// later) and the job failed with the plugin's name and exit code
+		// in the error — the same transition a worker-reported failure
+		// makes, including the failed event.
+		if q.plugins != nil {
+			if err := q.plugins.Preflight(ctx, job, f); err != nil {
+				if _, ferr := q.Fail(ctx, job.ID, nodeID, FailParams{Error: err.Error()}); ferr != nil {
+					q.log.Error("queue: preflight fail", "job", job.ID, "err", ferr)
+				}
+				return nil, ErrPreflightRejected
+			}
 		}
 	} else if !errors.Is(err, store.ErrNotFound) {
 		q.log.Error("queue: claim file lookup", "job", job.ID, "err", err)
@@ -293,6 +327,10 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	if err != nil {
 		return job, fmt.Errorf("queue: complete file lookup: %w", err)
 	}
+	// The plugin phases (task 31) need the original path: the file row's
+	// path is rewritten when the result policy applies the output, so the
+	// source path is captured before anything changes.
+	origPath := f.Path
 	f.LastJobID = job.ID
 	f.BytesSaved = f.Size - p.BytesAfter
 
@@ -320,6 +358,9 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 		}
 		q.finishEvents(job, f)
 		q.emitJobEvent(ctx, EventWebhookJobDone, job, f, lib)
+		// The plugin phases (task 31): the job ended done with no output
+		// applied (the result policy kept the original).
+		q.postJob(ctx, q.pluginContext(ctx, job, f, lib, origPath, "", store.JobStatusDone))
 		return job, nil
 	}
 
@@ -345,6 +386,9 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 			}
 			q.finishEvents(job, f)
 			q.emitJobEvent(ctx, EventWebhookJobDone, job, f, lib)
+			// The plugin phases (task 31): the job ended done but the
+			// output could not be verified, so it counts as not applied.
+			q.postJob(ctx, q.pluginContext(ctx, job, f, lib, origPath, "", store.JobStatusDone))
 			return job, nil
 		}
 
@@ -368,6 +412,9 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 		"bytes_saved", f.BytesSaved, "encoder", job.EncoderUsed)
 	q.finishEvents(job, f)
 	q.emitJobEvent(ctx, EventWebhookJobDone, job, f, lib)
+	// The plugin phases (task 31): the job ended done and the output was
+	// applied (the replaced path, or the keep_both sidecar).
+	q.postJob(ctx, q.pluginContext(ctx, job, f, lib, origPath, p.OutputPath, store.JobStatusDone))
 
 	// The library at home updates itself (task 23): the configured
 	// integrations learn about the completion — but only when the job
@@ -421,6 +468,50 @@ func (q *Queue) notify(ctx context.Context, ev WebhookEvent) {
 		return
 	}
 	q.notifier.Notify(ctx, ev)
+}
+
+// jobNotifier is the optional job-phase hook of the outbound hook (task
+// 31). The notifierRouter implements it; the bare Refresher (a test
+// queue's notifier) and the Dispatcher (the scanner's) do not, so the
+// queue's fan-out stays a no-op when no plugins service is wired.
+type jobNotifier interface {
+	PostJob(ctx context.Context, pc plugin.JobContext)
+}
+
+// postJob is a nil-safe call into the plugin phases (task 31) through the
+// same notifier object the webhooks and the refresher hang off — one
+// notifier path, not three. The plugins service runs the phases detached
+// (bounded by each plugin's own timeout), so a slow plugin can never slow
+// a completion.
+func (q *Queue) postJob(ctx context.Context, pc plugin.JobContext) {
+	if pj, ok := q.notifier.(jobNotifier); ok {
+		pj.PostJob(ctx, pc)
+	}
+}
+
+// pluginContext builds the job context the plugin phases receive (task
+// 31): the documented stdin JSON (docs/plugins.md). origPath is the file's
+// path before the result policy applied the output; outputPath is the
+// final path of an output that was applied, or "" when none was (a skip,
+// an unverified output). status is the job's final status.
+func (q *Queue) pluginContext(ctx context.Context, job *store.Job, f *store.File, lib *store.Library, origPath, outputPath, status string) plugin.JobContext {
+	pc := plugin.JobContext{
+		JobID:       job.ID,
+		Library:     libNameOf(lib),
+		SourcePath:  origPath,
+		OutputPath:  outputPath,
+		BytesBefore: job.BytesBefore,
+		BytesAfter:  job.BytesAfter,
+		Encoder:     job.EncoderUsed,
+		Status:      status,
+	}
+	if f == nil {
+		return pc
+	}
+	if origPath == "" {
+		pc.SourcePath = f.Path
+	}
+	return pc
 }
 
 // FailParams are the fields a worker reports on failure.
@@ -477,8 +568,13 @@ func (q *Queue) Fail(ctx context.Context, jobID, nodeID string, p FailParams) (*
 	var lib *store.Library
 	if got, lerr := q.st.GetLibrary(ctx, job.LibraryID); lerr == nil {
 		lib = got
+	} else if !errors.Is(lerr, store.ErrNotFound) {
+		q.log.Error("queue: fail library lookup", "library", job.LibraryID, "err", lerr)
 	}
 	q.emitJobEvent(ctx, EventWebhookJobFailed, job, f, lib)
+	// The plugin phases (task 31): the job ended failed; notify plugins
+	// run for a failed job, postprocess does not.
+	q.postJob(ctx, q.pluginContext(ctx, job, f, lib, filePathOf(f), "", store.JobStatusFailed))
 	return job, nil
 }
 
