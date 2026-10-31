@@ -15,6 +15,9 @@ All notable user-visible changes to ShrinkYourShit. The format follows
   support.
 - Signed webhooks with Discord and Slack shaping, a delivery log with retry
   info, and an OpenAPI document served by the API.
+- A full job log for every job, stored as structured rows (level, source,
+  message) rather than a truncated tail, batched from the worker while the
+  job runs, filterable by level in the UI and downloadable as text.
 - The release procedure is written down, the changelog is now hand-written,
   and the arm64 container question has a documented answer.
 
