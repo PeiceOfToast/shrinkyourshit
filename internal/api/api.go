@@ -98,6 +98,9 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 	mux.HandleFunc("GET /install.ps1", a.serveInstaller(shrink.InstallPowerShell,
 		"text/plain; charset=utf-8"))
 
+	// The OpenAPI document (task 25): open, carries no secrets.
+	registerOpenAPI(mux)
+
 	if svc != nil {
 		// First-run setup and login stay open; requireAdmin is applied to
 		// every other admin route (task 06). /setup/servers stays open so

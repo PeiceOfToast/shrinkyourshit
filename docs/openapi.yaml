@@ -1,0 +1,1409 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# ShrinkYourShit API (task 25). The route table in internal/api/api.go and
+# this document must agree in both directions: internal/api/openapi_test.go
+# parses every "METHOD /path" registration out of api.go and diffs it
+# against this file, so a route without a doc entry (or a doc entry without
+# a route) fails the build. Do not rename existing paths (API.md).
+#
+# Served by the app at GET /api/v1/openapi.json (this file converted to
+# JSON) and GET /openapi.yaml (verbatim). No auth.
+openapi: 3.0.3
+info:
+  title: ShrinkYourShit API
+  description: >-
+    The local-first video compressor. This document describes the HTTP API
+    the web UI and any local tooling talk to: the admin API (cookie
+    session), the first-run setup/login endpoints, the pairing handshake
+    and the worker API (bearer node key). Errors are always a JSON body of
+    {error, code}.
+  version: 1.6.0
+servers:
+  - url: /
+    description: The app itself; every path below is relative to the server root.
+tags:
+  - name: meta
+    description: Health, version and this document.
+  - name: setup
+    description: First-run setup, login and sessions.
+  - name: settings
+    description: Server-wide settings.
+  - name: libraries
+    description: Libraries, files and scans.
+  - name: jobs
+    description: The job queue and finished jobs.
+  - name: flows
+    description: Flow editor helpers (step types, validation, preview).
+  - name: update
+    description: In-app self update.
+  - name: integrations
+    description: Outgoing media-server refresh integrations.
+  - name: webhooks
+    description: Outgoing webhooks and their delivery history.
+  - name: nodes
+    description: Node administration and lifecycle.
+  - name: pairing
+    description: The node pairing handshake (unauthenticated).
+  - name: worker
+    description: The worker API a node calls (node-key bearer auth).
+  - name: misc
+    description: SSE events, filesystem browsing, stats.
+security:
+  - sessionCookie: []
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [meta]
+      summary: Liveness for the Docker healthcheck. Never authenticated.
+      security: []
+      responses:
+        '200':
+          description: The server is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version]
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string, example: v1.6.0 }
+  /api/v1/version:
+    get:
+      tags: [meta]
+      summary: Build identity and how this install runs (task 17).
+      security: []
+      responses:
+        '200':
+          description: The build identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Version'
+  /api/v1/setup/status:
+    get:
+      tags: [setup]
+      summary: Whether first-run setup is complete and login is enabled.
+      security: []
+      responses:
+        '200':
+          description: The setup status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [setup_complete, login_enabled]
+                properties:
+                  setup_complete: { type: boolean }
+                  login_enabled: { type: boolean }
+  /api/v1/setup/servers:
+    get:
+      tags: [setup]
+      summary: Suggested default servers (scratch dir, data dir) for the setup screen.
+      security: []
+      responses:
+        '200':
+          description: The suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data_dir: { type: string }
+                  scratch_dir: { type: string }
+  /api/v1/setup:
+    post:
+      tags: [setup]
+      summary: Complete first-run setup. Only answered while setup is incomplete.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, login_enabled]
+              properties:
+                mode: { type: string, enum: [server, worker] }
+                login_enabled: { type: boolean }
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '201': { description: Setup recorded; body mirrors the setup status. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/auth/login:
+    post:
+      tags: [setup]
+      summary: Exchange a username and password for a session cookie.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Logged in; sets the sys_session cookie.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/logout:
+    post:
+      tags: [setup]
+      summary: Invalidate the current session.
+      responses:
+        '204': { description: Logged out. }
+  /api/v1/auth/me:
+    get:
+      tags: [setup]
+      summary: The account the route guard checks.
+      responses:
+        '200':
+          description: The session's account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SetupStatus'
+  /api/v1/settings:
+    get:
+      tags: [settings]
+      summary: The server-wide settings.
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+    put:
+      tags: [settings]
+      summary: Replace the server-wide settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Settings'
+      responses:
+        '200':
+          description: The stored settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/libraries:
+    get:
+      tags: [libraries]
+      summary: Every library, oldest first.
+      responses:
+        '200': { $ref: '#/components/responses/LibraryList' }
+    post:
+      tags: [libraries]
+      summary: Create a library (name, path, target, watch, result policy).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryParams'
+      responses:
+        '201':
+          description: The created library.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Library'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/libraries/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [libraries]
+      summary: One library.
+      responses:
+        '200':
+          description: The library.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Library'
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [libraries]
+      summary: Replace a library's settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryParams'
+      responses:
+        '200':
+          description: The updated library.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Library'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [libraries]
+      summary: Remove a library (its files and jobs stay in the database until their own cleanup).
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/libraries/{id}/scan:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [libraries]
+      summary: Start a scan of the library now. Asynchronous; watch the SSE events or poll the files.
+      responses:
+        '202': { description: Scan started. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/libraries/{id}/files:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [libraries]
+      summary: The library's files, newest first, paginated (limit/offset/status filters).
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 1000 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: status, in: query, schema: { type: string, description: new|needs_work|processing|done|failed|satisfied } }
+      responses:
+        '200': { $ref: '#/components/responses/FileList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/libraries/{id}/flow:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [flows]
+      summary: The library's flow graph (null while the library uses the easy screen).
+      responses:
+        '200':
+          description: The flow graph and its source.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryFlow'
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [flows]
+      summary: Store a flow graph for the library (switches it off the easy screen).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryFlow'
+      responses:
+        '200':
+          description: The stored flow.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryFlow'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/jobs:
+    get:
+      tags: [jobs]
+      summary: Jobs, newest first, paginated (limit/offset/status/library filters).
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 1000 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: status, in: query, schema: { type: string, description: queued|running|done|failed|canceled } }
+        - { name: library_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { $ref: '#/components/responses/JobList' }
+  /api/v1/jobs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [jobs]
+      summary: One job, including its log tail and error.
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/jobs/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [jobs]
+      summary: Cancel a queued or running job.
+      responses:
+        '200':
+          description: The canceled job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/jobs/{id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [jobs]
+      summary: Re-queue a failed job.
+      responses:
+        '200':
+          description: The re-queued job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/files/{id}/jobs:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [jobs]
+      summary: A file's job history.
+      responses:
+        '200': { $ref: '#/components/responses/JobList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/flows/validate:
+    post:
+      tags: [flows]
+      summary: Validate a flow graph without storing it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                flow: { type: object, description: A flow graph. }
+      responses:
+        '200':
+          description: Valid.
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/flows/step-types:
+    get:
+      tags: [flows]
+      summary: The step types the visual editor can place.
+      responses:
+        '200':
+          description: The step types.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StepType'
+  /api/v1/flows/preview:
+    post:
+      tags: [flows]
+      summary: What a flow would decide for one probed file, without touching anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                flow: { type: object }
+                probe: { type: object, description: A probe.MediaInfo. }
+      responses:
+        '200':
+          description: The flow's decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowPreview'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/update/status:
+    get:
+      tags: [update]
+      summary: The last release check. Never a network call; check_for_update says whether one is due.
+      responses:
+        '200':
+          description: The update status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateStatus'
+  /api/v1/update/check:
+    post:
+      tags: [update]
+      summary: Check the configured channel for a new release now (rate limited by a 1 minute window).
+      responses:
+        '200':
+          description: The fresh status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateStatus'
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/v1/update/apply:
+    post:
+      tags: [update]
+      summary: Download, verify and install the offered release, then restart. 409 in a container.
+      responses:
+        '202': { description: The update is being applied. }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/integrations:
+    get:
+      tags: [integrations]
+      summary: Every configured integration, keyless.
+      responses:
+        '200': { $ref: '#/components/responses/IntegrationList' }
+    post:
+      tags: [integrations]
+      summary: Create an integration (media server or download client the refresher notifies after done jobs).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationParams'
+      responses:
+        '201':
+          description: The created integration, keyless.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/integrations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [integrations]
+      summary: Replace an integration. An empty api_key keeps the stored key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationParams'
+      responses:
+        '200':
+          description: The updated integration, keyless.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [integrations]
+      summary: Remove an integration and its stored API key.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/integrations/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [integrations]
+      summary: The one-shot call the Test button makes; answered with the remote's status.
+      responses:
+        '200':
+          description: The test result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationTest'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/webhooks:
+    get:
+      tags: [webhooks]
+      summary: Every configured webhook, keyless.
+      responses:
+        '200': { $ref: '#/components/responses/WebhookList' }
+    post:
+      tags: [webhooks]
+      summary: Create a webhook. The server generates the signing secret and returns it exactly once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookParams'
+      responses:
+        '201':
+          description: The created webhook plus its secret — the only time the secret is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookCreated'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/webhooks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [webhooks]
+      summary: One webhook, keyless (secret_set instead of the secret).
+      responses:
+        '200':
+          description: The webhook.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [webhooks]
+      summary: Replace a webhook. An empty secret keeps the stored one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookParams'
+      responses:
+        '200':
+          description: The updated webhook, keyless.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [webhooks]
+      summary: Remove a webhook and its delivery history.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/webhooks/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [webhooks]
+      summary: Fire one delivery of a fixed sample job.done payload (the Test button). A single attempt, no retries.
+      responses:
+        '200':
+          description: The test result (200 even when the delivery failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookTest'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/webhooks/{id}/deliveries:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [webhooks]
+      summary: A webhook's recorded delivery outcomes, newest first (the newest 50 by default).
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 50 } }
+      responses:
+        '200': { $ref: '#/components/responses/WebhookDeliveryList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/nodes:
+    get:
+      tags: [nodes]
+      summary: Every node, with its lifecycle state.
+      responses:
+        '200': { $ref: '#/components/responses/NodeList' }
+  /api/v1/nodes/tokens:
+    post:
+      tags: [nodes]
+      summary: Mint a pairing token for the Nodes screen.
+      responses:
+        '201':
+          description: The one-time token and the server URL to pair against.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeToken'
+  /api/v1/nodes/{id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [nodes]
+      summary: Approve a pending node.
+      responses:
+        '204': { description: Approved. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/nodes/{id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [nodes]
+      summary: Revoke a node's key; the node stops working immediately.
+      responses:
+        '204': { description: Revoked. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/nodes/{id}/start:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [nodes]
+      summary: Set a node's desired state to running.
+      responses:
+        '200':
+          description: The updated node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/nodes/{id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [nodes]
+      summary: Stop a node (desired_state stopped; the body's drain flag chooses draining instead).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                drain: { type: boolean }
+      responses:
+        '200':
+          description: The updated node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/nodes/{id}/drain:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [nodes]
+      summary: "Drain a node: it finishes its current jobs and claims nothing new."
+      responses:
+        '200':
+          description: The updated node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/nodes/pause-all:
+    post:
+      tags: [nodes]
+      summary: Set every node's desired state to stopped.
+      responses:
+        '200': { description: All nodes paused. }
+  /api/v1/nodes/resume-all:
+    post:
+      tags: [nodes]
+      summary: Set every node's desired state back to running.
+      responses:
+        '200': { description: All nodes resumed. }
+  /api/v1/nodes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [nodes]
+      summary: Rename a node or change its parallel-job cap (1 to 16).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                concurrency: { type: integer, minimum: 1, maximum: 16 }
+      responses:
+        '200':
+          description: The updated node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [nodes]
+      summary: Remove a node record.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/pair:
+    post:
+      tags: [pairing]
+      summary: "The first half of the pairing handshake. Open: an unpaired node has no key yet."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+                name: { type: string }
+      responses:
+        '200':
+          description: Pending until the admin approves; the node polls this id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairPoll'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/pair/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [pairing]
+      summary: "Poll the pairing handshake. Open: the pairing token is the credential."
+      security: []
+      responses:
+        '200':
+          description: The pairing state; the node key arrives once, on approval.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairPoll'
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/worker/heartbeat:
+    post:
+      tags: [worker]
+      summary: The node reports its load and current jobs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                running: { type: integer }
+                disk_free: { type: integer, format: int64 }
+      responses:
+        '200':
+          description: The node row the server keeps.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/worker/claim:
+    post:
+      tags: [worker]
+      summary: Claim the next queued job for this node.
+      responses:
+        '200':
+          description: The claimed job, or null when the queue is empty.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerClaim'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/worker/jobs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [worker]
+      summary: "The job's spec: the source stream URL and the command to run."
+      responses:
+        '200':
+          description: The job spec.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerSpec'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/worker/jobs/{id}/progress:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [worker]
+      summary: Report encoder progress (percent, speed, bytes so far).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                percent: { type: number }
+                speed: { type: number }
+                bytes_so_far: { type: integer, format: int64 }
+      responses:
+        '204': { description: Recorded. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/worker/jobs/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [worker]
+      summary: Report the finished output (path, size, bytes_after, log tail).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                output_path: { type: string }
+                bytes_after: { type: integer, format: int64 }
+                log_tail: { type: string }
+      responses:
+        '200':
+          description: The completed job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/worker/jobs/{id}/fail:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [worker]
+      summary: Report the job failed (error text and log tail).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                error: { type: string }
+                log_tail: { type: string }
+      responses:
+        '200':
+          description: The failed job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/worker/jobs/{id}/access-check:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [worker]
+      summary: Can the node actually read the source? (shared-storage mode)
+      responses:
+        '200':
+          description: Whether the source is reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/worker/jobs/{id}/source:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [worker]
+      summary: Stream the job's source file (transfer mode).
+      responses:
+        '200':
+          description: The raw file bytes.
+          content:
+            application/octet-stream: {}
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/worker/jobs/{id}/result:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [worker]
+      summary: Upload the finished output in chunks (transfer mode).
+      requestBody:
+        content:
+          application/octet-stream: {}
+      responses:
+        '200':
+          description: The upload was accepted; the completion follows on /complete.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/events:
+    get:
+      tags: [misc]
+      summary: The server-sent events stream. Never closes on purpose; the UI reconnects.
+      responses:
+        '200':
+          description: text/event-stream.
+          content:
+            text/event-stream: {}
+  /api/v1/fs/browse:
+    get:
+      tags: [misc]
+      summary: List a directory for the path pickers.
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The directory listing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        is_dir: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/stats:
+    get:
+      tags: [misc]
+      summary: The dashboard aggregates (files, jobs, bytes saved).
+      responses:
+        '200':
+          description: The aggregates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+  /api/v1/openapi.json:
+    get:
+      tags: [meta]
+      summary: This document as JSON. Never authenticated.
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI document.
+          content:
+            application/json:
+              schema:
+                type: object
+  /openapi.yaml:
+    get:
+      tags: [meta]
+      summary: This document, verbatim. Never authenticated.
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI document.
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: The resource id.
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sys_session
+      description: Set by POST /auth/login; open when login is disabled (single-user mode).
+    nodeKey:
+      type: http
+      scheme: bearer
+      description: The node key a paired node holds; worker endpoints only.
+
+  responses:
+    BadRequest:
+      description: The request body or a parameter is invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: No session (admin endpoints) or no valid node key (worker endpoints).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: The path is outside the library roots.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such resource.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The resource is in a state that does not allow this.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: The check window (1 minute) has not passed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: The update service could not do this (no binary, wrong channel).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    LibraryList:
+      description: The library list.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Library' } }
+              total: { type: integer }
+    FileList:
+      description: The file page.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/File' } }
+              total: { type: integer }
+    JobList:
+      description: The job page.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Job' } }
+              total: { type: integer }
+    IntegrationList:
+      description: The integration list.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Integration' } }
+              total: { type: integer }
+    WebhookList:
+      description: The webhook list.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Webhook' } }
+              total: { type: integer }
+    WebhookDeliveryList:
+      description: The delivery list, newest first.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/WebhookDelivery' } }
+              total: { type: integer }
+    NodeList:
+      description: The node list.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Node' } }
+              total: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string, description: The human message. }
+        code: { type: string, description: machine readable — invalid_request, not_found, unauthorized, conflict, internal. }
+    SetupStatus:
+      type: object
+      required: [setup_complete, login_enabled]
+      properties:
+        setup_complete: { type: boolean }
+        login_enabled: { type: boolean }
+        username: { type: string }
+    Version:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        date: { type: string }
+        runtime: { type: string, description: how this install runs — binary, docker, source. }
+        update_check: { type: boolean }
+    Settings:
+      type: object
+      properties:
+        scratch_dir: { type: string }
+        max_parallel_jobs: { type: integer }
+        log_level: { type: string }
+    Library:
+      type: object
+      required: [id, name, path, target]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        path: { type: string }
+        target: { type: object, description: The encoding target (video codec/quality, audio policy). }
+        easy: { type: object, nullable: true, description: The easy screen's choices while the library uses it. }
+        flow: { type: object, nullable: true, description: The flow graph while the library uses the editor. }
+        flow_source: { type: string, description: empty for easy libraries, easy or editor. }
+        watch: { type: boolean }
+        schedule: { type: string, description: cron expression; empty means no schedule. }
+        result_policy: { type: string, description: replace_if_smaller or keep_both. }
+        last_scan_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    LibraryParams:
+      type: object
+      required: [name, path, target]
+      properties:
+        name: { type: string }
+        path: { type: string }
+        target: { type: object }
+        easy: { type: object, nullable: true }
+        watch: { type: boolean }
+        schedule: { type: string }
+        result_policy: { type: string }
+    LibraryFlow:
+      type: object
+      required: [flow]
+      properties:
+        flow: { type: object, description: A flow graph. }
+        source: { type: string }
+    File:
+      type: object
+      required: [id, library_id, path, status]
+      properties:
+        id: { type: string, format: uuid }
+        library_id: { type: string, format: uuid }
+        path: { type: string }
+        size: { type: integer, format: int64 }
+        mtime: { type: integer, format: int64 }
+        status: { type: string, description: new|needs_work|processing|done|failed|satisfied }
+        satisfied_reason: { type: string }
+        bytes_saved: { type: integer, format: int64 }
+        last_job_id: { type: string }
+        probe: { type: object, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Job:
+      type: object
+      required: [id, file_id, status]
+      properties:
+        id: { type: string, format: uuid }
+        file_id: { type: string, format: uuid }
+        library_id: { type: string, format: uuid }
+        node_id: { type: string }
+        status: { type: string, description: queued|running|done|failed|canceled }
+        priority: { type: integer }
+        attempt: { type: integer }
+        percent: { type: number }
+        speed: { type: number }
+        bytes_before: { type: integer, format: int64 }
+        bytes_after: { type: integer, format: int64 }
+        bytes_so_far: { type: integer, format: int64 }
+        file_name: { type: string }
+        file_path: { type: string }
+        encoder_used: { type: string }
+        log: { type: string, description: The tail of the encoder log (task 27 grows this). }
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    StepType:
+      type: object
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        category: { type: string }
+        ports: { type: object }
+    FlowPreview:
+      type: object
+      properties:
+        action: { type: string, description: what the flow decides — satisfy, encode, skip. }
+        encoder: { type: string }
+        reasons: { type: array, items: { type: string } }
+    UpdateStatus:
+      type: object
+      required: [current, update_available]
+      properties:
+        current: { type: string }
+        latest: { type: string }
+        update_available: { type: boolean }
+        check_for_update: { type: boolean }
+        release_url: { type: string }
+        release_notes: { type: string }
+        published_at: { type: string, format: date-time }
+        reason: { type: string }
+        apply:
+          type: object
+          properties:
+            active: { type: boolean }
+            stage: { type: string }
+            error: { type: string }
+    Integration:
+      type: object
+      required: [id, kind, name, base_url]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, description: jellyfin|emby|plex|sonarr|radarr. }
+        name: { type: string }
+        base_url: { type: string }
+        api_key_set: { type: boolean, description: The key itself never leaves the server. }
+        enabled: { type: boolean }
+        refresh_on_done: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    IntegrationParams:
+      type: object
+      required: [kind, name, base_url, api_key]
+      properties:
+        kind: { type: string, enum: [jellyfin, emby, plex, sonarr, radarr] }
+        name: { type: string }
+        base_url: { type: string }
+        api_key: { type: string, description: On update, empty keeps the stored key. }
+        enabled: { type: boolean }
+        refresh_on_done: { type: boolean }
+    IntegrationTest:
+      type: object
+      required: [ok, status]
+      properties:
+        ok: { type: boolean }
+        status: { type: integer, description: The remote's HTTP status; 0 on a transport failure. }
+        error: { type: string }
+    Webhook:
+      type: object
+      required: [id, name, url, events, enabled, secret_set]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        url: { type: string }
+        events: { type: array, items: { type: string, enum: [job.done, job.failed, library.scanned] } }
+        enabled: { type: boolean }
+        secret_set: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    WebhookCreated:
+      allOf:
+        - $ref: '#/components/schemas/Webhook'
+        - type: object
+          required: [secret]
+          properties:
+            secret: { type: string, description: The signing secret, exactly once. }
+    WebhookParams:
+      type: object
+      required: [name, url, events]
+      properties:
+        name: { type: string }
+        url: { type: string }
+        secret: { type: string, description: Never set by the client; on update an empty value keeps the stored secret. }
+        events: { type: array, items: { type: string, enum: [job.done, job.failed, library.scanned] } }
+        enabled: { type: boolean }
+    WebhookTest:
+      type: object
+      required: [ok, status]
+      properties:
+        ok: { type: boolean }
+        status: { type: integer, description: The remote's HTTP status; 0 on a transport failure. }
+        error: { type: string }
+    WebhookDelivery:
+      type: object
+      required: [id, event, status]
+      properties:
+        id: { type: string, format: uuid }
+        event: { type: string, enum: [job.done, job.failed, library.scanned] }
+        status: { type: integer, description: The remote's status; 0 on a transport failure. }
+        error: { type: string, description: The head of the failed body or the transport error text. }
+        at: { type: string, format: date-time }
+    Node:
+      type: object
+      required: [id, name, state, desired_state]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        state: { type: string, description: unpaired|idle|busy|offline. }
+        desired_state: { type: string, description: stopped|running|draining. }
+        access_mode: { type: string, description: auto|shared|transfer. }
+        concurrency: { type: integer }
+        running_jobs: { type: integer }
+        disk_free: { type: integer, format: int64 }
+        last_heartbeat: { type: string, format: date-time }
+        version: { type: string }
+    NodeToken:
+      type: object
+      required: [token, server_url]
+      properties:
+        token: { type: string, description: One time; consumed by the first pairing. }
+        server_url: { type: string }
+        expires_at: { type: string, format: date-time }
+    PairPoll:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, description: pending|approved|denied. }
+        node_id: { type: string }
+        node_key: { type: string, description: Present exactly once, on approval. }
+        server_url: { type: string }
+    WorkerClaim:
+      type: object
+      nullable: true
+      description: The claimed job, or null when the queue is empty.
+      properties:
+        job_id: { type: string, format: uuid }
+        file_id: { type: string, format: uuid }
+        library_id: { type: string, format: uuid }
+        priority: { type: integer }
+    WorkerSpec:
+      type: object
+      required: [job_id, source_url, command]
+      properties:
+        job_id: { type: string, format: uuid }
+        source_url: { type: string, description: Where to fetch the source (relative stream or a plain path in shared mode). }
+        command:
+          type: array
+          items: { type: string }
+          description: The exact ffmpeg command line to run.
+        output_path: { type: string }
+    Stats:
+      type: object
+      properties:
+        files: { type: integer }
+        jobs_done: { type: integer }
+        bytes_saved: { type: integer, format: int64 }
+        bytes_before: { type: integer, format: int64 }
+        bytes_after: { type: integer, format: int64 }
+
+  # Webhook deliveries (task 25): the server POSTs this payload to every
+  # enabled hook subscribed to the event. The signature header covers the
+  # raw body bytes.
+  #   POST <url>
+  #   X-SYS-Event: <event>
+  #   X-SYS-Signature: sha256=<hex hmac-sha256 of the body under the secret>
+  #   User-Agent: shrinkyourshit/<version>
+  # Discord and Slack hosts receive {"content": ...} / {"text": ...} with a
+  # one-line summary instead of the full JSON.
+  #   job.done / job.failed body:
+  #     { "event": "job.done", "job": Job, "file": File, "library": Library, "at": ... }
+  #     job.failed carries the encoder error in job.error.
+  #   library.scanned body:
+  #     { "event": "library.scanned", "library": Library, "scan": {seen, probed, reused, skipped, queued, satisfied, missing, errors}, "at": ... }
