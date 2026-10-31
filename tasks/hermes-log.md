@@ -165,3 +165,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-31T04:04:00Z task 24: PM-side make test-integration showed rotating failures in pre-existing worker tests (TestNodeDrainFinishesCurrentJob, TestE2ETransferModeReplacesOriginalOnServer, TestIntegrationRevokeRequeuesForBuiltinWorker) on a 6 core / 5 GB VM at load 2.9; each passes isolated and none are touched by this task; recorded as VM load sensitivity, not a code defect
 - 2026-10-31T04:04:00Z task 24: PR #25 merged squash f82b8e7, remote branch task/24-health-check-and-move deleted, main fast-forwarded ce45d61..f82b8e7
 - 2026-10-31T04:04:00Z note: task 25 (webhooks and openapi, depends on 23 done) is next; will start on the next tick
+- 2026-10-31T04:16:20Z task 25 started on VM 201, session ses_e6fd3d726ffeL50EOPD4po4lIW (webhooks with Discord/Slack shaping, delivery log, OpenAPI gated against real route table), fire and forget
