@@ -25,9 +25,17 @@ func TestRunCapturesOutputAndExitCode(t *testing.T) {
 	require.True(t, res.Ran)
 	require.True(t, res.OK(), res.Error)
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, []string{"hello", "oops"}, res.OutputText())
-	assert.False(t, res.Output[0].Stderr)
-	assert.True(t, res.Output[1].Stderr, "stderr lines are tagged")
+	// The two lines arrive concurrently from two stream readers, so the
+	// test asserts on membership, not order.
+	assert.ElementsMatch(t, []string{"hello", "oops"}, res.OutputText())
+	for _, line := range res.Output {
+		switch line.Text {
+		case "hello":
+			assert.False(t, line.Stderr, "stdout lines are not tagged stderr")
+		case "oops":
+			assert.True(t, line.Stderr, "stderr lines are tagged")
+		}
+	}
 }
 
 func TestRunFailureCarriesExitCode(t *testing.T) {
