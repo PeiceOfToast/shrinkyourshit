@@ -220,6 +220,124 @@ describe('StepStackEditor', () => {
   })
 })
 
+// --- Task 24: the health_check and move steps render and edit. ---
+
+const VERIFY_PALETTE: StepTypeInfo[] = [
+  ...PALETTE,
+  {
+    type: 'health_check',
+    label: 'Verify the result',
+    description: 'Play the finished file before anything is replaced.',
+    condition: false,
+    params: [
+      {
+        name: 'mode',
+        label: 'mode',
+        kind: 'select',
+        options: ['sample', 'full'],
+        required: true,
+        default: 'sample',
+      },
+      {
+        name: 'minutes',
+        label: 'minutes to play',
+        kind: 'number',
+        min: 1,
+        max: 120,
+        default: 2,
+      },
+      {
+        name: 'duration_tolerance',
+        label: 'duration tolerance',
+        kind: 'number',
+        min: 0,
+        max: 0.5,
+        default: 0.02,
+      },
+    ],
+  },
+  {
+    type: 'move',
+    label: 'Move the result',
+    description: 'Put the finished file into a folder outside the library.',
+    condition: false,
+    params: [
+      {
+        name: 'destination',
+        label: 'destination folder',
+        kind: 'text',
+        required: true,
+      },
+      {
+        name: 'keep_tree',
+        label: 'keep the folder layout',
+        kind: 'toggle',
+      },
+    ],
+  },
+]
+
+describe('StepStackEditor verify and move steps', () => {
+  it('adds a health_check step with the server defaults', () => {
+    const changes = renderEditor({ palette: VERIFY_PALETTE })
+    fireEvent.change(screen.getByTestId('step-add-type'), {
+      target: { value: 'health_check' },
+    })
+    fireEvent.click(screen.getByTestId('step-add-button'))
+    expect(changes[0].nodes[3].type).toBe('health_check')
+    expect(changes[0].nodes[3].params).toEqual({
+      mode: 'sample',
+      minutes: 2,
+      duration_tolerance: 0.02,
+    })
+    // The row renders its chips.
+    expect(screen.getByTestId('step-chips-health_check').textContent).toContain(
+      'mode sample',
+    )
+    // The editor exposes mode, minutes and tolerance.
+    fireEvent.click(screen.getByTestId('step-edit-health_check'))
+    fireEvent.change(screen.getByTestId('step-param-mode'), {
+      target: { value: 'full' },
+    })
+    fireEvent.change(screen.getByTestId('step-param-minutes'), {
+      target: { value: '5' },
+    })
+    fireEvent.change(screen.getByTestId('step-param-duration_tolerance'), {
+      target: { value: '0.1' },
+    })
+    expect(changes[3].nodes[3].params).toEqual({
+      mode: 'full',
+      minutes: 5,
+      duration_tolerance: 0.1,
+    })
+  })
+
+  it('adds a move step and edits destination and keep tree', () => {
+    const changes = renderEditor({ palette: VERIFY_PALETTE })
+    fireEvent.change(screen.getByTestId('step-add-type'), {
+      target: { value: 'move' },
+    })
+    fireEvent.click(screen.getByTestId('step-add-button'))
+    expect(changes[0].nodes[3].type).toBe('move')
+    expect(changes[0].nodes[3].params).toEqual({
+      destination: '',
+      keep_tree: false,
+    })
+    expect(screen.getByTestId('step-chips-move').textContent).toContain(
+      'destination',
+    )
+    fireEvent.click(screen.getByTestId('step-edit-move'))
+    fireEvent.change(screen.getByTestId('step-param-destination'), {
+      target: { value: '/media/shrunk' },
+    })
+    fireEvent.click(screen.getByTestId('step-param-keep_tree'))
+    expect(changes[2].nodes[3].params).toEqual({
+      destination: '/media/shrunk',
+      keep_tree: true,
+    })
+  })
+})
+
 // --- The full save flow: validate first, field errors on the row. ---
 
 function libraryDoc() {
