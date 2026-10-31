@@ -100,20 +100,21 @@ func defaultInspector(ctx context.Context, ffprobePath, path string) (ResultInfo
 // queue, scanner, watcher, scheduler, library manager, node registry,
 // auth, settings, stats and transfer.
 type Server struct {
-	cfg       Config
-	log       *slog.Logger
-	events    *EventBus
-	queue     *Queue
-	scanner   *Scanner
-	watcher   *Watcher
-	scheduler *Scheduler
-	libs      *LibraryManager
-	nodes     *NodeRegistry
-	auth      *Auth
-	settings  *Settings
-	stats     *StatsService
-	transfer  *Transfer
-	update    *UpdateCheck
+	cfg          Config
+	log          *slog.Logger
+	events       *EventBus
+	queue        *Queue
+	scanner      *Scanner
+	watcher      *Watcher
+	scheduler    *Scheduler
+	libs         *LibraryManager
+	nodes        *NodeRegistry
+	auth         *Auth
+	settings     *Settings
+	stats        *StatsService
+	transfer     *Transfer
+	update       *UpdateCheck
+	integrations *Refresher
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -162,9 +163,14 @@ func New(cfg Config) *Server {
 		updOpts.ScratchDir = cfg.ScratchDir
 	}
 	updateSvc := NewUpdateCheck(events, settings, cfg.Store, updOpts, cfg.Log)
+	// External integrations (task 23): the refresher is the queue's
+	// completion hook — every done job with real savings drops a Notify.
+	integrations := NewRefresher(cfg.Store, cfg.Log)
+	queue.SetNotifier(integrations)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
-		auth: auth, settings: settings, stats: stats, transfer: transfer, update: updateSvc}
+		auth: auth, settings: settings, stats: stats, transfer: transfer, update: updateSvc,
+		integrations: integrations}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
@@ -209,6 +215,10 @@ func (s *Server) Transfer() *Transfer { return s.transfer }
 
 // Update exposes the in-app update service (task 17).
 func (s *Server) Update() *UpdateCheck { return s.update }
+
+// Integrations exposes the refresher (task 23): the API's Test button and
+// the queue's completion hook.
+func (s *Server) Integrations() *Refresher { return s.integrations }
 
 // discoveredTTL is how long Discovered reuses the last LAN scan.
 const discoveredTTL = 10 * time.Second
