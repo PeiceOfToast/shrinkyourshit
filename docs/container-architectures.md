@@ -67,6 +67,13 @@ The release workflow (`release.yml`, docker job) does this in order:
 6. On a real tag push the manifest list is pushed to GHCR, and the same
    inspect check runs against the published tag.
 
+Every pull request runs the same arm64 proof through the `docker-arm64` job
+in `.github/workflows/ci.yml`: the emulated build, the boot smoke test and
+the local-registry manifest check. The project's agent token cannot dispatch
+the release workflow (HTTP 403 on workflow dispatch), so the PR job is the
+standing regression gate for the arm64 image; the release job owns the
+published-manifest check against GHCR.
+
 ## What is still not proven
 
 - **A real encode on ARM64 hardware.** An emulated boot proves the image

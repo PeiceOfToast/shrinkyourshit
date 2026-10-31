@@ -159,6 +159,104 @@ jobs:
           curl -fsS http://localhost:8765/install.ps1 | grep -o "'http://localhost:8765'"
           docker rm -f "$container" > /dev/null
 
+
+  # Task 28: prove the arm64 image on every PR. The release pipeline
+  # (release.yml) runs the same proof before publishing a release, but the
+  # project's agent token cannot dispatch that workflow, so this job is the
+  # PR regression gate: build the arm64 image, boot it under qemu
+  # emulation, require /api/v1/health and the bundled ffmpeg, then assemble
+  # the multi-platform manifest on a local registry and inspect it. Nothing
+  # is published.
+  docker-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build identity
+        run: echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Buildx config (plain HTTP for the local proof registry)
+        run: |
+          cat > /tmp/buildkitd.toml <<'EOF'
+          [registry."127.0.0.1:5000"]
+            http = true
+          EOF
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          config: /tmp/buildkitd.toml
+          driver-opts: |
+            network=host
+      - name: Start the local proof registry
+        run: |
+          set -eu
+          docker run -d --name proof-registry -p 127.0.0.1:5000:5000 registry:2
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5000/v2/ >/dev/null; then ok=1; break; fi
+            sleep 1
+          done
+          test "${ok:-0}" = 1 || { echo "::error::local proof registry did not start" >&2; exit 1; }
+      - name: Build the arm64 image (loaded for the boot smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          push: false
+          load: true
+          build-args: |
+            VERSION=v0.0.0-ci
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+          tags: shrinkyourshit:ci-arm64
+      - name: Smoke test the arm64 image (boot under emulation)
+        run: |
+          set -eu
+          mkdir -p /tmp/armcfg
+          docker run --rm --platform linux/arm64 -d --name sys-arm64 \
+            -e PUID=1000 -e PGID=1000 \
+            -e SHRINK_DISCOVERY_MDNS=false \
+            -e SHRINK_DISCOVERY_BROADCAST=false \
+            -v /tmp/armcfg:/config \
+            -p 127.0.0.1:8765:8765 \
+            shrinkyourshit:ci-arm64
+          trap 'docker rm -f sys-arm64 >/dev/null 2>&1 || true' EXIT
+          ok=0
+          for i in $(seq 1 30); do
+            if json="$(curl -fsS http://127.0.0.1:8765/api/v1/health 2>/dev/null)"; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs sys-arm64 | tail -50
+          test "${ok:-0}" = "1" || { docker rm -f sys-arm64; exit 1; }
+          printf '%s\n' "$json"
+          banner="$(docker exec sys-arm64 /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -version | head -2)"
+          printf '%s\n' "$banner"
+          test -n "$banner" || { echo "::error::the bundled ffmpeg did not run inside the arm64 image" >&2; exit 1; }
+      - name: Push multi-platform image to the local proof registry
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=v0.0.0-ci
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+          tags: 127.0.0.1:5000/shrinkyourshit:proof
+      - name: Verify the manifest list has both architectures
+        run: |
+          set -eu
+          inspect="$(docker buildx imagetools inspect 127.0.0.1:5000/shrinkyourshit:proof)"
+          printf '%s\n' "$inspect"
+          grep -q 'linux/amd64' <<< "$inspect" || {
+            echo "::error::manifest does not list linux/amd64" >&2; exit 1; }
+          grep -q 'linux/arm64' <<< "$inspect" || {
+            echo "::error::manifest does not list linux/arm64" >&2; exit 1; }
+
   # Task 12: Playwright layout suite against the real binary. The docker
   # image serves the built web app (embedded, no dev server), a browser
   # drives it at phone, tablet and desktop widths over the seeded state,
@@ -288,7 +386,7 @@ jobs:
   # state without the Actions/Checks API scope. The comment is best-effort;
   # the run summary is the reliable copy.
   report:
-    needs: [go, web, docker, installer, installer-powershell, e2e, cross]
+    needs: [go, web, docker, docker-arm64, installer, installer-powershell, e2e, cross]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -301,6 +399,7 @@ jobs:
             echo "- go: ${{ needs.go.result }}"
             echo "- web: ${{ needs.web.result }}"
             echo "- docker: ${{ needs.docker.result }}"
+            echo "- docker-arm64: ${{ needs.docker-arm64.result }}"
             echo "- installer (shell): ${{ needs.installer.result }}"
             echo "- installer (powershell): ${{ needs.installer-powershell.result }}"
             echo "- e2e: ${{ needs.e2e.result }}"
@@ -317,6 +416,7 @@ jobs:
               `- go: **${{ needs.go.result }}**`,
               `- web: **${{ needs.web.result }}**`,
               `- docker: **${{ needs.docker.result }}**`,
+              `- docker-arm64: **${{ needs.docker-arm64.result }}**`,
               `- installer (shell): **${{ needs.installer.result }}**`,
               `- installer (powershell): **${{ needs.installer-powershell.result }}**`,
               `- e2e: **${{ needs.e2e.result }}**`,

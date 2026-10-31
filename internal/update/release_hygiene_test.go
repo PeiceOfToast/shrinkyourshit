@@ -120,11 +120,16 @@ func TestCIDockerJobProvesBuildIdentity(t *testing.T) {
 	}
 
 	// Task 28: every PR proves an unsupported TARGETARCH fails the build
-	// naming the arch (the docker container is the only docker the
-	// project's agents can rely on).
+	// naming the arch, and proves the arm64 image boots under emulation
+	// plus the multi-platform manifest (the agent token cannot dispatch
+	// the release workflow, so ci.yml is the standing arm64 gate).
 	assert.Contains(t, body, "Unsupported TARGETARCH fails the build",
 		"ci.yml must gate the TARGETARCH selection rule")
 	assert.Contains(t, body, "TARGETARCH=riscv64")
+	assert.Contains(t, body, "docker-arm64:",
+		"ci.yml must gate the arm64 boot proof on every PR")
+	assert.Contains(t, body, "Smoke test the arm64 image (boot under emulation)",
+		"ci.yml's arm64 job must boot the arm64 image under emulation")
 }
 
 func TestChangelogMatchesGitHistory(t *testing.T) {
