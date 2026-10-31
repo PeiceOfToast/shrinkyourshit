@@ -259,12 +259,24 @@ func (r *NodeRegistry) Heartbeat(ctx context.Context, node *store.Node, capabili
 	if capabilities != "" {
 		node.Capabilities = capabilities
 	}
+	completingDrain := false
 	if reportState == store.NodeStateStopped && node.DesiredState == store.NodeStateDraining {
 		r.log.Info("node drain complete", "node", node.ID, "name", node.Name)
 		node.DesiredState = store.NodeStateStopped
+		completingDrain = true
 	}
+	// The heartbeat must not write the whole row back: it loaded the node
+	// before the lifecycle endpoints may have moved desired_state, and a
+	// whole-row write resurrected that state — a stop or start silently
+	// lost under a running heartbeat (task 11), which stalled the
+	// lifecycle integration tests intermittently on main as well. The
+	// heartbeat therefore touches only its own columns; the drain
+	// completion is conditional so it cannot override a concurrent
+	// stop-now that landed while this heartbeat was in flight.
+	// In memory only, for the event payload below: the row is written by the
+	// store call, which owns last_heartbeat_at.
 	node.LastHeartbeatAt = now
-	if err := r.st.UpdateNode(ctx, node); err != nil {
+	if err := r.st.TouchNodeHeartbeat(ctx, node.ID, node.Capabilities, completingDrain, now); err != nil {
 		return HeartbeatState{}, fmt.Errorf("node: heartbeat update: %w", err)
 	}
 

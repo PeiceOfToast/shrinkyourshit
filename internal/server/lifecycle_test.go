@@ -95,6 +95,52 @@ func TestHeartbeatCompletesDrainWhenWorkerReportsStopped(t *testing.T) {
 	require.Equal(t, store.NodeStateDraining, state.DesiredState)
 }
 
+// TestHeartbeatDoesNotResurrectDesiredState (regression): the heartbeat
+// used to write the whole row back, so a Stop or Start that committed
+// between the heartbeat's node load and its write was silently undone —
+// the node kept running, a stopped worker kept claiming, and the
+// lifecycle integration tests stalled intermittently (proven flaky on
+// main without any task-31 code). The heartbeat now touches only its own
+// columns, mirroring the job side's UpdateJobIfActive guard.
+func TestHeartbeatDoesNotResurrectDesiredState(t *testing.T) {
+	h := newNodeHarness(t)
+	ctx := context.Background()
+
+	node := &store.Node{
+		Name: "worker", KeyHash: HashKey("k"), AccessMode: store.NodeAccessShared,
+		Status: store.NodeStatusApproved, Enabled: true, DesiredState: store.NodeStateRunning,
+	}
+	require.NoError(t, h.st.CreateNode(ctx, node))
+
+	// A heartbeat that loaded the node while it was still running...
+	stale, err := h.st.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.Equal(t, store.NodeStateRunning, stale.DesiredState)
+
+	// ...and the admin stopped it (with drain) before the heartbeat's
+	// write landed. The stop stands; the stale running state must not
+	// come back.
+	_, err = h.reg.Stop(ctx, node.ID, true)
+	require.NoError(t, err)
+
+	// Heartbeat refreshes the node it was handed (that is how the event
+	// payload below stays current), so keep the stamp as it was before.
+	beforeBeat := stale.LastHeartbeatAt
+	state, err := h.reg.Heartbeat(ctx, stale, "", "", nil)
+	require.NoError(t, err)
+	after, err := h.st.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.Equal(t, store.NodeStateDraining, after.DesiredState,
+		"a heartbeat must not resurrect the state it loaded; the stop stands")
+	require.Equal(t, store.NodeStateRunning, state.DesiredState,
+		"the response echoes what this heartbeat loaded; the next beat carries the stop")
+
+	// The heartbeat still records itself: the last-heartbeat stamp moved.
+	require.False(t, after.LastHeartbeatAt.IsZero())
+	require.True(t, after.LastHeartbeatAt.After(beforeBeat),
+		"the heartbeat must still record itself")
+}
+
 func TestPauseAllRestoresIntent(t *testing.T) {
 	h := newNodeHarness(t)
 	ctx := context.Background()

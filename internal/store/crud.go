@@ -495,6 +495,26 @@ func (s *SQLite) UpdateNode(ctx context.Context, n *Node) error {
 	return nil
 }
 
+// TouchNodeHeartbeat records a heartbeat without writing the whole row
+// (see the interface comment): the heartbeat's own columns change, and the
+// drain completion is conditional so it cannot override a concurrent
+// stop-now. capabilities is stored verbatim when non-empty.
+func (s *SQLite) TouchNodeHeartbeat(ctx context.Context, id string, capabilities string, completingDrain bool, now time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE nodes SET
+		capabilities = CASE WHEN ? <> '' THEN ? ELSE capabilities END,
+		desired_state = CASE WHEN ? THEN ? ELSE desired_state END,
+		last_heartbeat_at = ?
+		WHERE id = ?`,
+		capabilities, capabilities, completingDrain, NodeStateStopped, fmtTime(now), id)
+	if err != nil {
+		return fmt.Errorf("store: touch node heartbeat: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteNode removes a node row.
 func (s *SQLite) DeleteNode(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, id)
