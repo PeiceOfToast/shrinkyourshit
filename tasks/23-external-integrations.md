@@ -83,9 +83,9 @@ All behind `a.requireAdmin`. Rules:
 Per-library integration filters, Sonarr/Radarr queue deletion or file management, OAuth, notifications (task 25), retries beyond the one call, any change to `DECISIONS.md`.
 
 ## Acceptance
-- [ ] `internal/store/migrations/0010_integrations.sql` exists and `make test-go` migrates a fresh database to it.
-- [ ] The five endpoints exist, are admin only, and no response body ever contains an api key. Proven by an API test that creates an integration with a distinctive key and asserts the string is absent from every GET body.
-- [ ] `Refresher.Notify` hits the correct method, path, header and body for each of the five kinds, proven by `httptest` servers in `internal/server/integrations_test.go`.
-- [ ] Two completions 1 second apart produce exactly one remote request per integration. Proven by a counter in the same test file.
-- [ ] A remote 500 or a dead host logs a warning and the job still ends `done`, proven by a queue test.
-- [ ] `IntegrationsPage` is reachable from the navigation, renders the list, hides the key, and passes its test file. `make lint` is clean.
+- [x] `internal/store/migrations/0010_integrations.sql` exists and `make test-go` migrates a fresh database to it. (`TestIntegrationsMigrationAndCRUD` opens a fresh DB, applies migrations, round trips a row; `make test` green.)
+- [x] The five endpoints exist, are admin only, and no response body ever contains an api key. Proven by an API test that creates an integration with a distinctive key and asserts the string is absent from every GET body. (`TestIntegrationsRequireAdmin`, `TestIntegrationsCRUDViaAPI`)
+- [x] `Refresher.Notify` hits the correct method, path, header and body for each of the five kinds, proven by `httptest` servers in `internal/server/integrations_test.go`. (`TestCallIntegrationRequestShapes`)
+- [x] Two completions 1 second apart produce exactly one remote request per integration. Proven by a counter in the same test file. (`TestQueueTwoCompletionsOneRemoteRequest`, plus `TestRefresherCoalescing` for the floor itself)
+- [x] A remote 500 or a dead host logs a warning and the job still ends `done`, proven by a queue test. (`TestQueueRemoteFailureWarnsAndJobStillDone`)
+- [x] `IntegrationsPage` is reachable from the navigation, renders the list, hides the key, and passes its test file. `make lint` is clean. (`App.test.tsx` six nav entries, `IntegrationsPage.test.tsx` 8 tests)

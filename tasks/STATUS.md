@@ -26,7 +26,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 20 | 20-mobile-touch-targets.md | done | PR #21 https://github.com/PeiceOfToast/shrinkyourshit/pull/21 |
 | 21 | 21-fluid-dashboard-and-rail.md | done | PR #22 https://github.com/PeiceOfToast/shrinkyourshit/pull/22 |
 | 22 | 22-flow-canvas-mobile.md | done | PR #23 https://github.com/PeiceOfToast/shrinkyourshit/pull/23 |
-| 23 | 23-external-integrations.md | todo | v1.6 |
+| 23 | 23-external-integrations.md | done | PR #24 https://github.com/PeiceOfToast/shrinkyourshit/pull/24 |
 | 24 | 24-health-check-and-move.md | todo | v1.6 |
 | 25 | 25-webhooks-and-openapi.md | todo | v1.6, depends on 23 |
 | 26 | 26-release-hygiene.md | todo | v1.6 |

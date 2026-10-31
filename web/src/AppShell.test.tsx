@@ -175,6 +175,7 @@ describe('AppShell narrow (phone, min-width: 768px = false)', () => {
       'Library',
       'Nodes',
       'Encode settings',
+      'Integrations',
       'App settings',
     ])
     // Touch targets: every drawer link keeps at least 44 px of height.
@@ -287,6 +288,7 @@ describe('AppShell wide (md and up, min-width: 768px = true)', () => {
       'Library',
       'Nodes',
       'Encode settings',
+      'Integrations',
       'App settings',
     ])
 

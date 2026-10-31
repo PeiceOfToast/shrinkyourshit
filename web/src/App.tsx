@@ -13,6 +13,7 @@ import NodesPage from './NodesPage'
 import RulesPage from './RulesPage'
 import EncodeSettingsPage from './EncodeSettingsPage'
 import AppSettingsPage from './AppSettingsPage'
+import IntegrationsPage from './IntegrationsPage'
 import SetupPage from './SetupPage'
 import PageContainer from './PageContainer'
 import { SkeletonRows } from './skeleton'
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="nodes" element={<NodesPage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />
           <Route path="app" element={<AppSettingsPage />} />
+          <Route path="integrations" element={<IntegrationsPage />} />
           {/* Old bookmarks and links keep working: /settings is /app now. */}
           <Route path="settings" element={<Navigate to="/app" replace />} />
         </Route>

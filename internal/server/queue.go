@@ -49,6 +49,10 @@ type Queue struct {
 	attempt int
 	inspect ResultInspector
 	ffprobe string
+	// notifier is the external-integration hook (task 23): called after
+	// a done completion whose output was actually used. Nil (the default)
+	// means completions notify nothing.
+	notifier Notifier
 }
 
 // NewQueue builds a Queue. events may be nil (no publishing); log may be nil.
@@ -68,6 +72,13 @@ func (q *Queue) SetInspector(inspect ResultInspector, ffprobePath string) {
 	}
 	q.inspect = inspect
 	q.ffprobe = ffprobePath
+}
+
+// SetNotifier wires the external-integration hook (task 23). The
+// constructor leaves it nil, so tests that complete jobs without
+// integrations keep working unchanged.
+func (q *Queue) SetNotifier(n Notifier) {
+	q.notifier = n
 }
 
 // QueueJob creates a queued job for a file that needs work and moves the
@@ -353,7 +364,26 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	q.log.Info("job completed", "job", job.ID, "file", f.Path,
 		"bytes_saved", f.BytesSaved, "encoder", job.EncoderUsed)
 	q.finishEvents(job, f)
+
+	// The library at home updates itself (task 23): the configured
+	// integrations learn about the completion — but only when the job
+	// ended done and the output was actually used (real savings). A skip,
+	// a keep-both or an unverifiable output stays quiet. Notify never
+	// fails the job: it returns after listing rows and drops inside the
+	// coalescing window.
+	if job.Status == store.JobStatusDone && f.BytesSaved > 0 {
+		q.notify(ctx)
+	}
 	return job, nil
+}
+
+// notify is a nil-safe call into the integration hook. Notify itself is
+// fire-and-forget, so a slow remote can never slow a completion.
+func (q *Queue) notify(ctx context.Context) {
+	if q.notifier == nil {
+		return
+	}
+	q.notifier.Notify(ctx)
 }
 
 // FailParams are the fields a worker reports on failure.

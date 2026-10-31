@@ -85,6 +85,11 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Webhook:** `id, url, events (JSON list), enabled` (task post-MVP; schema can wait).
 
+**Integration:** `id, kind, name, base_url, api_key, enabled, refresh_on_done, created_at, updated_at` (task 23)
+- `kind`: `jellyfin | emby | plex | sonarr | radarr`
+- `api_key` is stored verbatim for the outbound call and never leaves the server through the API: responses carry `api_key_set: true|false` instead.
+- `enabled` gates every call; `refresh_on_done` subscribes the integration to job completions (the manual test endpoint works either way).
+
 ## Target schema
 
 Stored as JSON on the library. All tasks that read or write a Target use this exact shape.
@@ -329,7 +334,12 @@ Rules that apply to all three:
 
 ## Integrations
 
-REST API (OpenAPI document generated post-MVP) and outbound webhooks. Sonarr/Radarr and Plex/Jellyfin/Emby come later and sit on top of the API.
+REST API (OpenAPI document generated post-MVP) and outbound webhooks. Task 23 adds the
+configured integrations (`jellyfin`, `emby`, `plex`, `sonarr`, `radarr`): after a job ends
+`done` with real savings, the refresher calls each enabled integration with `refresh_on_done`
+through one pinned request per kind, coalesced to one in-flight call per integration id with
+a 30 second floor between calls. Sonarr/Radarr/Plex/Jellyfin/Emby refresh sits on this API;
+per-library filters and notifications (webhooks) stay post-MVP.
 
 ## Repo layout
 

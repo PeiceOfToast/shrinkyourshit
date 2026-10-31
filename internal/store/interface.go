@@ -102,6 +102,16 @@ type Store interface {
 	DeleteSession(ctx context.Context, tokenHash string) error
 	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 
+	// Integrations (task 23): remote media servers and download clients
+	// the refresher notifies after a job ends. The API key is stored
+	// verbatim for the outbound call and never leaves the server through
+	// the API.
+	CreateIntegration(ctx context.Context, in *Integration) error
+	GetIntegration(ctx context.Context, id string) (*Integration, error)
+	ListIntegrations(ctx context.Context) ([]*Integration, error)
+	UpdateIntegration(ctx context.Context, in *Integration) error
+	DeleteIntegration(ctx context.Context, id string) error
+
 	// Settings is an open key/value table; the Setting* constants name
 	// the keys ARCHITECTURE.md defines.
 	GetSetting(ctx context.Context, key string) (string, bool, error)

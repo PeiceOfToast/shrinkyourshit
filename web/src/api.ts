@@ -725,3 +725,72 @@ export function checkForUpdate(): Promise<UpdateStatus> {
 export function applyUpdate(): Promise<{ started: boolean }> {
   return api<{ started: boolean }>('/api/v1/update/apply', { method: 'POST' })
 }
+
+/** The integrations (task 23): media servers and download clients the
+ * server notifies after a job ends. The API key never comes back out —
+ * a response carries api_key_set instead. */
+export interface Integration {
+  id: string
+  kind: 'jellyfin' | 'emby' | 'plex' | 'sonarr' | 'radarr'
+  name: string
+  base_url: string
+  api_key_set: boolean
+  enabled: boolean
+  refresh_on_done: boolean
+}
+
+/** The create/update body. On update an empty api_key keeps the stored
+ * key; the form's field shows (unchanged) for it. */
+export interface IntegrationBody {
+  kind: Integration['kind']
+  name: string
+  base_url: string
+  api_key?: string
+  enabled: boolean
+  refresh_on_done: boolean
+}
+
+/** GET /integrations — every configured integration, oldest first. */
+export function getIntegrations(): Promise<ListResponse<Integration>> {
+  return api<ListResponse<Integration>>('/api/v1/integrations')
+}
+
+/** POST /integrations — create one; the key is stored, never echoed. */
+export function createIntegration(body: IntegrationBody): Promise<Integration> {
+  return api<Integration>('/api/v1/integrations', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/** PUT /integrations/{id} — replace one; an empty api_key keeps the
+ * stored key. */
+export function updateIntegration(
+  id: string,
+  body: IntegrationBody,
+): Promise<Integration> {
+  return api<Integration>(`/api/v1/integrations/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** DELETE /integrations/{id} — removes the integration and its key. */
+export function deleteIntegration(id: string): Promise<void> {
+  return api<void>(`/api/v1/integrations/${id}`, { method: 'DELETE' })
+}
+
+/** POST /integrations/{id}/test — the one-shot call, answered with what
+ * the remote said. The HTTP status is always 200. */
+export function testIntegration(id: string): Promise<IntegrationTestResult> {
+  return api<IntegrationTestResult>(`/api/v1/integrations/${id}/test`, {
+    method: 'POST',
+  })
+}
+
+/** The Test button's answer: the remote's status and error text. */
+export interface IntegrationTestResult {
+  ok: boolean
+  status: number
+  error?: string
+}
