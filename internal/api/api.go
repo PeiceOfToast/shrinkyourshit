@@ -175,6 +175,18 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("POST /api/v1/webhooks/{id}/test", a.requireAdmin(a.testWebhook))
 		mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", a.requireAdmin(a.webhookDeliveries))
 
+		// Plugins (task 31): the installed hook plugins and their
+		// manifest-driven settings. All admin only. Install copies the
+		// plugin directory into the data dir and always returns the
+		// plugin disabled; the PUT's enabled switch is the only thing
+		// that makes it run.
+		mux.HandleFunc("GET /api/v1/plugins", a.requireAdmin(a.listPlugins))
+		mux.HandleFunc("POST /api/v1/plugins/install", a.requireAdmin(a.installPlugin))
+		mux.HandleFunc("GET /api/v1/plugins/{id}", a.requireAdmin(a.getPlugin))
+		mux.HandleFunc("PUT /api/v1/plugins/{id}", a.requireAdmin(a.updatePlugin))
+		mux.HandleFunc("DELETE /api/v1/plugins/{id}", a.requireAdmin(a.deletePlugin))
+		mux.HandleFunc("POST /api/v1/plugins/{id}/test", a.requireAdmin(a.testPlugin))
+
 		// Node administration (task 08) plus lifecycle controls (task 11).
 		// The lifecycle endpoints move desired_state only: start sets
 		// running, stop chooses stopped or draining, pause-all/resume-all

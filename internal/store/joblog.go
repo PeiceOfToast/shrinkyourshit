@@ -16,11 +16,13 @@ const (
 	JobLogError = "error"
 )
 
-// JobLogSourceFFmpeg and JobLogSourceSys are the values allowed in
-// job_log.source: ffmpeg stderr lines and the worker's own sys lines.
+// JobLogSourceFFmpeg, JobLogSourceSys and JobLogSourcePlugin are the
+// values allowed in job_log.source: ffmpeg stderr lines, the worker's own
+// sys lines, and the server-side plugin output (task 31).
 const (
 	JobLogSourceFFmpeg = "ffmpeg"
 	JobLogSourceSys    = "sys"
+	JobLogSourcePlugin = "plugin"
 )
 
 // JobLogMaxLinesPerJob caps one job's log rows, enforced on append, so one
@@ -60,9 +62,9 @@ func validateJobLogLine(l *JobLogLine) error {
 		return fmt.Errorf("store: invalid job log level %q: want info, warn or error", l.Level)
 	}
 	switch l.Source {
-	case JobLogSourceFFmpeg, JobLogSourceSys:
+	case JobLogSourceFFmpeg, JobLogSourceSys, JobLogSourcePlugin:
 	default:
-		return fmt.Errorf("store: invalid job log source %q: want ffmpeg or sys", l.Source)
+		return fmt.Errorf("store: invalid job log source %q: want ffmpeg, sys or plugin", l.Source)
 	}
 	if l.Message == "" {
 		return fmt.Errorf("store: job log message must not be empty")

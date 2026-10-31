@@ -121,6 +121,7 @@ type Server struct {
 	update       *UpdateCheck
 	integrations *Refresher
 	webhooks     *Dispatcher
+	plugins      *PluginService
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -169,19 +170,25 @@ func New(cfg Config) *Server {
 		updOpts.ScratchDir = cfg.ScratchDir
 	}
 	updateSvc := NewUpdateCheck(events, settings, cfg.Store, updOpts, cfg.Log)
-	// External integrations (task 23) and webhooks (task 25) share one
-	// outbound hook: the queue hands each lifecycle event to the router,
-	// which fans it out to the refresher and the webhook dispatcher. The
-	// scanner reports only to the dispatcher (library.scanned).
+	// External integrations (task 23), webhooks (task 25) and the plugin
+	// phases (task 31) share one outbound hook: the queue hands each
+	// lifecycle event to the router, which fans it out to the receivers.
+	// The preflight plugin gate is the queue's own synchronous hook (its
+	// verdict can fail the job before the node sees it), wired here too.
 	integrations := NewRefresher(cfg.Store, cfg.Log)
 	webhooks := NewWebhookDispatcher(cfg.Store, cfg.Log, cfg.Update.Current.Version)
-	queue.SetNotifier(&notifierRouter{integrations: integrations, webhooks: webhooks})
+	plugins := NewPluginService(cfg.Store, cfg.Log, cfg.DataDir)
+	queue.SetPlugins(plugins)
+	queue.SetNotifier(&notifierRouter{integrations: integrations, webhooks: webhooks, plugins: plugins})
 	scanner.SetNotifier(webhooks)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
 		auth: auth, settings: settings, stats: stats, transfer: transfer, update: updateSvc,
-		integrations: integrations, webhooks: webhooks}
+		integrations: integrations, webhooks: webhooks, plugins: plugins}
 }
+
+// Plugins exposes the plugin service (the admin plugins API endpoints).
+func (s *Server) Plugins() *PluginService { return s.plugins }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
 func (s *Server) Events() *EventBus { return s.events }

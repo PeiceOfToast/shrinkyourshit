@@ -104,7 +104,11 @@ func (h *harness) construct(prober Prober) {
 		useProber = h.prober.Probe
 	}
 	h.svc = New(Config{
-		Store:             st,
+		Store: st,
+		// The plugins root lives under the data dir (task 31); the harness
+		// keeps it beside the store so installs never touch the working
+		// tree or another test's directory.
+		DataDir:           filepath.Dir(h.dbPath),
 		Prober:            useProber,
 		Debounce:          200 * time.Millisecond,
 		StableWindow:      300 * time.Millisecond,

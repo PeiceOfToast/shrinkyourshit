@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Integrations page (task 23 + 25): two tabs. "Servers" holds the media
+ * Integrations page (task 23, 25 and 31): three tabs. "Servers" holds the media
  * servers and download clients that hear about every shrunk file, so the
  * library at home updates itself. "Webhooks" holds the outbound hooks that
  * tell something else what happened: a posted event summary, signed with
- * the hook's secret. Rows are DataList cards (task 20) with the shared
- * 44px control classes; the add/edit form keeps the key secret — a saved
- * key shows "(unchanged)" in its field and never travels back out of the
- * API, and the webhook secret is shown once with a copy button.
+ * the hook's secret. "Plugins" holds the hook plugins (task 31), installed
+ * from a git URL or a directory and enabled one by one. Rows are DataList
+ * cards (task 20) with the shared 44px control classes; the add/edit form
+ * keeps the key secret — a saved key shows "(unchanged)" in its field and
+ * never travels back out of the API, and the webhook secret is shown once
+ * with a copy button.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -35,6 +37,7 @@ import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
 import ErrorBox from './ErrorBox'
 import ModalDialog from './dialog'
+import PluginsPage from './PluginsPage'
 import PageContainer from './PageContainer'
 import { SkeletonRows } from './skeleton'
 import Switch from './Switch'
@@ -116,8 +119,8 @@ function eventLabel(id: string): string {
   return WEBHOOK_EVENTS.find((e) => e.id === id)?.label ?? id
 }
 
-/** The tab: the two halves of the page. */
-type Tab = 'servers' | 'webhooks'
+/** The tab: the three halves of the page. */
+type Tab = 'servers' | 'webhooks' | 'plugins'
 
 export default function IntegrationsPage() {
   const [tab, setTab] = useState<Tab>('servers')
@@ -152,10 +155,26 @@ export default function IntegrationsPage() {
           >
             Webhooks
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'plugins'}
+            className={tab === 'plugins' ? btnPrimary : btnGhost}
+            data-testid="integrations-tab-plugins"
+            onClick={() => setTab('plugins')}
+          >
+            Plugins
+          </button>
         </div>
       </div>
 
-      {tab === 'servers' ? <ServersTab /> : <WebhooksTab />}
+      {tab === 'servers' ? (
+        <ServersTab />
+      ) : tab === 'webhooks' ? (
+        <WebhooksTab />
+      ) : (
+        <PluginsPage />
+      )}
     </PageContainer>
   )
 }

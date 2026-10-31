@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
@@ -208,13 +209,15 @@ func NewWebhookDispatcher(st store.Store, log *slog.Logger, version string) *Dis
 	}
 }
 
-// notifierRouter fans one lifecycle event out to both notification
-// channels (task 23 integrations, task 25 webhooks). The per-channel
-// filters live in the receivers; the router is a plain fan-out so the
-// Queue keeps exactly one hook (the task 23 Notifier shape, reused).
+// notifierRouter fans one lifecycle event out to every notification
+// channel (task 23 integrations, task 25 webhooks, task 31 plugin
+// phases). The per-channel filters live in the receivers; the router is a
+// plain fan-out so the Queue keeps exactly one hook (the task 23 Notifier
+// shape, reused).
 type notifierRouter struct {
 	integrations *Refresher
 	webhooks     *Dispatcher
+	plugins      *PluginService
 }
 
 func (r *notifierRouter) Notify(ctx context.Context, ev WebhookEvent) {
@@ -223,6 +226,18 @@ func (r *notifierRouter) Notify(ctx context.Context, ev WebhookEvent) {
 	}
 	if r.webhooks != nil {
 		r.webhooks.Notify(ctx, ev)
+	}
+}
+
+// PostJob hands a finished job to the plugin phases (task 31): the
+// postprocess and notify hooks. The job context carries what the event
+// shape does not — the original source path and the applied output path —
+// so it is built by the queue and passed through here. The plugins
+// service runs the phases detached (bounded by each plugin's own
+// timeout), so a slow plugin can never slow a completion.
+func (r *notifierRouter) PostJob(ctx context.Context, pc plugin.JobContext) {
+	if r.plugins != nil {
+		r.plugins.PostJob(ctx, pc)
 	}
 }
 

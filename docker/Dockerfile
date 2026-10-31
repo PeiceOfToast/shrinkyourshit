@@ -48,6 +48,10 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # The arm64 investigation notes and the CI proof live in
 # docs/container-architectures.md.
 FROM debian:bookworm-slim AS runtime
+# `git` stays in the runtime image (task 31): plugin installs from a git
+# URL clone with `git clone --depth 1` at install time, inside the
+# container. curl, in contrast, is only a build-time helper and is purged
+# below.
 ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETARCH
 ARG FF_DEB_AMD64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb
@@ -55,7 +59,7 @@ ARG FF_DEB_AMD64_SHA256=0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece3
 ARG FF_DEB_ARM64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb
 ARG FF_DEB_ARM64_SHA256=9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gosu \
+ && apt-get install -y --no-install-recommends ca-certificates curl gosu git \
  && case "$TARGETARCH" in \
       amd64) FF_DEB_URL="$FF_DEB_AMD64_URL"; FF_DEB_SHA256="$FF_DEB_AMD64_SHA256";; \
       arm64) FF_DEB_URL="$FF_DEB_ARM64_URL"; FF_DEB_SHA256="$FF_DEB_ARM64_SHA256";; \
@@ -82,7 +86,9 @@ ENV PUID=1000 \
 
 COPY --from=build /out/shrinkyourshit /usr/local/bin/shrinkyourshit
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh \
+ && mkdir -p /config/plugins \
+ && chown -R "${PUID}:${PGID}" /config/plugins
 
 VOLUME ["/config", "/media", "/scratch"]
 EXPOSE 8765

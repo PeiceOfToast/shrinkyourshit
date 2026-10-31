@@ -39,6 +39,8 @@ tags:
     description: Outgoing media-server refresh integrations.
   - name: webhooks
     description: Outgoing webhooks and their delivery history.
+  - name: plugins
+    description: The installed hook plugins (task 31) and their phases.
   - name: nodes
     description: Node administration and lifecycle.
   - name: pairing
@@ -646,6 +648,92 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/WebhookDeliveryList' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/plugins:
+    get:
+      tags: [plugins]
+      summary: Every installed plugin, oldest first, merged with its manifest.
+      responses:
+        '200': { $ref: '#/components/responses/PluginList' }
+  /api/v1/plugins/install:
+    post:
+      tags: [plugins]
+      summary: >-
+        Install a plugin from a git URL (with an optional ref) or a
+        directory path. The new plugin is disabled; nothing runs until
+        the PUT enables it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginInstall'
+      responses:
+        '201':
+          description: The installed plugin (disabled).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plugin'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/plugins/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plugins]
+      summary: One installed plugin.
+      responses:
+        '200':
+          description: The plugin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plugin'
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [plugins]
+      summary: >-
+        Apply the enabled switch and/or the collected settings values.
+        Both are optional; the enabled switch is the only thing that
+        makes a plugin run.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginUpdate'
+      responses:
+        '200':
+          description: The updated plugin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plugin'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [plugins]
+      summary: Remove a disabled plugin (row and directory). 409 while enabled.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/plugins/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [plugins]
+      summary: >-
+        Run the plugin once against a synthetic job. Answers 200 with the
+        captured output and exit code even when the run failed.
+      responses:
+        '200':
+          description: The test result (200 even when the plugin failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginTest'
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/nodes:
     get:
       tags: [nodes]
@@ -1162,6 +1250,16 @@ components:
             properties:
               items: { type: array, items: { $ref: '#/components/schemas/Integration' } }
               total: { type: integer }
+    PluginList:
+      description: The plugin list.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items, total]
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Plugin' } }
+              total: { type: integer }
     WebhookList:
       description: The webhook list.
       content:
@@ -1415,6 +1513,52 @@ components:
         status: { type: integer, description: The remote's status; 0 on a transport failure. }
         error: { type: string, description: The head of the failed body or the transport error text. }
         at: { type: string, format: date-time }
+    Plugin:
+      type: object
+      required: [id, name, version, type, enabled, source]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        version: { type: string }
+        type: { type: string, enum: [preflight, postprocess, notify], description: The phase the plugin runs in. }
+        enabled: { type: boolean, description: Installed plugins are disabled; enabling is a separate explicit action. }
+        source: { type: string, description: The git URL or directory it was installed from. }
+        description: { type: string }
+        author: { type: string }
+        timeout_seconds: { type: integer, description: The manifest's timeout, clamped to 1..300. }
+        env: { type: array, items: { type: string }, description: The env names the plugin declares and is fed. }
+        settings: { type: array, items: { $ref: '#/components/schemas/PluginSetting' } }
+        values: { type: object, description: The collected setting values keyed by setting key. }
+        manifest_error: { type: string, description: Set when the manifest on disk cannot be read; the plugin stays listed but nothing runs. }
+        installed_at: { type: string, format: date-time }
+    PluginSetting:
+      type: object
+      required: [key, label]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        required: { type: boolean, description: A required key with no value stops the plugin from running. }
+    PluginInstall:
+      type: object
+      properties:
+        git_url: { type: string, description: A git repository URL (shallow-cloned). Exactly one of git_url/path. }
+        ref: { type: string, description: The branch or tag to clone; empty means the default branch. }
+        path: { type: string, description: An absolute directory visible to the server. Exactly one of git_url/path. }
+    PluginUpdate:
+      type: object
+      properties:
+        enabled: { type: boolean, description: Omit to leave the switch unchanged. }
+        settings: { type: object, additionalProperties: { type: string }, description: The collected values keyed by the manifest's setting keys; unknown keys are rejected. }
+    PluginTest:
+      type: object
+      required: [ok, skipped, exit_code]
+      properties:
+        ok: { type: boolean, description: The run executed and exited 0. }
+        skipped: { type: boolean, description: The plugin did not run (a required setting has no value). }
+        skip_reason: { type: string }
+        exit_code: { type: integer, description: The process's exit code; -1 when it was killed or could not start. }
+        error: { type: string }
+        output: { type: array, items: { type: string }, description: The captured stdout and stderr lines, in arrival order. }
     Node:
       type: object
       required: [id, name, state, desired_state]

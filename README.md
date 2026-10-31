@@ -31,6 +31,7 @@ ShrinkYourShit is AGPL-3.0. Anyone can use, modify and host it, but nobody can c
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Components, data model, `Target` schema, easy-mode mapping, satisfied rule, file access modes, security. |
 | [STACK.md](STACK.md) | Pinned languages, libraries, tools, config, Docker conventions. |
 | [API.md](API.md) | HTTP API conventions and endpoint list shared by all tasks. |
+| [docs/plugins.md](docs/plugins.md) | The plugin contract (task 31): the manifest, the phases, the stdin JSON, the env contract. |
 | [ROADMAP.md](ROADMAP.md) | MVP definition and what comes after. |
 | [AGENTS.md](AGENTS.md) | Rules and loop for coding agents. OpenCode reads this file automatically. |
 | [tasks/STATUS.md](tasks/STATUS.md) | Which task is next. Agents update it. |
