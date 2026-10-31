@@ -231,7 +231,19 @@ func (a *API) transferComplete(w http.ResponseWriter, r *http.Request, node *sto
 		a.internal(w, err)
 		return transferCompleteResult{}, false
 	}
-	applied, err := server.ApplyResultPolicy(ctx, policy, upload, f.Path, size, f.Size, nil, rename)
+	// The flow's move step (task 24) redirects the final placement; the
+	// folder layout to rebuild comes from the file's path under the library.
+	moveTo, keepTree, merr := server.EffectiveMove(lib)
+	if merr != nil {
+		a.internal(w, merr)
+		return transferCompleteResult{}, false
+	}
+	move := server.MoveDirective{
+		Destination: moveTo,
+		KeepTree:    keepTree,
+		RelDir:      server.RelDirUnder(lib.Path, f.Path),
+	}
+	applied, err := server.ApplyResultPolicy(ctx, policy, upload, f.Path, size, f.Size, nil, rename, move)
 	if err != nil {
 		a.internal(w, err)
 		return transferCompleteResult{}, false

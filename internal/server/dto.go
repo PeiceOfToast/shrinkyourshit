@@ -345,4 +345,16 @@ type JobSpec struct {
 	ResultPolicy       string      `json:"result_policy"`
 	BytesBefore        int64       `json:"bytes_before"`
 	ThroughputLimitMBs int64       `json:"throughput_limit_mbps"`
+	// MoveTo is the flow's move destination (task 24) in the node's path
+	// view: the server maps it through the node's path mappings exactly
+	// like the source. Empty when the flow has no move step. The worker
+	// never moves on its own; it hands the destination to the result
+	// policy, which is where the move lives.
+	MoveTo string `json:"move_to,omitempty"`
+	// MoveKeepTree rebuilds the file's folder layout under the destination.
+	MoveKeepTree bool `json:"move_keep_tree,omitempty"`
+	// MoveRelDir is the original's directory relative to the library root
+	// (view-agnostic; empty for a file at the root), computed server-side
+	// so the worker never needs the library root.
+	MoveRelDir string `json:"move_rel_dir,omitempty"`
 }
