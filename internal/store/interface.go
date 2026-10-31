@@ -136,6 +136,19 @@ type Store interface {
 	ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*WebhookDelivery, error)
 	PruneWebhookDeliveries(ctx context.Context, keep int) (int64, error)
 
+	// Plugins (task 31): the index of installed plugins. The manifest
+	// lives on disk under <data dir>/plugins/<name>/; the row carries the
+	// identity, the enabled switch (installed plugins start disabled) and
+	// the collected settings values. ListEnabledPlugins feeds the phase
+	// hooks.
+	CreatePlugin(ctx context.Context, p *Plugin) error
+	GetPlugin(ctx context.Context, id string) (*Plugin, error)
+	GetPluginByName(ctx context.Context, name string) (*Plugin, error)
+	ListPlugins(ctx context.Context) ([]*Plugin, error)
+	ListEnabledPlugins(ctx context.Context, pluginType string) ([]*Plugin, error)
+	UpdatePlugin(ctx context.Context, p *Plugin) error
+	DeletePlugin(ctx context.Context, id string) error
+
 	// Settings is an open key/value table; the Setting* constants name
 	// the keys ARCHITECTURE.md defines.
 	GetSetting(ctx context.Context, key string) (string, bool, error)
