@@ -78,7 +78,7 @@ Chosen from the unscheduled backlog below, in the owner's order: make the librar
 | 24 | `tasks/24-health-check-and-move.md` | `health_check` and `move` as first-class flow steps with validation, editor support and tests | 14 |
 | 25 | `tasks/25-webhooks-and-openapi.md` | Signed webhooks with Discord/Slack shaping, delivery log, and an OpenAPI document gated against the real route table | 23 |
 | 26 | `tasks/26-release-hygiene.md` | Commit and build date in the image, a changelog, a written release procedure, and a documented arm64 answer | 16 |
-| 27 | `tasks/27-full-job-log.md` | The complete log of every job, streamed from the worker as it runs, stored on disk with retention, readable and downloadable in the UI | 5, 19 |
+| 27 | `tasks/27-full-job-log.md` | The complete log of every job as structured rows in SQLite (level, source, message), batched from the worker while it runs, filterable and downloadable in the UI | 5, 19 |
 
 Deliberately not in this wave: AMD and Apple encoders (every host in the owner's lab has an Intel iGPU and QSV already works), plugin repos, the script escape hatch, non-media files.
 
