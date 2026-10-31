@@ -557,3 +557,42 @@ Details:
   both directions, so a route without a doc entry (or vice versa) fails `make test`. The static
   installer downloads (`GET /install.sh`, `GET /install.ps1`) are outside the document by decision: they
   are plain file downloads, not part of the API surface.
+
+### Task 27
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/v1/worker/jobs/{id}/log` | node | append one batch of structured log lines |
+| GET | `/api/v1/jobs/{id}/log` | admin | the structured log rows, paged and filterable |
+| GET | `/api/v1/jobs/{id}/log/download` | admin | the whole log as a text/plain attachment |
+
+Details:
+
+- The structured log (owner decision: rows in SQLite, no `logs/` tree) is
+  described in ARCHITECTURE.md (JobLogLine). The worker appends batches of
+  `{"seq": n, "lines": [{level, source, message, seq, repeated}]}` while the
+  job runs; the server stamps `at` and assigns row ids. The route validates
+  that the node owns the job the same way complete and fail do
+  (`403 {"code":"not_job_owner"}` for another node's job, `404` for an
+  unknown job) but not that the job is active, so the final flush of a
+  finished job still lands. The per-job cap of 2,000 rows is enforced on
+  append; a batch's overflow beyond the cap is dropped. The answer is
+  `{"appended": n}`.
+- `GET /api/v1/jobs/{id}/log` takes `?after_id=<id>&level=<info|warn|error>&limit=<n>`
+  (default limit 500, max 2,000; bad values are `400 {"code":"invalid_request"}`)
+  and answers `{"lines": [...], "total": n, "has_more": bool, "status": "<job status>"}`
+  ordered by `id`. `total` is the job's whole row count regardless of the
+  filters; `has_more` says whether rows newer than the page exist; `status`
+  is the job's current status so a viewer stops polling when it goes
+  terminal. A job with no log rows answers 200 with an empty list; 404 only
+  when the job itself is missing.
+- `GET .../log/download` renders every row as plain text, one row per line
+  as `<at> <level> <source> <message>` (a collapsed repeat adds ` (xN)`),
+  with `Content-Type: text/plain` and
+  `Content-Disposition: attachment; filename="job-<id>.log"`.
+- `JobDTO` gains `log_lines` (the job's row count) and `has_log`; every
+  admin job response carries them (one indexed COUNT per job payload).
+- Retention runs at server start and hourly: rows older than 14 days go
+  first, then oldest-first beyond 500,000 total rows, never touching a
+  queued or running job's rows; `PRAGMA incremental_vacuum` runs after a
+  prune that deleted rows (ARCHITECTURE.md, JobLogLine).

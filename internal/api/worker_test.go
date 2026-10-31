@@ -356,6 +356,51 @@ func TestWorkerOwnershipEnforced(t *testing.T) {
 	}
 }
 
+// TestWorkerLogAppendRejectedForOtherNode: a log batch for a job another
+// node owns is rejected with 403 not_job_owner (task 27, the same rule
+// complete and fail use).
+func TestWorkerLogAppendRejectedForOtherNode(t *testing.T) {
+	h := newAPIHarness(t)
+	keyA, _ := h.addNode(t, "wA", store.NodeStatusApproved, true)
+	keyB, _ := h.addNode(t, "wB", store.NodeStatusApproved, true)
+	_, _, _ = h.queueOne(t)
+
+	resp := h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, keyA)
+	var job server.JobDTO
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &job))
+
+	batch := map[string]any{
+		"seq": 0,
+		"lines": []map[string]any{
+			{"seq": 0, "level": "info", "source": "ffmpeg", "message": "frame=1"},
+		},
+	}
+	resp = h.doNode(http.MethodPost, "/api/v1/worker/jobs/"+job.ID+"/log", batch, keyB)
+	require.Equal(t, http.StatusForbidden, resp.Code)
+	var body struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
+	require.Equal(t, "not_job_owner", body.Code)
+
+	// The batch was not stored.
+	total, err := h.st.CountJobLog(context.Background(), job.ID)
+	require.NoError(t, err)
+	require.Zero(t, total)
+
+	// The owner can append.
+	resp = h.doNode(http.MethodPost, "/api/v1/worker/jobs/"+job.ID+"/log", batch, keyA)
+	require.Equal(t, http.StatusOK, resp.Code)
+	total, err = h.st.CountJobLog(context.Background(), job.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+
+	// An unknown job is 404; an unknown level or a non-numeric after_id on
+	// the read side is 400.
+	resp = h.doNode(http.MethodPost, "/api/v1/worker/jobs/nope/log", batch, keyA)
+	require.Equal(t, http.StatusNotFound, resp.Code)
+}
+
 func TestWorkerHeartbeat(t *testing.T) {
 	h := newAPIHarness(t)
 	key, node := h.addNode(t, "w1", store.NodeStatusApproved, true)

@@ -298,6 +298,33 @@ func (a *API) workerFail(w http.ResponseWriter, r *http.Request, node *store.Nod
 	writeJSON(w, http.StatusOK, a.jobDTO(workerCtx(r), job))
 }
 
+// workerJobLog appends one batch of log lines from the node that owns the
+// job (task 27). Ownership is checked the same way complete and fail do;
+// the active-status check is dropped so the final flush of a finished job
+// still lands. The store enforces the per-job line cap.
+type jobLogBatchBody struct {
+	Seq   int64              `json:"seq"`
+	Lines []store.JobLogLine `json:"lines"`
+}
+
+func (a *API) workerJobLog(w http.ResponseWriter, r *http.Request, node *store.Node) {
+	body, err := decode[jobLogBatchBody](r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if len(body.Lines) == 0 {
+		writeJSON(w, http.StatusOK, map[string]int{"appended": 0})
+		return
+	}
+	if err := a.svc.Queue().AppendJobLog(workerCtx(r), r.PathValue("id"), node.ID, body.Lines); err != nil {
+		if a.queueError(w, err) {
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"appended": len(body.Lines)})
+}
+
 // ownedJob loads the job and enforces that it is active and owned by this
 // node (the status check comes first: a queued job has no owner yet).
 func (a *API) ownedJob(w http.ResponseWriter, r *http.Request, node *store.Node) (*store.Job, bool) {

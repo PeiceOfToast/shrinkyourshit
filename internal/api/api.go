@@ -128,6 +128,10 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		// One file's job history (task 19): the panel on the library
 		// detail page shows what happened to a file over time.
 		mux.HandleFunc("GET /api/v1/files/{id}/jobs", a.requireAdmin(a.fileJobs))
+		// One job's structured log (task 27): read it as JSON rows or
+		// download it as a plain text file.
+		mux.HandleFunc("GET /api/v1/jobs/{id}/log", a.requireAdmin(a.getJobLog))
+		mux.HandleFunc("GET /api/v1/jobs/{id}/log/download", a.requireAdmin(a.downloadJobLog))
 		mux.HandleFunc("GET /api/v1/events", a.requireAdmin(a.events))
 		mux.HandleFunc("GET /api/v1/fs/browse", a.requireAdmin(a.browse))
 		mux.HandleFunc("GET /api/v1/stats", a.requireAdmin(a.getStats))
@@ -198,6 +202,9 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/progress", a.nodeAuth(a.workerProgress))
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/complete", a.nodeAuth(a.workerComplete))
 		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/fail", a.nodeAuth(a.workerFail))
+		// Structured log streaming (task 27): the node appends batches of
+		// its job's log lines while the job runs.
+		mux.HandleFunc("POST /api/v1/worker/jobs/{id}/log", a.nodeAuth(a.workerJobLog))
 
 		// Transfer mode (task 09): shared-storage access check, resumable
 		// source stream, chunked result upload.
