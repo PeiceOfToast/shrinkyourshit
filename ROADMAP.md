@@ -93,9 +93,28 @@ Order chosen for a public tool that replaces Tdarr: run where people actually ru
 | 30 | `tasks/30-vaapi-and-videotoolbox.md` | A real VAAPI backend for AMD and other GPUs, and VideoToolbox on macOS | 4 |
 | 31 | `tasks/31-plugins-v1.md` | Plugin manifest, install from a git URL or directory, preflight/postprocess/notify hooks, timeout, output in the job log | 27 |
 
-Still unscheduled after this wave: a plugin as a flow step, the script escape hatch with a sandboxed runtime, non-media file types, Intel Deep Link, AMF (documented non-goal).
+Everything that was unscheduled after v1.7 is now scheduled in v1.8 below. AMF remains a documented non-goal and is not planned.
 
-## After v1.2 (order flexible)
+## v1.8: The rest of the list (scheduled)
+
+Everything still unscheduled after v1.7 is scheduled here, in the order the roadmap has already
+carried it. AMF stays a documented non-goal.
+
+| Task | File | What it does | Depends on |
+|------|------|--------------|------------|
+| 32 | `tasks/32-plugins-as-flow-steps.md` | A plugin as a first-class flow step: a fourth manifest type `step`, the in-place and result-line contract, a re-probe after the step, and failure and timeout rules that fail the job | 15, 31 |
+| 33 | `tasks/33-script-escape-hatch.md` | The script escape hatch from decision 9, sandboxed: a WASI module run by wazero whose only filesystem is the job scratch dir, with no network, a memory ceiling and a wall-clock deadline | 32 |
+| 34 | `tasks/34-non-media-file-types.md` | Libraries declare what they hold; a `Kind` decided by extension, and media-only steps that skip with a reason instead of failing | 02, 03, 05, 14 |
+| 35 | `tasks/35-intel-qsv-tuning.md` | The QSV features ffmpeg actually exposes: ICQ, look-ahead with extbrc, async depth and low power, each probed, off by default, argument vector unchanged when unsupported | 04, 30 |
+
+Dependency note for 33: it adds `github.com/tetratelabs/wazero` to `STACK.md` with the one-line
+justification rule 3 of `AGENTS.md` asks for. Nothing else in this wave adds a dependency.
+
+## After v1.2 (order flexible, superseded by v1.3 to v1.8)
+
+Kept as history: this is the list the waves were cut from, and items 1 to 8 are now scheduled across
+v1.3 to v1.8.
+
 
 1. Remux-only, audio-only conversion, subtitle extract, health check, rename/move as first-class actions with UI.
 2. Git plugin repos and bundled plugin format.
