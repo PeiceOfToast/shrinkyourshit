@@ -34,6 +34,6 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 28 | 28-multiarch-image.md | done | PR #29 https://github.com/PeiceOfToast/shrinkyourshit/pull/29, CI green |
 | 29 | 29-nas-templates-and-installer.md | done | PR #30 https://github.com/PeiceOfToast/shrinkyourshit/pull/30, CI green, checklist ticked |
 | 30 | 30-vaapi-and-videotoolbox.md | done | PR #32, CI green; build box had no VAAPI device (fake-ffmpeg proof + skipped integration test) |
-| 31 | 31-plugins-v1.md | todo | v1.7 |
+| 31 | 31-plugins-v1.md | in_progress | |
 
 Dependencies are listed in ROADMAP.md. Do not start a task whose dependencies are not `done`.
