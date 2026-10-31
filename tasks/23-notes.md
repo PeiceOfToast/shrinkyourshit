@@ -49,9 +49,11 @@ back out; keeping the value signature would mean duplicating the trim in every c
 
 ## Summary (end of run)
 
-- Built: 0010 migration + store CRUD, server `Integration`/`ValidateIntegration`/`Refresher`
-  with coalescing, queue hook on `done` completions with real savings, five admin endpoints,
-  the web page with client helpers, tests at every layer, API.md + ARCHITECTURE.md updates.
+- Built: 0010 migration + store CRUD with kind validation, server `Integration`/`ValidateIntegration`/`Refresher` (coalescing, 5 s timeout, warn-only logging), queue hook on `done` completions with real savings, five admin endpoints with keyless DTOs and the one-shot test call, the web page with client helpers and route/nav wiring, tests at every layer, API.md + ARCHITECTURE.md updates.
+- Proven: `make test` (all Go packages + 190 web tests), `make lint` (golangci-lint, eslint, prettier, spdx), `make test-integration` (all packages green with ffmpeg/ffprobe installed).
+- Deviation: `ValidateIntegration` takes a `*Integration` and normalizes in place — a value signature cannot return the trimmed `base_url`; flagged in the PR.
+- Out of scope untouched: per-library filters, queue deletion, OAuth, notifications (task 25), retries; e2e `mobile.spec.ts` page list unchanged (the page uses shared `uiControls` classes).
+- Next task (25) should know: `server.New` wires the refresher into the queue via `Queue.SetNotifier`; the API reaches it as `a.svc.Integrations()`; the refresher's 30 s floor is the struct field `gap` (shrink it in tests); outbound-call shapes live only in `CallIntegration`.
 - Skipped: only the out-of-scope list.
 - Next task should know: `server.New` wires the `Refresher` into the queue via
   `Queue.SetNotifier`; the API reaches it as `a.svc.Integrations()`. A store row's `api_key`
