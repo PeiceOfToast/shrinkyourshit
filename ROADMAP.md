@@ -68,6 +68,19 @@ The frame was made responsive in v1.1. This makes the interior work on a phone.
 
 Measured baseline and reasoning: `docs/mobile-portability-2026-10-30.md`.
 
+## v1.6: Integrations and release hygiene (scheduled)
+
+Chosen from the unscheduled backlog below, in the owner's order: make the library refresh itself, close the functional gap against Tdarr, make the app legible to other software, then fix the release plumbing.
+
+| Task | File | What it does | Depends on |
+|------|------|--------------|------------|
+| 23 | `tasks/23-external-integrations.md` | Jellyfin/Emby/Plex refresh and Sonarr/Radarr rescan after a successful job, configured in the UI, keys never returned by the API | 19 |
+| 24 | `tasks/24-health-check-and-move.md` | `health_check` and `move` as first-class flow steps with validation, editor support and tests | 14 |
+| 25 | `tasks/25-webhooks-and-openapi.md` | Signed webhooks with Discord/Slack shaping, delivery log, and an OpenAPI document gated against the real route table | 23 |
+| 26 | `tasks/26-release-hygiene.md` | Commit and build date in the image, a changelog, a written release procedure, and a documented arm64 answer | 16 |
+
+Deliberately not in this wave: AMD and Apple encoders (every host in the owner's lab has an Intel iGPU and QSV already works), plugin repos, the script escape hatch, non-media files.
+
 ## After v1.2 (order flexible)
 
 1. Remux-only, audio-only conversion, subtitle extract, health check, rename/move as first-class actions with UI.
