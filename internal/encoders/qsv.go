@@ -136,6 +136,22 @@ func (e *qsvEncoder) variantFor(codec string) qsvVariant {
 	return qsvVariant{encoderName: qsvEncoderFor[codec]}
 }
 
+// claimedDevices returns the VAAPI device nodes the qsv backend took for its
+// own vaapi variants (task 30). The vaapi backend skips these so one GPU is
+// never reported by both backends; devices qsv does not hold remain free for
+// vaapi — a machine can legitimately report both qsv and vaapi.
+func (e *qsvEncoder) claimedDevices() map[string]bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := map[string]bool{}
+	for _, v := range e.variants {
+		if v.device != "" {
+			out[v.device] = true
+		}
+	}
+	return out
+}
+
 // SelfTest runs the one-second testsrc encode for the backend's primary
 // codec with "ffmpeg" from PATH, using the variant detection chose.
 func (e *qsvEncoder) SelfTest(ctx context.Context) error {
@@ -149,10 +165,11 @@ func (e *qsvEncoder) SelfTest(ctx context.Context) error {
 
 // BuildArgs maps the quality step onto the variant chosen during detection.
 // The qsv variant takes -global_quality; the vaapi variant additionally
-// needs the device node and a hwupload filter chain. video.codec=copy is
-// handled centrally by buildCommand.
+// needs the device node and a hwupload filter chain. A copied video (explicit
+// copy, or the satisfied rule) needs no device, so the args are the plain
+// remux shape from every backend.
 func (e *qsvEncoder) BuildArgs(spec Spec) []string {
-	if spec.Target.Video.Codec == flow.CodecCopy {
+	if spec.Target.Video.Codec == flow.CodecCopy || videoShouldCopy(spec) {
 		return buildCommand(spec, nil, nil)
 	}
 	codec := spec.Target.Video.Codec

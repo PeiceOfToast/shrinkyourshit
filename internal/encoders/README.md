@@ -12,6 +12,8 @@ a subprocess (STACK.md).
 | `detect.go` | Detection: `-encoders`/`-hwaccels` parsing, device checks, the 1-second `testsrc` self-test, process-lifetime cache |
 | `nvenc.go` | NVIDIA NVENC (hevc_nvenc, av1_nvenc, h264_nvenc) |
 | `qsv.go` | Intel QSV (hevc_qsv, av1_qsv, h264_qsv), with VAAPI equivalents as a Linux fallback |
+| `vaapi.go` | The VAAPI backend (hevc_vaapi, av1_vaapi, h264_vaapi): AMD and other VAAPI hardware (task 30) |
+| `videotoolbox.go` | Apple VideoToolbox (h264_videotoolbox, hevc_videotoolbox); `videotoolbox_other.go` is the non-macOS stub |
 | `cpu.go` | Software encoders (libx265, libsvtav1, libx264) |
 | `quality.go` | The quality step table from ARCHITECTURE.md, as one data structure |
 | `build.go` | The shared command builder and the `extract_removed` commands |
@@ -80,6 +82,22 @@ Details worth knowing:
 
 ## Detection
 
+### Precedence: nvenc, then qsv, then vaapi, then cpu
+
+The backends register in this order, and detection, the registry and the
+fallback all follow it (asserted by `TestEncoderPrecedence`):
+
+| Backend | Needs at runtime | Codecs (subject to the self-test) |
+|---------|------------------|-----------------------------------|
+| `nvenc` | an NVIDIA GPU (`/dev/nvidia*`) and its driver; ffmpeg built with the `*_nvenc` encoders | hevc, av1, h264 |
+| `qsv` | a `/dev/dri` render node the user can open (usually the `render` or `video` group) plus Intel's runtime (libmfx/oneVPL, or its VAAPI variant) | hevc, av1, h264 |
+| `vaapi` | a `/dev/dri/renderD128-130` node the user can open (`render`/`video` group) and a Mesa/kernel driver with VAAPI encode entrypoints; AV1 needs a driver recent enough | hevc, av1, h264 |
+| `videotoolbox` | macOS only (see below); hevc additionally needs macOS 10.13 or newer and 6th-generation Intel or Apple Silicon hardware | h264, hevc |
+| `cpu` | nothing — the final fallback, always present | hevc, av1, h264 |
+
+Intel Arc and AMD cards both surface as `vaapi` or `qsv` depending on the
+driver stack (see the device-claiming rules in the vaapi section below).
+
 `DetectAll` gathers, once per ffmpeg path:
 
 1. `ffmpeg -hide_banner -encoders` — which ffmpeg encoders this build has.
@@ -106,41 +124,71 @@ and used by `BuildArgs` — so `BuildArgs` for the "qsv" backend may emit
 `-c:v hevc_vaapi`. This is per DECISIONS.md 14 (Intel QSV/VAAPI as one
 backend from the user's point of view).
 
+## The vaapi backend (AMD and friends, task 30)
+
+`vaapi` is the standalone VAAPI backend: `-vaapi_device <node>`, the
+`format=nv12,hwupload` filter chain and the `*_vaapi` encoders. Quality
+maps onto the QSV column of the quality table: `-global_quality` for hevc
+and av1, `-qp` for h264 (h264_vaapi has no global_quality mode). Detection
+requires `ffmpeg -hwaccels` to list `vaapi`, then self-tests each codec
+against each candidate render node — `/dev/dri/renderD128`, `renderD129`,
+`renderD130`, in that order — until one works; the working device is
+recorded per codec, exactly like the qsv variant map, and used by
+`BuildArgs`.
+
+**Device claiming (no double counting).** The backends run detection in the
+precedence order below, and the vaapi backend skips any render node the qsv
+backend already recorded as one of its vaapi-variant devices, so one GPU is
+never reported twice. A machine can still legitimately report both `qsv`
+and `vaapi`: when qsv works through its own `*_qsv` encoders it claims no
+device node, and on a machine with several render nodes the vaapi backend
+takes the ones qsv left. Intel Arc and AMD cards both surface as `vaapi` or
+`qsv` depending on the driver stack — on an AMD-only machine the qsv
+backend's VAAPI variant typically claims the card first, so it reports as
+`qsv` while actually driving the VAAPI encoders underneath.
+
+**AMD AMF is a documented non-goal.** On Linux, AMF needs AMD's proprietary
+kernel stack (amdgpu-pro) and is unusable inside a container; VAAPI through
+Mesa is the AMD hardware path and is what this package ships. Do not file
+AMF against this package.
+
 ## Fallback
 
 `RunWithFallback` tries the registry in order: a GPU encoder failure is
 recorded as a `FallbackReason` and the next encoder is tried; the `cpu`
 encoder is the final fallback and its failure ends the job. Registry order
-is: detected GPU encoders that support the target codec (detection order:
-nvenc, qsv), then cpu — always cpu, even when detection found nothing.
+is the precedence order: detected GPU encoders that support the target
+codec (detection order: nvenc, qsv, vaapi, then videotoolbox on macOS),
+then cpu — always cpu, even when detection found nothing.
 
 ## How to add an encoder
 
-The MVP ships nvenc, qsv and cpu (DECISIONS.md 14: AMD and Apple come
-later). Adding one, for example AMD AMF:
+The package ships nvenc, qsv, vaapi and cpu, plus videotoolbox on macOS.
+Adding another one (the remaining DECISIONS.md 14 items are covered; AMF is
+a documented non-goal, see above):
 
-1. **Implement the interface** in a new file `amf.go`:
+1. **Implement the interface** in a new file `sample.go`:
 
    ```go
-   type amfEncoder struct{}
+   type sampleEncoder struct{}
 
-   func (e *amfEncoder) Name() string { return "amf" }
-   func (e *amfEncoder) Codecs() []string { return []string{flow.CodecHEVC, flow.CodecH264} }
-   func (e *amfEncoder) Detect(ctx context.Context, ffmpegPath string) (Capability, error) {
-       // Parse the environment (or accept it, see below), check Windows
-       // GPU presence, self-test per codec, return your EncoderInfo.
+   func (e *sampleEncoder) Name() string { return "sample" }
+   func (e *sampleEncoder) Codecs() []string { return []string{flow.CodecHEVC, flow.CodecH264} }
+   func (e *sampleEncoder) Detect(ctx context.Context, ffmpegPath string) (Capability, error) {
+       // Parse the environment (or accept it, see below), check hardware
+       // presence, self-test per codec, return your EncoderInfo.
    }
-   func (e *amfEncoder) SelfTest(ctx context.Context) error { ... }
-   func (e *amfEncoder) BuildArgs(spec Spec) []string {
+   func (e *sampleEncoder) SelfTest(ctx context.Context) error { ... }
+   func (e *sampleEncoder) BuildArgs(spec Spec) []string {
        // Video args from the quality table, then buildCommand(spec, pre, video).
        // buildCommand handles copy, audio, subtitles, container and maps.
    }
    ```
 
-2. **Wire it in for batch detection**: add a `case *amfEncoder:` line to
+2. **Wire it in for batch detection**: add a `case *sampleEncoder:` line to
    `detector.detectEncoder` in `detect.go` with a `detectWithEnv` method (so
    it shares the parsed `-encoders` list instead of re-parsing), then add
-   `AMF` to the `allEncoders` slice in `encoders.go` **before cpu**.
+   `Sample` to the `allEncoders` slice in `encoders.go` **before cpu**.
 3. **Add a quality column**: add a field to `qualityValues` in
    `quality.go`, fill the column for all five steps, and use it in your
    `BuildArgs`. Columns ARCHITECTURE.md does not define are derived in the
@@ -162,4 +210,5 @@ video-focused), and never touch a user file — this package only writes to
 - Attachments (ASS fonts) are not re-mapped into the output.
 - Pixel format is left to ffmpeg; 10-bit/HDR inputs keep their depth where
   the encoder supports it. HDR-aware quality decisions are post-MVP.
-- The VAAPI variant forces `format=nv12` (8-bit).
+- The vaapi paths (the vaapi backend and the qsv backend's fallback variant)
+  force `format=nv12` (8-bit).

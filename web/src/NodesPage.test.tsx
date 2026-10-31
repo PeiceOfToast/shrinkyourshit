@@ -678,6 +678,41 @@ describe('NodesPage', () => {
     expect(fresh).toHaveTextContent('0 B saved')
   })
 
+  it('renders whatever encoders a node reports, including the newer vaapi and videotoolbox names (task 30)', async () => {
+    // The page shows the capability list verbatim from the API; it has no
+    // hardcoded encoder list, so a machine with VAAPI hardware or a Mac
+    // reports its backends without UI changes.
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            nodeFixture({
+              capabilities: {
+                encoders: [
+                  { name: 'vaapi', codecs: ['hevc', 'av1', 'h264'] },
+                  { name: 'videotoolbox', codecs: ['h264', 'hevc'] },
+                ],
+                ffmpeg_version: 'ffmpeg version 7.1',
+              },
+            }),
+          ],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderNodes()
+    const chips = await screen.findByTestId('node-encoders-node-1')
+    expect(chips).toHaveTextContent('vaapi')
+    expect(chips).toHaveTextContent('videotoolbox')
+  })
+
   it('pause all and resume all call their endpoints and disable when redundant (task 18)', async () => {
     // One running, one stopped: pausing means something, resuming does not
     // (not every node is stopped — nothing was paused).

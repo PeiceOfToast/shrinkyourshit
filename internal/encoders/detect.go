@@ -167,6 +167,10 @@ func (d *detector) detectEncoder(ctx context.Context, enc Encoder, env detectEnv
 		return be.detectWithEnv(ctx, env)
 	case *qsvEncoder:
 		return be.detectWithEnv(ctx, env)
+	case *vaapiEncoder:
+		return be.detectWithEnv(ctx, env)
+	case *videotoolboxEncoder:
+		return be.detectWithEnv(ctx, env)
 	case *cpuEncoder:
 		return be.detectWithEnv(ctx, env)
 	default:

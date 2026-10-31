@@ -8,6 +8,16 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 
 ### Added
 
+- VAAPI as a first-class encoder backend: AMD cards and other VAAPI hardware
+  now encode through the `*_vaapi` encoders with real device detection
+  (`/dev/dri/renderD128-130`), and the node capability list reports `vaapi`
+  when it works. The qsv and vaapi backends never report the same render
+  node twice.
+- Apple VideoToolbox on macOS binaries: `h264_videotoolbox` and
+  `hevc_videotoolbox` (no AV1 — Apple has no hardware encoder for it), with
+  constant quality and software fallback disabled so a Mac without hardware
+  reports honestly.
+
 - NAS deploy templates in `deploy/`: a generic compose file, Synology and
   TrueNAS compose files with that platform's paths and user ids, and an
   Unraid Community Applications template. Every template pins an image

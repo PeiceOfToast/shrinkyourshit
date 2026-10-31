@@ -135,6 +135,44 @@ describe('FileHistory', () => {
     )
   })
 
+  it('renders the newer encoder names verbatim (task 30)', async () => {
+    // The panel shows whatever encoder the API reports — the vaapi and
+    // videotoolbox backends surface here without any UI-side list.
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/files\/f1\/jobs$/,
+        body: {
+          items: [
+            job('job-1', {
+              status: 'done',
+              encoder_used: 'vaapi',
+              bytes_before: 1_000_000_000,
+              bytes_after: 400_000_000,
+            }),
+            job('job-2', {
+              status: 'failed',
+              attempt: 1,
+              encoder_used: 'videotoolbox',
+              fallback_reasons: ['vaapi: device busy'],
+              error: 'encoder init failed',
+            }),
+          ],
+          total: 2,
+        },
+      },
+    ])
+    renderPanel()
+    const rows = await screen.findAllByTestId('file-history-job')
+    expect(rows).toHaveLength(2)
+    const encoders = screen.getAllByTestId('file-history-encoder')
+    expect(encoders[0]).toHaveTextContent('vaapi')
+    expect(encoders[1]).toHaveTextContent('videotoolbox')
+    const fallbacks = screen.getAllByTestId('file-history-fallbacks')
+    expect(fallbacks).toHaveLength(1)
+    expect(fallbacks[0]).toHaveTextContent('vaapi: device busy')
+  })
+
   it('says so when no jobs have run for the file', async () => {
     mock = installFetchMock([
       {

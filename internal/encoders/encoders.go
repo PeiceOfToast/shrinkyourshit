@@ -9,8 +9,8 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 )
 
-// Encoder is one encoder backend. Implementations are nvenc, qsv and cpu
-// (see README.md for how to add more, for example AMD or VideoToolbox).
+// Encoder is one encoder backend. Implementations are nvenc, qsv, vaapi,
+// videotoolbox and cpu (see README.md for how to add more).
 type Encoder interface {
 	// Name is the stable backend identifier used in capabilities and job
 	// records, for example "nvenc", "qsv" or "cpu".
@@ -89,18 +89,22 @@ func NewSpec(input, output string, info probe.MediaInfo, target flow.Target) Spe
 }
 
 // The registered backends, in detection and fallback order: GPU first,
-// cpu last. NVENC, QSV and CPU are singletons; qsv keeps detection state
-// (its per-codec qsv-vs-vaapi variant) on itself.
+// cpu last. NVENC, QSV, VAAPI and CPU are singletons; qsv and vaapi keep
+// detection state (their per-codec device/variant choices) on themselves.
+// VideoToolbox is the macOS-only backend (task 30); off darwin it is the
+// stub that fails detection, so it never reaches a capability list.
 var (
-	NVENC Encoder = &nvencEncoder{}
-	QSV   Encoder = &qsvEncoder{}
-	CPU   Encoder = &cpuEncoder{}
+	NVENC        Encoder = &nvencEncoder{}
+	QSV          Encoder = &qsvEncoder{}
+	VAAPI        Encoder = &vaapiEncoder{}
+	VideoToolbox Encoder = &videotoolboxEncoder{}
+	CPU          Encoder = &cpuEncoder{}
 )
 
 // allEncoders is the registration order for detection and registry
-// building. Adding a backend (DECISIONS.md 14: AMF, VideoToolbox later)
-// means adding it here before cpu.
-var allEncoders = []Encoder{NVENC, QSV, CPU}
+// building — the fallback precedence: nvenc, qsv, vaapi, videotoolbox,
+// then cpu (README.md). Adding a backend means adding it here before cpu.
+var allEncoders = []Encoder{NVENC, QSV, VAAPI, VideoToolbox, CPU}
 
 // Registry returns the encoders to try for a Target, in order: detected GPU
 // encoders whose codecs include the target video codec, then cpu. The cpu
