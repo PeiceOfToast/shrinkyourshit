@@ -77,7 +77,7 @@ func TestPluginsMigrationAndCRUD(t *testing.T) {
 
 	all, err := s.ListPlugins(ctx)
 	require.NoError(t, err)
-	require.Len(t, all, 2)
+	require.Len(t, all, 3) // the bare row, the first and the second
 
 	// Unknown type is rejected on write.
 	bad := validPlugin()

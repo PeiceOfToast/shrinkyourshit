@@ -60,11 +60,13 @@ func scanPlugin(rows *sql.Rows) (*Plugin, error) {
 	var (
 		p       Plugin
 		enabled string
+		instAt  string
 	)
-	if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Type, &enabled, &p.Source, &p.Settings, &p.InstalledAt); err != nil {
+	if err := rows.Scan(&p.ID, &p.Name, &p.Version, &p.Type, &enabled, &p.Source, &p.Settings, &instAt); err != nil {
 		return nil, err
 	}
 	p.Enabled = parseBool(enabled)
+	p.InstalledAt = parseTime(instAt)
 	return &p, nil
 }
 
