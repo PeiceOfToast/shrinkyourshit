@@ -47,9 +47,14 @@ var parityProbes = []probe.MediaInfo{
 
 // parityEncoders are the backends whose BuildArgs the parity gate covers;
 // all of them are pure functions of the spec, so no ffmpeg is needed.
-var parityEncoders = []Encoder{CPU, NVENC, QSV}
+var parityEncoders = []Encoder{CPU, NVENC, QSV, VAAPI}
 
 func TestEasyFlowParity(t *testing.T) {
+	// Detection state the singletons carry would change BuildArgs; pin the
+	// defaults so the goldens are independent of test order.
+	resetQSVVariants()
+	resetVAAPIVariants()
+	defer resetVAAPIVariants()
 	for _, info := range parityProbes {
 		for quality := flow.QualityMin; quality <= flow.QualityMax; quality++ {
 			for audio := flow.EasyAudioKeepAll; audio <= flow.EasyAudioCompact; audio++ {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestDetectRealFFmpeg(t *testing.T) {
 	// Every reported backend must be GPU or cpu, and gpu encoders must
 	// come before cpu (registry order follows detection order).
 	for i, e := range cap.Encoders {
-		assert.Contains(t, []string{"nvenc", "qsv", "cpu"}, e.Name)
+		assert.Contains(t, []string{"nvenc", "qsv", "vaapi", "videotoolbox", "cpu"}, e.Name)
 		assert.NotEmpty(t, e.Codecs)
 		if e.Name == "cpu" {
 			assert.Equal(t, len(cap.Encoders)-1, i, "cpu is last")
@@ -128,6 +129,82 @@ func TestEncodeCPUOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "h264", origInfo.Video[0].Codec)
 	assert.Len(t, origInfo.Subtitle, 1)
+}
+
+// TestEncodeVAAPI runs the fixture encode against the vaapi backend on real
+// hardware (task 30). It skips everywhere else: machines without a render
+// node, ffmpeg builds without the vaapi hwaccel, and drivers whose self-test
+// fails — each with a message saying exactly what is missing.
+func TestEncodeVAAPI(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("VAAPI is the Linux hardware path, not %s", runtime.GOOS)
+	}
+	ffmpeg, ffprobe := requireFFmpeg(t)
+
+	hw, err := parseHwaccels(context.Background(), ffmpeg)
+	require.NoError(t, err)
+	if !hw["vaapi"] {
+		t.Skip("skipping VAAPI encode: ffmpeg does not list the vaapi hwaccel")
+	}
+	env, err := processDetector.probeEnv(context.Background(), ffmpeg)
+	require.NoError(t, err)
+	var devices bool
+	for _, n := range env.driEntries {
+		if n == "renderD128" || n == "renderD129" || n == "renderD130" {
+			devices = true
+		}
+	}
+	if !devices {
+		t.Skip("skipping VAAPI encode: no /dev/dri/renderD128-130 device exists")
+	}
+
+	vaapi := VAAPI.(*vaapiEncoder)
+	entry, err := vaapi.detectWithEnv(context.Background(), env)
+	if err != nil {
+		t.Skipf("skipping VAAPI encode: the self-test failed on all codecs: %v", err)
+	}
+	require.NotEmpty(t, entry.Codecs)
+
+	dir := t.TempDir()
+	input := generateH264Fixture(t, ffmpeg, dir)
+	info, err := probe.Probe(context.Background(), ffprobe, input)
+	require.NoError(t, err)
+
+	target := flow.Default() // hevc, quality 3, keep all, mkv
+	output := filepath.Join(dir, "output.mkv")
+	spec := NewSpec(input, output, info, target)
+
+	// vaapi only — no silent cpu fallback, so this really is the hardware
+	// path being proven.
+	run := func(ctx context.Context, args []string) error {
+		cmd := exec.CommandContext(ctx, ffmpeg, args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Logf("ffmpeg failed: %s", out)
+		}
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	res, err := RunWithFallback(ctx, []Encoder{VAAPI}, spec, run)
+	require.NoError(t, err)
+	assert.Equal(t, "vaapi", res.EncoderUsed)
+
+	// The output matches the source: right codec, all tracks kept, and a
+	// duration within the verify tolerance.
+	outInfo, err := probe.Probe(context.Background(), ffprobe, output)
+	require.NoError(t, err)
+	st, err := os.Stat(output)
+	require.NoError(t, err)
+	require.NoError(t, VerifyOutput(spec, info.DurationSeconds, outInfo, st.Size()))
+	assert.Equal(t, "hevc", outInfo.Video[0].Codec)
+	assert.Len(t, outInfo.Audio, len(info.Audio))
+	assert.Len(t, outInfo.Subtitle, len(info.Subtitle))
+
+	// The original was never touched.
+	origInfo, err := probe.Probe(context.Background(), ffprobe, input)
+	require.NoError(t, err)
+	assert.Equal(t, "h264", origInfo.Video[0].Codec)
 }
 
 // generateH264Fixture builds a 3-second testsrc fixture: h264 video, one

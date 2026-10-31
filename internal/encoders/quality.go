@@ -11,11 +11,12 @@ import (
 // qualityValues holds the quality numbers for one step of the easy-mode
 // slider, one field per table column in ARCHITECTURE.md.
 type qualityValues struct {
-	X265CRF   int // libx265 CRF (preset medium)
-	NVENCCQ   int // hevc_nvenc CQ (preset p5)
-	QSVGQ     int // hevc_qsv global_quality
-	SVTAV1CRF int // libsvtav1 CRF (preset 6)
-	X264CRF   int // libx264 CRF
+	X265CRF       int // libx265 CRF (preset medium)
+	NVENCCQ       int // hevc_nvenc CQ (preset p5)
+	QSVGQ         int // hevc_qsv global_quality
+	SVTAV1CRF     int // libsvtav1 CRF (preset 6)
+	X264CRF       int // libx264 CRF
+	VideoToolboxQ int // videotoolbox -q:v constant quality
 }
 
 // qualityTable is the quality step table from ARCHITECTURE.md, indexed by
@@ -25,15 +26,19 @@ type qualityValues struct {
 // Columns the table in ARCHITECTURE.md does not define are derived here:
 //   - NVENC h264 and av1 reuse the NVENC HEVC CQ column.
 //   - QSV h264 and av1 reuse the QSV HEVC global_quality column.
-//   - VAAPI (the qsv backend's fallback variant) reuses global_quality for
-//     hevc and av1, and -qp for h264.
+//   - VAAPI (the vaapi backend and the qsv backend's fallback variant)
+//     reuses the QSV global_quality column: -global_quality for hevc and
+//     av1, and -qp for h264 (h264_vaapi has no global_quality mode).
+//   - VideoToolbox reuses no other column: its constant quality is its own
+//     1..100 scale where higher means better, so the easy steps 1..5 map to
+//     30..90, leaving headroom at both ends.
 var qualityTable = [flow.QualityMax + 1]qualityValues{
 	{},
-	{X265CRF: 28, NVENCCQ: 32, QSVGQ: 30, SVTAV1CRF: 38, X264CRF: 26},
-	{X265CRF: 26, NVENCCQ: 30, QSVGQ: 28, SVTAV1CRF: 35, X264CRF: 24},
-	{X265CRF: 24, NVENCCQ: 28, QSVGQ: 26, SVTAV1CRF: 32, X264CRF: 22},
-	{X265CRF: 22, NVENCCQ: 26, QSVGQ: 24, SVTAV1CRF: 30, X264CRF: 20},
-	{X265CRF: 20, NVENCCQ: 24, QSVGQ: 22, SVTAV1CRF: 27, X264CRF: 18},
+	{X265CRF: 28, NVENCCQ: 32, QSVGQ: 30, SVTAV1CRF: 38, X264CRF: 26, VideoToolboxQ: 30},
+	{X265CRF: 26, NVENCCQ: 30, QSVGQ: 28, SVTAV1CRF: 35, X264CRF: 24, VideoToolboxQ: 45},
+	{X265CRF: 24, NVENCCQ: 28, QSVGQ: 26, SVTAV1CRF: 32, X264CRF: 22, VideoToolboxQ: 60},
+	{X265CRF: 22, NVENCCQ: 26, QSVGQ: 24, SVTAV1CRF: 30, X264CRF: 20, VideoToolboxQ: 75},
+	{X265CRF: 20, NVENCCQ: 24, QSVGQ: 22, SVTAV1CRF: 27, X264CRF: 18, VideoToolboxQ: 90},
 }
 
 // qualityFor returns the table row for a quality step, clamped into the
