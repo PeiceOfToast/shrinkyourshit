@@ -54,6 +54,10 @@
   duration and `ffmpeg -xerror -f null -` exits 0 with only a warning), so the runner
   integration test corrupts the output body (same size) to make the decode check fail
   deterministically; the duration rule catches real truncation when the probe reflects it.
+  Even corruption is build-dependent: the local ffmpeg exits 183 on the corrupted body
+  while CI's apt build decoded it fine, so the integration test scripts the decode leg's
+  failure (like the existing corrupt-output test) and proves the real decode pass in the
+  healthy-path test instead.
 - **`JobSpec.move_rel_dir`** (not in the task's two fields): the keep-tree relative path is
   computed server-side at spec build time (`rel(file, libraryRoot)`), view-agnostic, so the
   worker never needs the library root and the destination is mapped to the node view like
