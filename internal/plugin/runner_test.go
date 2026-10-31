@@ -38,6 +38,30 @@ func TestRunCapturesOutputAndExitCode(t *testing.T) {
 	}
 }
 
+// TestRunCapturesOutputBeyondThePipeBuffer (task 31 regression): the
+// runner must drain both pipes before Wait, because Wait closes them the
+// moment the command exits and any lines still buffered in the pipe would
+// be lost. A run whose output exceeds the 64 KiB pipe buffer (and the
+// 1000-line capture cap) proves the drain: exactly the capped number of
+// lines arrives, ending at the cap's last line.
+func TestRunCapturesOutputBeyondThePipeBuffer(t *testing.T) {
+	r := NewRunner(t.TempDir())
+	p := Plugin{Manifest: Manifest{
+		Name:    "chatty-plugin",
+		Version: "1.0.0",
+		Type:    TypeNotify,
+		Command: []string{"sh", "-c", `i=0; while [ $i -lt 3000 ]; do echo "line $i"; i=$((i+1)); done`},
+	}}
+	res := r.Run(context.Background(), p, JobContext{JobID: "j1"}, TypeNotify)
+	require.True(t, res.Ran)
+	require.True(t, res.OK(), res.Error)
+	lines := res.OutputText()
+	require.Len(t, lines, MaxOutputLines, "every line up to the cap must arrive")
+	assert.Equal(t, "line 0", lines[0])
+	assert.Equal(t, "line 999", lines[MaxOutputLines-1],
+		"the tail must not be lost to Wait closing the pipes early")
+}
+
 func TestRunFailureCarriesExitCode(t *testing.T) {
 	r := NewRunner(t.TempDir())
 	p := Plugin{Manifest: Manifest{

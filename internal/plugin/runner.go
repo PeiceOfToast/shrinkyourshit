@@ -169,8 +169,25 @@ func (r *Runner) Run(ctx context.Context, p Plugin, job JobContext, phase string
 	go out.read(&wg, stdout, false)
 	go out.read(&wg, stderr, true)
 
-	startErr := cmd.Run()
+	// Start, then drain both pipes fully, and only then Wait. Wait closes
+	// the pipe descriptors as soon as it sees the command exit, so reading
+	// after (or during) it can lose the lines still buffered in the pipe —
+	// the output of a fast plugin would vanish from the job log under
+	// load. The readers see EOF once the process (or the timeout's group
+	// kill) has closed its ends; the drain is then complete and Wait only
+	// reaps.
+	startErr := cmd.Start()
+	if startErr != nil {
+		// Nothing will ever write the pipes; unblock the readers (a
+		// failed Start may leave them open) and collect what there is.
+		_ = stdout.Close()
+		_ = stderr.Close()
+		wg.Wait()
+		return Result{Ran: true, ExitCode: -1, Output: out.lines,
+			Error: "could not start: " + startErr.Error()}
+	}
 	wg.Wait()
+	startErr = cmd.Wait()
 
 	res := Result{Ran: true, Output: out.lines}
 	switch {
