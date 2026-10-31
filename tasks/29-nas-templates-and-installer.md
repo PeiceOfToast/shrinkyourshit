@@ -61,10 +61,10 @@ Extend `scripts/test-installer.sh` for the new flags using the existing fake rel
 Publishing to the Unraid Community Applications feed or any NAS app store (a hosting decision, not a code change), a Kubernetes chart, a Windows service installer, changes to the container entrypoint logic beyond what the templates need.
 
 ## Acceptance
-- [ ] The four template files exist and `make test` runs `deploy_test.go` green against all of them.
-- [ ] Deliberately breaking one template (wrong port, `latest` tag, privileged) fails the test with the file name in the message. Paste that failure in the PR body, then restore the file.
-- [ ] `docker compose -f deploy/generic/docker-compose.yml config` and the Synology and TrueNAS files all validate locally.
-- [ ] `scripts/installer.sh --uninstall` removes the unit and binary and leaves the data dir; `--purge` removes it too. Proven by `scripts/test-installer.sh`.
-- [ ] `--prefix` works without root and the tests cover it. `make installer-check` is clean.
-- [ ] `docs/installing.md` exists with the platform table and the writable `/media` explanation, and the README links it.
-- [ ] `make test` and `make lint` are green.
+- [x] The four template files exist and `make test` runs `deploy_test.go` green against all of them. (`go test ./...`: deploy ok; subtests per compose file + the XML test.)
+- [x] Deliberately breaking one template (wrong port, `latest` tag, privileged) fails the test with the file name in the message. Paste that failure in the PR body, then restore the file. (Captured; failure messages name `generic/docker-compose.yml` and the key each time. Pasted in the PR body.)
+- [x] `docker compose -f deploy/generic/docker-compose.yml config` and the Synology and TrueNAS files all validate locally. (compose v2.32.4 standalone, `config --quiet` — also added to CI's docker job so it never rots.)
+- [x] `scripts/installer.sh --uninstall` removes the unit and binary and leaves the data dir; `--purge` removes it too. Proven by `scripts/test-installer.sh`. (Full run green end to end against a fake release server.)
+- [x] `--prefix` works without root and the tests cover it. `make installer-check` is clean. (test-installer.sh §8 runs the install → uninstall → purge cycle as an unprivileged user when the harness is root; shellcheck 0.10.0 clean.)
+- [x] `docs/installing.md` exists with the platform table and the writable `/media` explanation, and the README links it.
+- [x] `make test` and `make lint` are green. (Integration suite: the pre-existing timing flakes — see 29-notes.md; everything else and both flaky tests green in isolation.)
