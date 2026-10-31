@@ -67,6 +67,16 @@ type Store interface {
 	RequeueStaleJobs(ctx context.Context, cutoff time.Time, maxAttempts int) ([]*Job, error)
 	UpdateJobIfActive(ctx context.Context, j *Job) (bool, error)
 
+	// Job log rows (task 27): every job keeps its complete log as
+	// structured rows in SQLite. AppendJobLog enforces the per-job cap;
+	// PruneJobLog applies retention by age and total size and never
+	// touches a queued or running job's rows.
+	AppendJobLog(ctx context.Context, jobID string, lines []JobLogLine) error
+	ListJobLog(ctx context.Context, jobID string, afterID int64, level string, limit int) ([]JobLogLine, error)
+	CountJobLog(ctx context.Context, jobID string) (int64, error)
+	PruneJobLog(ctx context.Context, olderThan time.Time, maxTotal int) (int64, error)
+	DeleteJobLog(ctx context.Context, jobID string) error
+
 	// Nodes.
 	CreateNode(ctx context.Context, n *Node) error
 	GetNode(ctx context.Context, id string) (*Node, error)

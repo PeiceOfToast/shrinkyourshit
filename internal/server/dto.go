@@ -88,6 +88,11 @@ type JobDTO struct {
 	FilePath        string   `json:"file_path"`
 	Log             string   `json:"log"`
 	Error           string   `json:"error"`
+	// Task 27: the structured log lives in job_log rows. LogLines is the
+	// job's row count and HasLog says whether the viewer has anything to
+	// open (the tail in `log` is only filled on failure).
+	LogLines int64 `json:"log_lines"`
+	HasLog   bool  `json:"has_log"`
 	// AccessMode is how the node reached the source (shared or transfer);
 	// empty until the node reported it (task 09).
 	AccessMode  string `json:"access_mode,omitempty"`

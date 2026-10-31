@@ -54,9 +54,15 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	defer r.sc.remove(spec.ID)
 
 	tail := newTailBuffer(server.MaxLogTail)
+	// Task 27: the structured job log streams to the server in batches
+	// while the job runs; the tail stays for the failure message.
+	sink := newJobLogSink(r.client, spec.ID, r.log)
+	defer sink.finish()
 	fail := func(format string, args ...any) error {
 		msg := fmt.Sprintf(format, args...)
 		r.log.Warn("job failed", "job", spec.ID, "error", msg)
+		sink.errorf("%s", msg)
+		sink.finish()
 		if err := r.client.Fail(ctx, spec.ID, msg, tail.Tail()); err != nil && !isAPIStatus(err, 409) {
 			r.log.Error("worker: fail report", "job", spec.ID, "err", err)
 		}
@@ -107,6 +113,9 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	if err != nil {
 		return fail("probe source: %v", err)
 	}
+	sink.sysf("probed source: %s container, %s, %d video, %d audio, %d subtitle stream(s)",
+		srcInfo.Container, server.HumanBytes(srcInfo.SizeBytes),
+		len(srcInfo.Video), len(srcInfo.Audio), len(srcInfo.Subtitle))
 
 	// The flow is the rule (task 14): compile the graph the spec carries
 	// and resolve it against the probed source. The resolved Target drives
@@ -133,6 +142,9 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		rename = eff.Rename
 		hc = eff.HealthCheck
 	}
+	sink.sysf("target: %s container, %s video, %s audio", target.Container,
+		target.Video.Codec, target.Audio.Mode)
+	sink.sysf("result policy: %s", policy)
 
 	// Encode with fallback while a ticker reports -progress every interval.
 	output := filepath.Join(dir, "output."+containerExt(target.Container))
@@ -150,7 +162,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 
 	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(target), sp,
 		func(ctx context.Context, args []string) error {
-			return r.execEncode(ctx, args, state, tail)
+			return r.execEncode(ctx, args, state, tail, sink)
 		})
 	close(stopReport)
 	<-reportDone
@@ -160,6 +172,10 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	}
 	if encErr != nil {
 		return fail("encode failed: %v", encErr)
+	}
+	sink.sysf("encoder chosen: %s", res.EncoderUsed)
+	for _, fb := range res.Fallbacks {
+		sink.warnf("encoder %s failed, falling back: %s", fb.Encoder, fb.Error)
 	}
 
 	// Removed text subtitles become .srt files beside the (scratch) output;
@@ -174,7 +190,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		extractCmds = nil
 	}
 	for _, ec := range extractCmds {
-		if err := r.execExtract(runCtx, ec.Args, tail); err != nil {
+		if err := r.execExtract(runCtx, ec.Args, tail, sink); err != nil {
 			if cancelled.Load() || ctx.Err() != nil {
 				return nil
 			}
@@ -199,18 +215,19 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	// policy — the source stays untouched and the job ends failed, exactly
 	// like an encode failure.
 	if hc != nil {
-		if err := r.runHealthCheck(runCtx, hc, output, srcInfo, outInfo, tail); err != nil {
+		if err := r.runHealthCheck(runCtx, hc, output, srcInfo, outInfo, tail, sink); err != nil {
 			if cancelled.Load() || ctx.Err() != nil {
 				return nil
 			}
 			return fail("health check failed: %v", err)
 		}
+		sink.sysf("health check: passed")
 	}
 
 	// Transfer mode (task 09): the output is uploaded and the server does
 	// the verify-and-replace with the library's result policy.
 	if mode == store.NodeAccessTransfer {
-		return r.completeTransfer(ctx, spec, output, st.Size(), res, tail, cancelled)
+		return r.completeTransfer(ctx, spec, output, st.Size(), res, tail, sink, cancelled)
 	}
 
 	applied, err := server.ApplyResultPolicy(ctx, policy, output, spec.SourcePath,
@@ -236,9 +253,16 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	if applied.SkipReason != "" {
 		in.SkippedReason = applied.SkipReason
 		in.BytesAfter = spec.BytesBefore
+		sink.sysf("result policy: skipped, original kept (%s)", applied.SkipReason)
+		sink.sysf("bytes before: %s; after: %s", server.HumanBytes(spec.BytesBefore),
+			server.HumanBytes(spec.BytesBefore))
 	} else {
 		in.OutputPath = applied.FinalPath
+		sink.sysf("result policy: applied, output at %s", applied.FinalPath)
+		sink.sysf("bytes before: %s; after: %s", server.HumanBytes(spec.BytesBefore),
+			server.HumanBytes(st.Size()))
 	}
+	sink.finish()
 	if err := r.client.Complete(ctx, spec.ID, in); err != nil {
 		if isAPIStatus(err, 409) {
 			// The job left the active state while we finished (a cancel
@@ -262,10 +286,12 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 // output that is not smaller is never uploaded: the node reports the skip
 // directly, saving the whole transfer.
 func (r *runner) completeTransfer(ctx context.Context, spec *server.JobSpec, output string, outSize int64,
-	res encoders.Result, tail *tailBuffer, cancelled *atomic.Bool) error {
+	res encoders.Result, tail *tailBuffer, sink *jobLogSink, cancelled *atomic.Bool) error {
 	fail := func(format string, args ...any) error {
 		msg := fmt.Sprintf(format, args...)
 		r.log.Warn("job failed", "job", spec.ID, "error", msg)
+		sink.errorf("%s", msg)
+		sink.finish()
 		if err := r.client.Fail(ctx, spec.ID, msg, tail.Tail()); err != nil && !isAPIStatus(err, 409) {
 			r.log.Error("worker: fail report", "job", spec.ID, "err", err)
 		}
@@ -284,14 +310,22 @@ func (r *runner) completeTransfer(ctx context.Context, spec *server.JobSpec, out
 			"output (%s) is not smaller than the original (%s); original kept",
 			server.HumanBytes(outSize), server.HumanBytes(spec.BytesBefore))
 		in.BytesAfter = spec.BytesBefore
+		sink.sysf("result policy: skipped, original kept (%s)", in.SkippedReason)
+		sink.sysf("bytes before: %s; after: %s", server.HumanBytes(spec.BytesBefore),
+			server.HumanBytes(spec.BytesBefore))
 	} else {
+		sink.sysf("uploading result (%s) to the server", server.HumanBytes(outSize))
 		if err := r.client.UploadResult(ctx, spec.ID, output, spec.ThroughputLimitMBs, r.log); err != nil {
 			if cancelled.Load() || ctx.Err() != nil {
 				return nil
 			}
 			return fail("upload result: %v", err)
 		}
+		sink.sysf("result uploaded; the server verifies and applies the policy")
+		sink.sysf("bytes before: %s; after: %s", server.HumanBytes(spec.BytesBefore),
+			server.HumanBytes(outSize))
 	}
+	sink.finish()
 	if err := r.client.Complete(ctx, spec.ID, in); err != nil {
 		if isAPIStatus(err, 409) {
 			// The job left the active state while we finished; the server
@@ -380,20 +414,28 @@ func jobTerminal(status string) bool {
 	return false
 }
 
-// execEncode runs one ffmpeg attempt with live progress parsing.
-func (r *runner) execEncode(ctx context.Context, args []string, state *progressState, tail *tailBuffer) error {
+// execEncode runs one ffmpeg attempt with live progress parsing. The
+// stderr tee feeds both the tail and the structured log (task 27); the
+// tee's trailing partial line is flushed when the attempt ends.
+func (r *runner) execEncode(ctx context.Context, args []string, state *progressState,
+	tail *tailBuffer, sink *jobLogSink) error {
 	if r.runFn != nil {
 		return r.runFn(ctx, args)
 	}
-	return execFFmpeg(ctx, r.cfg.FFmpegPath, args, newProgressWriter(state), tail)
+	tee := newStderrTee(tail, sink)
+	defer tee.close()
+	return execFFmpeg(ctx, r.cfg.FFmpegPath, args, newProgressWriter(state), tee)
 }
 
 // execExtract runs one subtitle-extract command (no progress stream).
-func (r *runner) execExtract(ctx context.Context, args []string, tail *tailBuffer) error {
+func (r *runner) execExtract(ctx context.Context, args []string, tail *tailBuffer,
+	sink *jobLogSink) error {
 	if r.runFn != nil {
 		return r.runFn(ctx, args)
 	}
-	return execFFmpeg(ctx, r.cfg.FFmpegPath, args, io.Discard, tail)
+	tee := newStderrTee(tail, sink)
+	defer tee.close()
+	return execFFmpeg(ctx, r.cfg.FFmpegPath, args, io.Discard, tee)
 }
 
 // execFFmpeg runs the ffmpeg binary; stdout is the -progress stream, stderr

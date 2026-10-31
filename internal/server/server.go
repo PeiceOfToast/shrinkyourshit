@@ -50,6 +50,11 @@ type Config struct {
 	// task 17. Empty falls back to the OS temp dir.
 	DataDir string
 
+	// JobLogPruneInterval overrides the hourly job-log retention cadence
+	// (task 27); 0 selects the default. Exists so tests can run the loop
+	// at a fast tick.
+	JobLogPruneInterval time.Duration
+
 	// Update tunes the in-app update service (task 17): build identity,
 	// restart hook and test overrides.
 	Update UpdateOptions
@@ -291,8 +296,9 @@ func (s *Server) Start(ctx context.Context) {
 		s.scanner.ScanAsync(lib.ID) // startup scan
 	}
 
-	s.wg.Add(2)
+	s.wg.Add(3)
 	go s.sweepLoop(s.ctx)
+	go s.pruneJobLogLoop(s.ctx)
 	go func() {
 		defer s.wg.Done()
 		s.scheduler.Run(s.ctx)

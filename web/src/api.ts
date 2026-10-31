@@ -253,7 +253,57 @@ export interface Job {
   file_path: string
   log: string
   error: string
+  /** The structured log (task 27): row count and whether a viewer
+   * has something to open. */
+  log_lines: number
+  has_log: boolean
   created_at: string
+}
+
+/** One structured job log row (task 27). */
+export interface JobLogLine {
+  id: number
+  seq: number
+  at: string
+  level: 'info' | 'warn' | 'error'
+  source: 'ffmpeg' | 'sys'
+  message: string
+  repeated: number
+}
+
+/** GET /jobs/{id}/log — one page plus the follow cursor (task 27). */
+export interface JobLogResponse {
+  lines: JobLogLine[]
+  total: number
+  has_more: boolean
+  /** The job's current status: a viewer stops polling when it is terminal. */
+  status: string
+}
+
+export interface JobLogParams {
+  /** Only rows newer than this id (a running job is followed, not
+   * re-read). */
+  after_id?: number
+  level?: 'info' | 'warn' | 'error'
+  limit?: number
+}
+
+export function getJobLog(
+  jobId: string,
+  params: JobLogParams = {},
+): Promise<JobLogResponse> {
+  const search = new URLSearchParams()
+  if (params.after_id !== undefined)
+    search.set('after_id', String(params.after_id))
+  if (params.level) search.set('level', params.level)
+  if (params.limit) search.set('limit', String(params.limit))
+  const qs = search.toString()
+  return api<JobLogResponse>(`/api/v1/jobs/${jobId}/log${qs ? `?${qs}` : ''}`)
+}
+
+/** The plain-text download of one job's whole log (task 27). */
+export function jobLogDownloadURL(jobId: string): string {
+  return `/api/v1/jobs/${jobId}/log/download`
 }
 
 export interface ListResponse<T> {

@@ -42,12 +42,58 @@ func New(path string) (*SQLite, error) {
 	// One connection keeps writes serialized so concurrent claim/queue
 	// traffic never hits SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
+	// Switch the database to incremental auto vacuum (task 27): freed log
+	// pages come back with PRAGMA incremental_vacuum after a prune. Must
+	// run outside a transaction (a migration runs in one, where the pragma
+	// is silently ignored). On an empty database the mode applies
+	// immediately; an existing database needs one VACUUM to switch modes.
+	if _, err := db.ExecContext(context.Background(), `PRAGMA auto_vacuum = INCREMENTAL`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("store: set auto vacuum: %w", err)
+	}
 	s := &SQLite{db: db}
+	if err := s.applyAutoVacuum(context.Background()); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
 	if err := migrate(context.Background(), db); err != nil {
 		_ = s.Close()
 		return nil, err
 	}
 	return s, nil
+}
+
+// applyAutoVacuum runs one VACUUM when the incremental mode has not stuck
+// yet (a database that existed before task 27): auto_vacuum changes only
+// take effect after a rebuild. Fresh databases read 2 (INCREMENTAL) here
+// and pay no rebuild.
+func (s *SQLite) applyAutoVacuum(ctx context.Context) error {
+	var mode int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&mode); err != nil {
+		return fmt.Errorf("store: read auto vacuum mode: %w", err)
+	}
+	if mode == 2 { // 2 = SQLITE_AUTOVACUUM_INCREMENTAL
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("store: vacuum to apply auto vacuum mode: %w", err)
+	}
+	return nil
+}
+
+// incrementalVacuum returns freed pages to the file system (task 27). Must
+// run outside a transaction. No-op (and never an error) when the database
+// is not in incremental mode. The pragma returns one row per page freed and
+// only runs while it is being stepped, so the result set is drained to the
+// end (an ExecContext stops after the first row and frees just one page).
+func (s *SQLite) incrementalVacuum(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA incremental_vacuum(0)`)
+	if err != nil {
+		return fmt.Errorf("store: incremental vacuum: %w", err)
+	}
+	for rows.Next() {
+	}
+	return rows.Close()
 }
 
 // Close releases the database handle.

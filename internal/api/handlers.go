@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -289,7 +290,13 @@ func (a *API) jobDTO(ctx context.Context, j *store.Job) server.JobDTO {
 			f = got
 		}
 	}
-	return server.NewJobDTO(j, f)
+	dto := server.NewJobDTO(j, f)
+	// Task 27: the log row count and has_log ride with every job response.
+	if total, err := a.st.CountJobLog(ctx, j.ID); err == nil {
+		dto.LogLines = total
+		dto.HasLog = total > 0
+	}
+	return dto
 }
 
 // listJobs returns jobs, paginated, optional ?status= filter.
@@ -378,6 +385,132 @@ func (a *API) getJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.jobDTO(r.Context(), job))
+}
+
+// jobLogLineDTO is the JSON shape of one job log row (task 27).
+type jobLogLineDTO struct {
+	ID       int64  `json:"id"`
+	Seq      int64  `json:"seq"`
+	At       string `json:"at"`
+	Level    string `json:"level"`
+	Source   string `json:"source"`
+	Message  string `json:"message"`
+	Repeated int64  `json:"repeated"`
+}
+
+// jobLogResponse is the GET /jobs/{id}/log envelope: the rows in id order,
+// the job's total row count and whether newer rows exist beyond this page
+// (a viewer follows a running job with after_id without re-reading all).
+// Status is the job's current status, so a viewer can stop polling when the
+// job goes terminal without a second request.
+type jobLogResponse struct {
+	Lines   []jobLogLineDTO `json:"lines"`
+	Total   int64           `json:"total"`
+	HasMore bool            `json:"has_more"`
+	Status  string          `json:"status"`
+}
+
+// jobLogParams are the GET /jobs/{id}/log query parameters (task 27).
+const (
+	jobLogDefaultLimit = 500
+	jobLogMaxLimit     = 2000
+)
+
+// getJobLog answers GET /jobs/{id}/log: one page of the job's structured
+// log rows. ?after_id=<id> returns only newer rows, ?level=<info|warn|error>
+// filters, ?limit=<n> caps the page (default 500, max 2000). A job with no
+// log rows answers 200 with an empty list; 404 only when the job is missing.
+func (a *API) getJobLog(w http.ResponseWriter, r *http.Request) {
+	job, err := a.st.GetJob(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "no such job")
+		return
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	var afterID int64
+	if raw := r.URL.Query().Get("after_id"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v < 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "after_id must be a non-negative integer")
+			return
+		}
+		afterID = v
+	}
+	level := r.URL.Query().Get("level")
+	if level != "" && level != store.JobLogInfo && level != store.JobLogWarn && level != store.JobLogError {
+		writeError(w, http.StatusBadRequest, "invalid_request", "level must be info, warn or error")
+		return
+	}
+	limit := jobLogDefaultLimit
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "limit must be a positive integer")
+			return
+		}
+		limit = min(v, jobLogMaxLimit)
+	}
+	// One extra row tells has_more without a second query.
+	rows, err := a.st.ListJobLog(r.Context(), job.ID, afterID, level, limit+1)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	total, err := a.st.CountJobLog(r.Context(), job.ID)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	lines := make([]jobLogLineDTO, 0, len(rows))
+	for _, row := range rows {
+		lines = append(lines, jobLogLineDTO{
+			ID:       row.ID,
+			Seq:      row.Seq,
+			At:       row.At.Format(time.RFC3339Nano),
+			Level:    row.Level,
+			Source:   row.Source,
+			Message:  row.Message,
+			Repeated: row.Repeated,
+		})
+	}
+	writeJSON(w, http.StatusOK, jobLogResponse{
+		Lines: lines, Total: total, HasMore: hasMore, Status: job.Status,
+	})
+}
+
+// downloadJobLog answers GET /jobs/{id}/log/download: the same rows as
+// plain text, one row per line as `<at> <level> <source> <message>`.
+func (a *API) downloadJobLog(w http.ResponseWriter, r *http.Request) {
+	job, err := a.st.GetJob(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "no such job")
+		return
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	rows, err := a.st.ListJobLog(r.Context(), job.ID, 0, "", 0)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	var buf bytes.Buffer
+	for _, row := range rows {
+		fmt.Fprintf(&buf, "%s %s %s %s\n",
+			row.At.Format(time.RFC3339Nano), row.Level, row.Source, row.Message)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "job-"+job.ID+".log"))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }
 
 // cancelJob stops an active job. A transfer-mode upload (task 09) is

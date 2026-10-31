@@ -22,12 +22,12 @@ import (
 
 // runHealthCheck verifies one output. The returned error carries the reason;
 // the caller prefixes it and reports the job failed with the ffmpeg tail.
-func (r *runner) runHealthCheck(ctx context.Context, hc *flow.HealthCheckSpec, output string, src, out probe.MediaInfo, tail *tailBuffer) error {
+func (r *runner) runHealthCheck(ctx context.Context, hc *flow.HealthCheckSpec, output string, src, out probe.MediaInfo, tail *tailBuffer, sink *jobLogSink) error {
 	if err := verifyHealthOutput(hc, src, out); err != nil {
 		return err
 	}
 	args := healthCheckArgs(hc, output, out.DurationSeconds)
-	if err := r.execDecode(ctx, args, tail); err != nil {
+	if err := r.execDecode(ctx, args, tail, sink); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -115,10 +115,13 @@ func tailExcerpt(tail *tailBuffer) string {
 
 // execDecode runs one decode verification pass. Like the encode and the
 // extracts it goes through the test override, so tests can fake a clean
-// (or failing) decode without ffmpeg.
-func (r *runner) execDecode(ctx context.Context, args []string, tail *tailBuffer) error {
+// (or failing) decode without ffmpeg. Its stderr feeds the structured log.
+func (r *runner) execDecode(ctx context.Context, args []string, tail *tailBuffer,
+	sink *jobLogSink) error {
 	if r.runFn != nil {
 		return r.runFn(ctx, args)
 	}
-	return execFFmpeg(ctx, r.cfg.FFmpegPath, args, io.Discard, tail)
+	tee := newStderrTee(tail, sink)
+	defer tee.close()
+	return execFFmpeg(ctx, r.cfg.FFmpegPath, args, io.Discard, tee)
 }

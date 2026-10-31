@@ -291,6 +291,8 @@ describe('LibraryDetailPage', () => {
               file_name: 'f2.mkv',
               file_path: '/media/movies/f2.mkv',
               log: 'ffmpeg stderr tail',
+              log_lines: 0,
+              has_log: false,
               error: 'encode failed',
               created_at: '',
             },

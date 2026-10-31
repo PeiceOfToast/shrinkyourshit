@@ -500,6 +500,21 @@ func (q *Queue) ownedActiveJob(ctx context.Context, jobID, nodeID string) (*stor
 	return job, nil
 }
 
+// AppendJobLog stores one batch of worker log lines (task 27). The node
+// must own the job — the same ownership check the other worker reports do,
+// without the active-status check, so the final flush of a finished job
+// still lands. The store enforces the per-job line cap.
+func (q *Queue) AppendJobLog(ctx context.Context, jobID, nodeID string, lines []store.JobLogLine) error {
+	job, err := q.st.GetJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if nodeID != "" && job.NodeID != nodeID {
+		return ErrJobNotClaimed
+	}
+	return q.st.AppendJobLog(ctx, jobID, lines)
+}
+
 // dropDuplicateFiles removes file rows of a library that already use path,
 // except keepID (a replacement may share its path with a row a racing scan
 // created while the file row still had the old path).
@@ -525,7 +540,7 @@ func (q *Queue) finishEvents(job *store.Job, f *store.File) {
 	q.publish(EventFileUpdated, NewFileDTO(f))
 }
 
-// capLogTail keeps only the last MaxLogTail bytes of a log.
+// capLogTail keeps only the last MaxLogTail bytes of a log tail.
 func capLogTail(s string) string {
 	if len(s) <= MaxLogTail {
 		return s

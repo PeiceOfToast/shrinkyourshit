@@ -67,6 +67,13 @@ Status enums are fixed strings; do not add values without updating this file.
 - `status`: `queued | claimed | running | done | failed | cancelled`
 - `access_mode`: how the node actually reached the source — `shared` or `transfer`. Empty until the node reports it (progress and complete, task 09).
 
+**JobLogLine (job_log, task 27):** one structured line of a job's complete log, stored in SQLite (not files on disk) so it survives a worker crash, a node reboot and a container replace. `id, job_id (FK → jobs, ON DELETE CASCADE), seq, at, level, source, message, repeated`.
+- `level`: `info | warn | error`
+- `source`: `ffmpeg` (stderr lines) or `sys` (the worker's own narrative: the probe summary, the resolved target and policy, the encoder chosen, fallback reasons as warn, the result policy outcome, bytes before and after, the health check verdict)
+- `seq` is the worker's chunk order; `repeated` collapses consecutive identical messages (an ffmpeg warning loop writes one row, not thousands).
+- Caps: 2,000 rows per job, enforced on append, with one final `error` line `log truncated at 2000 lines`; a single message is capped at 4 KB and marked `[truncated]`. The worker uploads batches (flush at 200 lines, at 5 s, and once more on completion and failure); a failed upload is dropped and never fails the job.
+- Retention (hourly, and at server start): rows older than 14 days are deleted, then the oldest rows beyond 500,000 total; rows of a queued or running job are never deleted; `PRAGMA incremental_vacuum` reclaims the space afterwards (the database runs in incremental auto vacuum mode).
+
 **Node:** `id, name, key_hash, key_once, os, arch, capabilities (JSON), access_mode, path_mappings (JSON), throughput_limit_mbps, desired_state, concurrency, state_error, status, enabled, last_heartbeat_at, created_at`. The list API folds each node's finished-job totals (`files_done`, positive-savings `bytes_saved`) into the response (task 18); they are not stored on the node.
 - `status`: `pending | approved | revoked`
 - `desired_state`: `stopped | running | draining` — the operator intent (task 11). New nodes are created `stopped`; a claim needs `status=approved`, `enabled=true` and `desired_state=running`.

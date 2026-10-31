@@ -30,6 +30,8 @@ function jobFixture(overrides: Partial<Job> = {}): Job {
     file_name: 'holiday.video.mkv',
     file_path: '/media/movies/holiday.video.mkv',
     log: '',
+    log_lines: 0,
+    has_log: false,
     error: '',
     created_at: '2026-10-29T00:00:00Z',
     ...overrides,

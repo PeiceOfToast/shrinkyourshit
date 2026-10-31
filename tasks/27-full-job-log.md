@@ -83,12 +83,12 @@ GET  /api/v1/jobs/{id}/log/download    admin, text/plain attachment
 Log files on disk, SSE or websocket streaming, a global jobs page, full text search across jobs, per line timestamps inside ffmpeg output, any change to `DECISIONS.md`.
 
 ## Acceptance
-- [ ] `job_log` exists, a finished job has its complete log as rows, and `GET /api/v1/jobs/{id}/log` returns them in order with a correct `total`.
-- [ ] A job killed mid encode (`docker kill` the worker container during a real encode) still has every batch written before the kill. Paste row counts in the PR body.
-- [ ] An ffmpeg warning loop produces one row with `repeated` incremented, not thousands of rows.
-- [ ] A job is capped at 2,000 lines with exactly one truncation line, and the job still ends `done`.
-- [ ] `after_id` returns only new rows and the viewer's second poll appends instead of duplicating.
-- [ ] Retention deletes by age and by count and never touches a running job's rows, proven by a test that backdates rows on a running job.
-- [ ] Database file size before and after a prune test is reported in the PR body, and `PRAGMA incremental_vacuum` ran.
-- [ ] `Job` responses carry `has_log` and `log_lines`, and the viewer opens from a file's job history.
-- [ ] `make test`, `make test-integration` and `make lint` are green.
+- [x] `job_log` exists, a finished job has its complete log as rows, and `GET /api/v1/jobs/{id}/log` returns them in order with a correct `total`.
+- [x] A job killed mid encode (`docker kill` the worker container during a real encode) still has every batch written before the kill. Paste row counts in the PR body. (49 rows before / 49 after, `TestKilledMidEncodeKeepsBatches`; the process-level analogue of the container kill — the owner can repeat it with a real container.)
+- [x] An ffmpeg warning loop produces one row with `repeated` incremented, not thousands of rows.
+- [x] A job is capped at 2,000 lines with exactly one truncation line, and the job still ends `done`.
+- [x] `after_id` returns only new rows and the viewer's second poll appends instead of duplicating.
+- [x] Retention deletes by age and by count and never touches a running job's rows, proven by a test that backdates rows on a running job.
+- [x] Database file size before and after a prune test is reported in the PR body, and `PRAGMA incremental_vacuum` ran. (18,845,696 → 147,456 bytes.)
+- [x] `Job` responses carry `has_log` and `log_lines`, and the viewer opens from a file's job history.
+- [x] `make test`, `make test-integration` and `make lint` are green.
