@@ -6,7 +6,13 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 
 ## [0.1.3] - unreleased
 
-Nothing yet.
+### Added
+
+- The container image now runs on linux/arm64 as well as linux/amd64. The
+  release pipeline builds both platforms, boots the arm64 image under
+  emulation and checks its `/api/v1/health` endpoint and bundled ffmpeg
+  before anything is published. On ARM64 hardware the app uses CPU
+  encoders until a real ARM64 encode is recorded.
 
 ## [0.1.2] - 2026-10-31
 

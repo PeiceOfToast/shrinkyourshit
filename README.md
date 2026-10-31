@@ -73,7 +73,10 @@ Every `vX.Y.Z` tag publishes:
 - five binary archives — Linux amd64/arm64, macOS amd64/arm64, Windows amd64 — plus `checksums.txt` and build provenance, on the [GitHub releases page](https://github.com/PeiceOfToast/shrinkyourshit/releases);
 - `ghcr.io/peiceoftoast/shrinkyourshit:X.Y.Z` and `:latest`, with the version, commit and build date baked in so the app's About card and `GET /api/v1/version` agree with the binaries.
 
-The container image is **amd64 only** today ([why, and the arm64 option](docs/container-architectures.md)); the `linux/arm64` binary archive is available. User-visible changes are listed in [CHANGELOG.md](CHANGELOG.md), and the release procedure is in [docs/releasing.md](docs/releasing.md).
+The container image is published for **linux/amd64 and linux/arm64**. The
+arm64 image is boot-tested under emulation in CI, but a real encode on
+ARM64 hardware has not been recorded yet: on ARM64 expect CPU encoders,
+not Intel QSV ([why, and the ARM64 caveats](docs/container-architectures.md)). User-visible changes are listed in [CHANGELOG.md](CHANGELOG.md), and the release procedure is in [docs/releasing.md](docs/releasing.md).
 
 ## Updating
 

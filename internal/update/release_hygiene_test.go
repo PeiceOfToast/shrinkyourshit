@@ -33,8 +33,25 @@ func TestDockerfileCarriesBuildIdentity(t *testing.T) {
 
 	// The stale arm64 premise is corrected in the source of the image.
 	assert.NotContains(t, body, "has no arm64 build")
-	assert.Contains(t, body, "never been built or tested for arm64")
 	assert.Contains(t, body, "docs/container-architectures.md")
+
+	// Task 28: the deb pin is chosen per TARGETARCH, with both digests
+	// checked in and no silent amd64 default. An unsupported arch must
+	// fail the build naming it.
+	for _, want := range []string{
+		"ARG TARGETARCH",
+		"https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb",
+		"0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c",
+		"https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb",
+		"9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb",
+		`amd64) FF_DEB_URL="$FF_DEB_AMD64_URL"`,
+		`arm64) FF_DEB_URL="$FF_DEB_ARM64_URL"`,
+		"jellyfin-ffmpeg is not pinned for TARGETARCH",
+		"sha256sum -c -",
+		"/usr/lib/jellyfin-ffmpeg/ffmpeg",
+	} {
+		assert.Contains(t, body, want, "docker/Dockerfile must pin both architectures")
+	}
 }
 
 func TestReleaseWorkflowCarriesBuildIdentity(t *testing.T) {
@@ -51,21 +68,40 @@ func TestReleaseWorkflowCarriesBuildIdentity(t *testing.T) {
 		`[ "$commit" != "$EXPECTED_COMMIT" ]`,
 		`[ "$build_date" = "unknown" ]`,
 		"load: true",
-		"name: Push image",
+		// Task 28: the multi-arch proof before the push.
+		"docker/setup-qemu-action",
+		"docker/setup-buildx-action",
+		"platforms: linux/amd64,linux/arm64",
+		"Smoke test the arm64 image (boot under emulation)",
+		"--platform linux/arm64",
+		"/api/v1/health",
+		"docker buildx imagetools inspect",
+		"Push multi-platform image to the local proof registry",
+		"Push multi-platform image to GHCR",
 	} {
 		assert.Contains(t, body, want, "release.yml must pass and verify the build identity")
 	}
 
-	// The smoke check must run after the build and before the push, so a
-	// bad image can never reach the registry.
-	build := strings.Index(body, "Build image (loaded locally, not pushed)")
+	// The smoke checks must run after the builds and before the push, so
+	// a bad image can never reach the registry. The multi-platform
+	// manifest must be assembled and inspected before the GHCR push.
+	build := strings.Index(body, "Build amd64 image (loaded for the version smoke check)")
+	arm64Build := strings.Index(body, "Build arm64 image (loaded for the boot smoke test)")
 	smoke := strings.Index(body, "Smoke test the version endpoint")
-	push := strings.Index(body, "name: Push image")
+	arm64Smoke := strings.Index(body, "Smoke test the arm64 image (boot under emulation)")
+	localPush := strings.Index(body, "Push multi-platform image to the local proof registry")
+	ghcrPush := strings.Index(body, "Push multi-platform image to GHCR")
 	require.NotEqual(t, -1, build)
+	require.NotEqual(t, -1, arm64Build)
 	require.NotEqual(t, -1, smoke)
-	require.NotEqual(t, -1, push)
+	require.NotEqual(t, -1, arm64Smoke)
+	require.NotEqual(t, -1, localPush)
+	require.NotEqual(t, -1, ghcrPush)
 	assert.Less(t, build, smoke)
-	assert.Less(t, smoke, push)
+	assert.Less(t, smoke, arm64Build)
+	assert.Less(t, arm64Build, arm64Smoke)
+	assert.Less(t, arm64Smoke, localPush)
+	assert.Less(t, localPush, ghcrPush)
 }
 
 func TestCIDockerJobProvesBuildIdentity(t *testing.T) {
@@ -82,23 +118,41 @@ func TestCIDockerJobProvesBuildIdentity(t *testing.T) {
 	} {
 		assert.Contains(t, body, want, "the CI docker job is the PR regression gate for task 26")
 	}
+
+	// Task 28: every PR proves an unsupported TARGETARCH fails the build
+	// naming the arch, and proves the arm64 image boots under emulation
+	// plus the multi-platform manifest (the agent token cannot dispatch
+	// the release workflow, so ci.yml is the standing arm64 gate).
+	assert.Contains(t, body, "Unsupported TARGETARCH fails the build",
+		"ci.yml must gate the TARGETARCH selection rule")
+	assert.Contains(t, body, "TARGETARCH=riscv64")
+	assert.Contains(t, body, "docker-arm64:",
+		"ci.yml must gate the arm64 boot proof on every PR")
+	assert.Contains(t, body, "Smoke test the arm64 image (boot under emulation)",
+		"ci.yml's arm64 job must boot the arm64 image under emulation")
 }
 
 func TestChangelogMatchesGitHistory(t *testing.T) {
 	body := readHygieneDoc(t, filepath.Join("..", "..", "CHANGELOG.md"))
 
-	// Newest first, and the three versions the task names.
-	unreleased := strings.Index(body, "## [0.1.2] - unreleased")
+	// Newest first, newest to oldest, after the v0.1.2 release renamed
+	// the unreleased section (the pre-release test asserted
+	// "## [0.1.2] - unreleased" and was stale until this fix).
+	unreleased := strings.Index(body, "## [0.1.3] - unreleased")
+	current := strings.Index(body, "## [0.1.2] - 2026-10-31")
 	older := strings.Index(body, "## [0.1.1] - 2026-10-30")
 	oldest := strings.Index(body, "## [0.1.0] - 2026-10-29")
 	require.NotEqual(t, -1, unreleased)
+	require.NotEqual(t, -1, current)
 	require.NotEqual(t, -1, older)
 	require.NotEqual(t, -1, oldest)
-	assert.Less(t, unreleased, older)
+	assert.Less(t, unreleased, current)
+	assert.Less(t, current, older)
 	assert.Less(t, older, oldest)
 
 	for _, want := range []string{
-		"https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.1...HEAD",
+		"https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.2...HEAD",
+		"https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.1...v0.1.2",
 		"https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.0...v0.1.1",
 		"https://github.com/PeiceOfToast/shrinkyourshit/releases/tag/v0.1.0",
 		// 0.1.0 shipped the MVP but no archives because of this.
@@ -109,11 +163,13 @@ func TestChangelogMatchesGitHistory(t *testing.T) {
 		// Task 20 shipped in v0.1.1 (tag is after commit ce04748); the
 		// mobile audit and 44px controls belong there, not unreleased.
 		"44px",
-		// The unreleased section covers the real v1.6 wave.
+		// 0.1.2 covers the v1.6 wave.
 		"Health check",
 		"webhooks",
 		"OpenAPI",
 		"commit and build date",
+		// 0.1.3 unreleased: task 28's user-visible change.
+		"linux/arm64",
 	} {
 		assert.Contains(t, squashWhitespace(body), want)
 	}
@@ -149,14 +205,17 @@ func TestReleasingProcedureIsComplete(t *testing.T) {
 	assert.Contains(t, body, "not stored in a source file")
 	assert.Contains(t, body, "git tag")
 
-	// FFmpeg pin maintenance: the exact URL and digest, the rolling
-	// channel, and the intentionally loud failure.
+	// FFmpeg pin maintenance: the exact URL and digest pair per
+	// architecture (task 28), the rolling channel, and the intentionally
+	// loud failure.
 	for _, want := range []string{
 		"https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb",
 		"0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c",
+		"https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb",
+		"9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb",
+		"for arch in amd64 arm64",
 		"rolling channel",
 		"fails loudly by design",
-		"sha256sum jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb",
 		"| sort -u",
 	} {
 		assert.Contains(t, body, want, "the FFmpeg pin procedure must stay accurate")
@@ -172,13 +231,21 @@ func TestContainerArchitecturesStatesArm64Facts(t *testing.T) {
 		"HTTP 200",
 		"15,555,600 bytes",
 		// The corrected reason, not the false one.
-		"never been built or tested for arm64",
-		"That was wrong",
-		// Both options and exactly one recommendation.
-		"Option A",
-		"Option B",
-		"## Recommendation",
-		"linux/arm64` binary",
+		"because the package is missing",
+		// Task 28: the image is multi-arch and how it is proven.
+		"linux/amd64",
+		"linux/arm64",
+		"manifest list",
+		"TARGETARCH",
+		"0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c",
+		"9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb",
+		"GET /api/v1/health",
+		"imagetools inspect",
+		// The honest remaining gap: no real ARM64 encode recorded yet.
+		"A real encode on ARM64 hardware",
+		"ARM64 users get CPU encoders",
+		// The rejected third path stays rejected.
+		"Do not do this while the jellyfin-ffmpeg arm64 deb exists",
 	} {
 		assert.Contains(t, squashWhitespace(body), want)
 	}

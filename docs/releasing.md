@@ -117,6 +117,16 @@ that is what `docker/metadata-action` produces. If the package was recreated,
 one manual step is needed once: package settings -> visibility public ->
 inherited repository access (see the note at the end of `release.yml`).
 
+Then verify the manifest list carries both architectures:
+
+```sh
+docker buildx imagetools inspect ghcr.io/peiceoftoast/shrinkyourshit:latest
+```
+
+The output must list `linux/amd64` **and** `linux/arm64` under
+`Manifests`. The release workflow checks the same thing right after the
+push; if a platform is missing, rebuild before announcing the release.
+
 ## 8. Verify the container's build identity, then update
 
 The image must report the tag's full commit, not `none`:
@@ -157,32 +167,38 @@ binary that self update kept as `shrinkyourshit.prev`.
 
 The runtime image installs a specific `jellyfin-ffmpeg` `.deb` instead of an
 apt package, so the build is reproducible and covers NVENC, QSV and VAAPI
-(decision B8). The pin lives in `docker/Dockerfile`, runtime stage, in two
-adjacent lines:
+(decision B8). The pin lives in `docker/Dockerfile`, runtime stage, as two
+ARG pairs, one per architecture:
 
-- the URL:
+- amd64 URL:
   `https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb`
-- the sha256:
-  `0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c`
+  sha256 `0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c`
+- arm64 URL:
+  `https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb`
+  sha256 `9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb`
 
 `latest-7.x` is a rolling channel. Jellyfin can rotate or remove the file at
 any time. That is intentional: a missing file makes `curl -fsSL` fail, and a
-replaced file fails `sha256sum -c`. **The build fails loudly by design.** Never
-remove the checksum to get a build through, and never switch to `latest`; a
-silent FFmpeg change would change every user's encode output.
+replaced file fails `sha256sum -c`. **The build fails loudly by design.**
+Never remove the checksum to get a build through, and never switch to
+`latest`; a silent FFmpeg change would change every user's encode output.
 
 To bump the pair, list the channel, fetch the new file and hash it (replace
-the filename below with the new one the listing prints):
+the filename below with the new one the listing prints), for each
+architecture:
 
 ```sh
-curl -fsS https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/ \
-  | grep -o 'jellyfin-ffmpeg7_[^"]*_amd64.deb' | sort -u
-cd /tmp
-curl -fsSLO https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb
-sha256sum jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb
+for arch in amd64 arm64; do
+  curl -fsS "https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/$arch/" \
+    | grep -o "jellyfin-ffmpeg7_[^\"]*_bookworm_$arch.deb" | sort -u
+  curl -fsSLO "https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/$arch/<new filename>"
+  sha256sum <new filename>
+done
 ```
 
-Update the URL and the digest together in `docker/Dockerfile`, then prove it:
+Update both URL and digest pairs together in `docker/Dockerfile` — and bump
+both architectures in the same commit, because the image must keep shipping
+one ffmpeg version everywhere — then prove it:
 
 ```sh
 docker build -f docker/Dockerfile \
@@ -191,6 +207,11 @@ docker build -f docker/Dockerfile \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t shrinkyourshit:ffmpeg-pin .
 docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ffmpeg-pin -version
+docker buildx build -f docker/Dockerfile --platform linux/arm64 \
+  --build-arg VERSION=v0.0.0-test \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t shrinkyourshit:ffmpeg-pin-arm64 .
 ```
 
 On a machine without Docker, push the branch and let the `docker` job in
@@ -198,5 +219,6 @@ On a machine without Docker, push the branch and let the `docker` job in
 same commit as the changelog entry that mentions the bump.
 
 The same channel also publishes an arm64 deb with the same version and
-filename suffix. If the image becomes multi-arch, its pin is bumped the same
-way (URL plus sha256). See `docs/container-architectures.md`.
+filename suffix; that is exactly the arm64 pin already in the Dockerfile,
+so both architectures are bumped the same way (URL plus sha256). See
+`docs/container-architectures.md`.

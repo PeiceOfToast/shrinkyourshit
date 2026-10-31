@@ -4,7 +4,8 @@
 # Multi-stage build per STACK.md: node:20 builds the web app, golang:1.23
 # builds a static binary, debian:bookworm-slim + jellyfin-ffmpeg runs it.
 # jellyfin-ffmpeg ships NVENC, QSV and VAAPI, so one image covers all v1
-# encoders (decision B8).
+# encoders (decision B8). The runtime is built for linux/amd64 and
+# linux/arm64; the jellyfin-ffmpeg deb is pinned per architecture.
 
 ARG GO_VERSION=1.23
 ARG NODE_VERSION=20
@@ -35,22 +36,33 @@ RUN CGO_ENABLED=0 go build -trimpath \
     -o /out/shrinkyourshit ./cmd/shrinkyourshit
 
 # --- runtime ---
-# amd64 only: the image has never been built or tested for arm64. The
-# pinned jellyfin-ffmpeg deb does have an arm64 build on the same channel
-# (https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/), so a
-# multi-arch image is possible; see docs/container-architectures.md.
-FROM debian:bookworm-slim AS runtime
-ARG DEBIAN_FRONTEND=noninteractive
-# jellyfin-ffmpeg comes from the official deb, not the jellyfin apt repo
-# (the bookworm repo no longer ships the package and the old key URL 404s).
-# The exact filename is pinned even though latest-7.x is a rolling channel;
+# The jellyfin-ffmpeg deb is pinned per architecture: TARGETARCH (set by
+# buildx from the target platform) picks the URL and sha256 from the four
+# ARGs below. `amd64` and `arm64` are supported; anything else fails the
+# build naming the arch — never default silently to amd64.
+# Both debs come from the official channel, not the jellyfin apt repo (the
+# bookworm repo no longer ships the package and the old key URL 404s). The
+# exact filename is pinned even though latest-7.x is a rolling channel;
 # the sha256 check fails the build on mismatch. apt installs the local deb
 # and resolves its dependencies from Debian bookworm.
+# The arm64 investigation notes and the CI proof live in
+# docs/container-architectures.md.
+FROM debian:bookworm-slim AS runtime
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
+ARG FF_DEB_AMD64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb
+ARG FF_DEB_AMD64_SHA256=0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c
+ARG FF_DEB_ARM64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb
+ARG FF_DEB_ARM64_SHA256=9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl gosu \
- && curl -fsSL -o /tmp/jellyfin-ffmpeg7.deb \
-      https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb \
- && echo "0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c  /tmp/jellyfin-ffmpeg7.deb" \
+ && case "$TARGETARCH" in \
+      amd64) FF_DEB_URL="$FF_DEB_AMD64_URL"; FF_DEB_SHA256="$FF_DEB_AMD64_SHA256";; \
+      arm64) FF_DEB_URL="$FF_DEB_ARM64_URL"; FF_DEB_SHA256="$FF_DEB_ARM64_SHA256";; \
+      *) echo "jellyfin-ffmpeg is not pinned for TARGETARCH '$TARGETARCH'; supported: amd64, arm64" >&2; exit 1;; \
+    esac \
+ && curl -fsSL -o /tmp/jellyfin-ffmpeg7.deb "$FF_DEB_URL" \
+ && echo "$FF_DEB_SHA256  /tmp/jellyfin-ffmpeg7.deb" \
       | sha256sum -c - \
  && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg7.deb \
  && rm -f /tmp/jellyfin-ffmpeg7.deb \
