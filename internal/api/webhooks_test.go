@@ -179,14 +179,6 @@ func TestWebhookEndpointsRequireAdmin(t *testing.T) {
 	}
 }
 
-// serverSign is the HMAC signature a delivery should carry; tests verify
-// the remote's headers against the create-time secret.
-func serverSign(secret, body string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(body))
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
-}
-
 // TestWebhookTestEndpoint covers acceptance item 7: the Test button fires
 // one delivery with the sample payload against the configured URL, a
 // single attempt, and reports the remote's answer.

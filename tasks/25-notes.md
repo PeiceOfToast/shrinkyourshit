@@ -60,8 +60,35 @@ Files to touch, in order:
   ends `done`, so `job.failed` fires from `Queue.Fail` (where the encoder error text lives).
 - The task's "Read first" list names `docs/API.md`; the API contract lives at the repo root
   (`API.md`), and `docs/` held only review notes. `docs/openapi.yaml` is created as asked.
+- The task says "OpenAPI 3.1"; the document is OpenAPI 3.0.3 — `yaml.v3` round-trips it to JSON for
+  `/api/v1/openapi.json` without loss, and the anti-drift test only compares paths/methods, so the
+  version bump would change nothing the test can see. Recorded here instead of guessing at
+  `jsonSchemaDialect`.
+- `go:embed` cannot reach files outside the package directory, so the document is embedded via a
+  tiny `docs/docs.go` (`docs.OpenAPIYAML`) next to `docs/openapi.yaml`; `internal/api/openapi.go`
+  consumes that.
+- The anti-drift test scopes the comparison to `/api/*` routes plus `/openapi.yaml`. `GET
+  /install.sh` and `GET /install.ps1` are templated static file downloads, not API endpoints, and
+  stay out of the document on purpose.
 
 ## Out of scope (untouched)
 
 Signing-rotation UI, per-library webhooks, delivery replay, generated clients, publishing the doc
 outside the app, any change to DECISIONS.md.
+
+## Summary (5 lines)
+
+- Built the webhook stack end to end: migration 0011, store CRUD + delivery history with a newest-50
+  prune, a fire-and-forget `Dispatcher` (5 s timeout, 3 attempts, HMAC-signed, Discord/Slack wrapping)
+  and the six admin API endpoints with the once-only secret.
+- Refactored the task 23 hook into one `Notifier(ctx, WebhookEvent)` so Queue (job.done / job.failed)
+  and Scanner (library.scanned) feed both the refresher (filters on done-with-real-savings, unchanged
+  behavior) and the webhook dispatcher through one router.
+- Shipped `docs/openapi.yaml` served at `/api/v1/openapi.json` (YAML→JSON via yaml.v3) and
+  `/openapi.yaml`, with `openapi_test.go` proving document ↔ route table agreement both ways by
+  parsing `api.go`.
+- IntegrationsPage gained Servers/Webhooks tabs; the webhooks tab lists hooks, shows the create-time
+  secret once with a copy button, a deliveries dialog and a Test button; 5 new web tests.
+- `make test` (197 web tests, all Go unit tests), `make lint` and `make test-integration` (ffmpeg
+  present) are green; acceptance checklist fully ticked. Next task: nothing here blocks 26/27, but
+  task 27's full job log should reuse `JobDTO.Log` in `WebhookEvent` instead of a second copy.

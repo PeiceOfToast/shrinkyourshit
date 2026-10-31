@@ -217,10 +217,7 @@ func TestWebhookRetriesAndRecordsFailure(t *testing.T) {
 
 	// Let the delivery goroutine record the row.
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if len(deliveries(t, h, webhookRow(t, h).ID)) == 1 {
-			break
-		}
+	for len(deliveries(t, h, webhookRow(t, h).ID)) != 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("no delivery row was recorded")
 		}
@@ -252,10 +249,7 @@ func TestWebhookDeadHookWarnsAndJobStillDone(t *testing.T) {
 	require.Equal(t, store.JobStatusDone, got.Status)
 
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if len(deliveries(t, h, webhookRow(t, h).ID)) == 1 {
-			break
-		}
+	for len(deliveries(t, h, webhookRow(t, h).ID)) != 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("the dead-hook delivery was never recorded")
 		}
@@ -267,10 +261,7 @@ func TestWebhookDeadHookWarnsAndJobStillDone(t *testing.T) {
 	assert.NotEmpty(t, rows[0].Error)
 
 	deadline = time.Now().Add(5 * time.Second)
-	for {
-		if strings.Contains(logs.text(), "webhook delivery failed") {
-			break
-		}
+	for !strings.Contains(logs.text(), "webhook delivery failed") {
 		if time.Now().After(deadline) {
 			t.Fatalf("dead-hook warning missing; log:\n%s", logs.text())
 		}
@@ -330,10 +321,7 @@ func TestWebhookChatWrapping(t *testing.T) {
 	// Let the delivery goroutine record its row before the harness closes
 	// the store.
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if len(deliveries(t, h, webhookRow(t, h).ID)) == 1 {
-			break
-		}
+	for len(deliveries(t, h, webhookRow(t, h).ID)) != 1 {
 		if time.Now().After(deadline) {
 			t.Fatal("the delivery was never recorded")
 		}

@@ -7,7 +7,7 @@
 #
 # Served by the app at GET /api/v1/openapi.json (this file converted to
 # JSON) and GET /openapi.yaml (verbatim). No auth.
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: ShrinkYourShit API
   description: >-
@@ -1164,8 +1164,8 @@ components:
         name: { type: string }
         path: { type: string }
         target: { type: object, description: The encoding target (video codec/quality, audio policy). }
-        easy: { type: object, nullable: true, description: The easy screen's choices while the library uses it. }
-        flow: { type: object, nullable: true, description: The flow graph while the library uses the editor. }
+        easy: { type: ["object", "null"], description: The easy screen's choices while the library uses it. }
+        flow: { type: ["object", "null"], description: The flow graph while the library uses the editor. }
         flow_source: { type: string, description: empty for easy libraries, easy or editor. }
         watch: { type: boolean }
         schedule: { type: string, description: cron expression; empty means no schedule. }
@@ -1180,7 +1180,7 @@ components:
         name: { type: string }
         path: { type: string }
         target: { type: object }
-        easy: { type: object, nullable: true }
+        easy: { type: ["object", "null"] }
         watch: { type: boolean }
         schedule: { type: string }
         result_policy: { type: string }
@@ -1203,7 +1203,7 @@ components:
         satisfied_reason: { type: string }
         bytes_saved: { type: integer, format: int64 }
         last_job_id: { type: string }
-        probe: { type: object, nullable: true }
+        probe: { type: ["object", "null"] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     Job:
@@ -1365,8 +1365,7 @@ components:
         node_key: { type: string, description: Present exactly once, on approval. }
         server_url: { type: string }
     WorkerClaim:
-      type: object
-      nullable: true
+      type: ["object", "null"]
       description: The claimed job, or null when the queue is empty.
       properties:
         job_id: { type: string, format: uuid }

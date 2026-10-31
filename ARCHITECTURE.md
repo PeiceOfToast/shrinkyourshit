@@ -83,7 +83,22 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default).
 
-**Webhook:** `id, url, events (JSON list), enabled` (task post-MVP; schema can wait).
+**Webhook:** `id, name, url, secret, events (comma separated: job.done | job.failed | library.scanned), enabled, created_at, updated_at` (task 25, migration 0011). The secret is generated server side at create time (32 random bytes, hex) and returned exactly once; after that every response carries `secret_set` instead.
+
+**Webhook delivery:** `id, webhook_id, event, status, error, created_at` (task 25). One row per delivered event per hook; the dispatcher prunes each hook to the newest 50 after every insert. `status` is the remote's HTTP status — 0 when the request never got an answer — and `error` holds the head of a non-2xx body or the transport failure text.
+
+**WebhookEvent (the delivery body):** every field carries an explicit JSON tag; the nested values are the same DTOs the API publishes.
+```json
+{
+  "event": "job.done | job.failed | library.scanned",
+  "job":    { "…JobDTO": "" },
+  "file":   { "…FileDTO": "" },
+  "library":{ "…LibraryDTO": "" },
+  "scan":   { "seen": 0, "probed": 0, "reused": 0, "skipped": 0, "queued": 0, "satisfied": 0, "missing": 0, "errors": 0 },
+  "at":     "2026-10-31T12:00:00Z"
+}
+```
+`job` and `file` are set on the job events, `scan` only on `library.scanned`, `library` whenever it is known. Deliveries sign the exact bytes sent with `X-SYS-Signature: sha256=<hex HMAC-SHA256 under the hook's secret>`; Discord and Slack hosts receive the wrapped one-line summary instead of the raw JSON.
 
 **Integration:** `id, kind, name, base_url, api_key, enabled, refresh_on_done, created_at, updated_at` (task 23)
 - `kind`: `jellyfin | emby | plex | sonarr | radarr`
@@ -359,12 +374,15 @@ Rules that apply to all three:
 
 ## Integrations
 
-REST API (OpenAPI document generated post-MVP) and outbound webhooks. Task 23 adds the
+REST API (OpenAPI document shipped with the binary, task 25) and outbound webhooks. Task 23 adds the
 configured integrations (`jellyfin`, `emby`, `plex`, `sonarr`, `radarr`): after a job ends
 `done` with real savings, the refresher calls each enabled integration with `refresh_on_done`
 through one pinned request per kind, coalesced to one in-flight call per integration id with
-a 30 second floor between calls. Sonarr/Radarr/Plex/Jellyfin/Emby refresh sits on this API;
-per-library filters and notifications (webhooks) stay post-MVP.
+a 30 second floor between calls. Task 25 adds the webhooks: a server-generated secret, an
+event dispatcher (`job.done`, `job.failed`, `library.scanned`) fed by the same outbound hook
+the refresher filters on, retries with a recorded delivery history, and the OpenAPI document
+(`docs/openapi.yaml`) whose served copy and the route table are tested to agree. Sonarr/
+Radarr/Plex/Jellyfin/Emby refresh sits on this API; per-library filters stay post-MVP.
 
 ## Repo layout
 

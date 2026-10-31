@@ -1,26 +1,40 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Integrations page (task 23): the media servers and download clients
- * that hear about every shrunk file, so the library at home updates
- * itself. Rows are DataList cards (task 20) with the shared 44px control
- * classes; the add/edit form keeps the key secret — a saved key shows
- * "(unchanged)" in its field and never travels back out of the API.
+ * Integrations page (task 23 + 25): two tabs. "Servers" holds the media
+ * servers and download clients that hear about every shrunk file, so the
+ * library at home updates itself. "Webhooks" holds the outbound hooks that
+ * tell something else what happened: a posted event summary, signed with
+ * the hook's secret. Rows are DataList cards (task 20) with the shared
+ * 44px control classes; the add/edit form keeps the key secret — a saved
+ * key shows "(unchanged)" in its field and never travels back out of the
+ * API, and the webhook secret is shown once with a copy button.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createIntegration,
+  createWebhook,
   deleteIntegration,
+  deleteWebhook,
   getIntegrations,
+  getWebhookDeliveries,
+  getWebhooks,
   testIntegration,
+  testWebhook,
   updateIntegration,
+  updateWebhook,
   type Integration,
   type IntegrationBody,
+  type Webhook,
+  type WebhookBody,
+  type WebhookEvent,
+  WEBHOOK_EVENTS,
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
 import ErrorBox from './ErrorBox'
+import ModalDialog from './dialog'
 import PageContainer from './PageContainer'
 import { SkeletonRows } from './skeleton'
 import Switch from './Switch'
@@ -74,7 +88,83 @@ function formOf(row: Integration): FormState {
   }
 }
 
+/** The form: blank for "add", prefilled for edit (secret stays blank). */
+interface WebhookFormState {
+  id: string
+  name: string
+  url: string
+  events: WebhookEvent[]
+  enabled: boolean
+}
+
+function blankWebhookForm(): WebhookFormState {
+  return { id: '', name: '', url: '', events: ['job.done'], enabled: true }
+}
+
+function webhookFormOf(row: Webhook): WebhookFormState {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    events: [...row.events],
+    enabled: row.enabled,
+  }
+}
+
+/** The event label: plain language, no event names. */
+function eventLabel(id: string): string {
+  return WEBHOOK_EVENTS.find((e) => e.id === id)?.label ?? id
+}
+
+/** The tab: the two halves of the page. */
+type Tab = 'servers' | 'webhooks'
+
 export default function IntegrationsPage() {
+  const [tab, setTab] = useState<Tab>('servers')
+
+  return (
+    <PageContainer className="space-y-6" data-testid="integrations-page">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Integrations</h1>
+        <div
+          className="flex gap-2"
+          role="tablist"
+          aria-label="Integrations"
+          data-testid="integrations-tabs"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'servers'}
+            className={tab === 'servers' ? btnPrimary : btnGhost}
+            data-testid="integrations-tab-servers"
+            onClick={() => setTab('servers')}
+          >
+            Servers
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'webhooks'}
+            className={tab === 'webhooks' ? btnPrimary : btnGhost}
+            data-testid="integrations-tab-webhooks"
+            onClick={() => setTab('webhooks')}
+          >
+            Webhooks
+          </button>
+        </div>
+      </div>
+
+      {tab === 'servers' ? <ServersTab /> : <WebhooksTab />}
+    </PageContainer>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Servers tab (task 23 content)                                       */
+/* ------------------------------------------------------------------ */
+
+function ServersTab() {
   const client = useQueryClient()
   const toast = useToast()
   const list = useQuery({
@@ -108,7 +198,8 @@ export default function IntegrationsPage() {
   })
 
   // The row's on/off switch flips the integration without opening the
-  // form: an empty api_key means "keep the stored key" (API.md).
+  // form: an empty api_key keeps the stored key (the form shows
+  // "(unchanged)" in its field and never travels back out of the API).
   const toggle = useMutation({
     mutationFn: (input: { row: Integration; enabled: boolean }) =>
       updateIntegration(input.row.id, {
@@ -126,28 +217,25 @@ export default function IntegrationsPage() {
 
   const remove = useMutation({
     mutationFn: (id: string) => deleteIntegration(id),
-    onSuccess: (_result, id) => {
-      toast.success('Integration deleted.')
-      setDeleting(null)
+    onSuccess: () => {
       invalidate()
-      if (form?.id === id) setForm(null)
-    },
-    onError: (err: unknown) => {
-      toast.failure('Deleting the integration failed', err)
       setDeleting(null)
     },
+    onError: (err: unknown) =>
+      toast.failure('Deleting the integration failed', err),
   })
 
   const test = useMutation({
     mutationFn: (id: string) => testIntegration(id),
     onSuccess: (result, id) => {
-      const name = list.data?.items.find((i) => i.id === id)?.name ?? id
+      const name = list.data?.items.find((row) => row.id === id)?.name ?? ''
       setTestResult({
         id,
         text: result.ok
-          ? `Reached ${name} — the server said it is listening.`
-          : (result.error ??
-            `${name} did not answer (status ${result.status}).`),
+          ? `Reached ${name} — it is listening.`
+          : result.error
+            ? result.error
+            : `${name} answered with status ${result.status}.`,
       })
     },
     onError: (err: unknown) =>
@@ -178,13 +266,7 @@ export default function IntegrationsPage() {
       checked={row.enabled}
       label={`${row.name} on/off`}
       testId={`integration-switch-${row.id}${onCard ? '-card' : ''}`}
-      onChange={(next) => {
-        if (form?.id === row.id) {
-          setForm({ ...form, enabled: next })
-          return
-        }
-        toggle.mutate({ row, enabled: next })
-      }}
+      onChange={(next) => toggle.mutate({ row, enabled: next })}
     />
   )
 
@@ -250,89 +332,75 @@ export default function IntegrationsPage() {
   ]
 
   return (
-    <PageContainer className="space-y-6" data-testid="integrations-page">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Integrations</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-400">
-            After a file is shrunk, your media server or download client can be
-            told to rescan — without anyone clicking Scan. Each entry here is
-            one server to notify.
-          </p>
-        </div>
-        <button
-          type="button"
-          className={btnPrimary}
-          data-testid="integrations-add"
-          onClick={() => setForm(blankForm())}
-        >
-          Add integration
-        </button>
-      </div>
+    <div className="space-y-6">
+      <p className="max-w-2xl text-sm text-slate-400">
+        After a file is shrunk, your media server or download client can be told
+        to rescan — without anyone clicking Scan. Each entry here is one server
+        to notify.
+      </p>
 
       {testResult && (
         <p
           role="status"
-          className={`rounded-2xl p-4 text-sm ring-1 ${
-            testResult.text.startsWith('Reached')
-              ? 'bg-emerald-950/40 text-emerald-200 ring-emerald-900/60'
-              : 'bg-red-950/40 text-red-200 ring-red-900/60'
-          }`}
+          className="rounded-2xl bg-slate-800/60 p-4 text-sm ring-1 ring-slate-700"
           data-testid="integration-test-result"
         >
           {testResult.text}
         </p>
       )}
 
-      {list.isPending && (
-        <>
-          <h2 className="text-lg font-semibold">Configured</h2>
-          <SkeletonRows rows={2} />
-        </>
-      )}
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">Configured servers</h2>
+        <button
+          type="button"
+          className={btnPrimary}
+          data-testid="integrations-add"
+          onClick={() => setForm(blankForm())}
+        >
+          Add server
+        </button>
+      </div>
+
+      {list.isPending && <SkeletonRows rows={3} />}
       {list.isError && (
-        <ErrorBox title="Cannot load the integrations." error={list.error} />
+        <ErrorBox title="Cannot load the servers." error={list.error} />
       )}
-      {list.data && (
-        <section>
-          <h2 className="text-lg font-semibold">Configured</h2>
-          {list.data.items.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-400">
-              Nothing configured yet — add your media server above.
-            </p>
-          ) : (
-            <DataList
-              rows={list.data.items}
-              columns={columns}
-              testid="integrations-list"
-              rowTestId={(r) => `integration-row-${r.id}`}
-              cardRowTestId={(r) => `integration-card-${r.id}`}
-            />
-          )}
-        </section>
+      {list.data && list.data.items.length === 0 && (
+        <p className="text-sm text-slate-500" data-testid="integrations-empty">
+          No servers configured yet.
+        </p>
+      )}
+      {list.data && list.data.items.length > 0 && (
+        <DataList
+          rows={list.data.items}
+          columns={columns}
+          testid="integrations-list"
+          rowTestId={(r) => `integration-row-${r.id}`}
+          cardRowTestId={(r) => `integration-card-${r.id}`}
+        />
       )}
 
       {form && (
         <section
-          className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800"
+          className="rounded-2xl bg-slate-800/40 p-6"
           data-testid="integration-form"
         >
-          <h2 className="text-lg font-semibold">
-            {editing ? 'Edit integration' : 'Add integration'}
-          </h2>
-          <div className="mt-4 grid max-w-xl gap-4">
-            <label className="grid gap-1">
+          <h3 className="text-lg font-semibold">
+            {editing ? 'Edit server' : 'Add a server'}
+          </h3>
+          <div className="mt-4 space-y-4">
+            <label className="block">
               <span className="text-sm text-slate-300">Kind</span>
               <select
                 className={input}
                 value={form.kind}
+                data-testid="integration-kind"
                 onChange={(e) =>
                   setForm({
                     ...form,
                     kind: e.target.value as Integration['kind'],
                   })
                 }
-                data-testid="integration-kind"
               >
                 {KINDS.map((k) => (
                   <option key={k.id} value={k.id}>
@@ -341,68 +409,51 @@ export default function IntegrationsPage() {
                 ))}
               </select>
             </label>
-            <label className="grid gap-1">
+            <label className="block">
               <span className="text-sm text-slate-300">Name</span>
               <input
-                type="text"
                 className={input}
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Living room TV"
                 data-testid="integration-name"
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Living room Jellyfin"
               />
             </label>
-            <label className="grid gap-1">
-              <span className="text-sm text-slate-300">Address</span>
+            <label className="block">
+              <span className="text-sm text-slate-300">Address (URL)</span>
               <input
-                type="text"
                 className={input}
                 value={form.base_url}
-                onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                placeholder="http://media.local:8096"
                 data-testid="integration-base-url"
+                onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+                placeholder="http://192.168.1.10:8096"
               />
             </label>
-            <label className="grid gap-1">
-              <span className="text-sm text-slate-300">
-                API key
-                {editing && (
-                  <span className="ml-1 text-slate-500">
-                    (leave blank to keep the saved one)
-                  </span>
-                )}
-              </span>
+            <label className="block">
+              <span className="text-sm text-slate-300">API key</span>
               <input
-                type="password"
                 className={input}
+                type="password"
                 value={form.api_key}
-                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                placeholder={editing ? '(unchanged)' : 'Paste the API key'}
                 data-testid="integration-api-key"
+                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                placeholder={editing ? '(unchanged)' : ''}
               />
             </label>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-sm text-slate-300">On</span>
-              <Switch
-                checked={form.enabled}
-                label="Integration on/off"
-                testId="integration-enabled"
-                onChange={(next) => setForm({ ...form, enabled: next })}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-sm text-slate-300">
-                Rescan after every finished file
-              </span>
-              <Switch
-                checked={form.refresh_on_done}
-                label="Rescan after every finished file"
-                testId="integration-refresh-on-done"
-                onChange={(next) => setForm({ ...form, refresh_on_done: next })}
-              />
-            </div>
+            <Switch
+              checked={form.enabled}
+              label="Enabled"
+              testId="integration-enabled"
+              onChange={(next) => setForm({ ...form, enabled: next })}
+            />
+            <Switch
+              checked={form.refresh_on_done}
+              label="Tell it to rescan when a file is shrunk"
+              testId="integration-refresh-on-done"
+              onChange={(next) => setForm({ ...form, refresh_on_done: next })}
+            />
           </div>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-6 flex gap-2">
             <button
               type="button"
               className={btnPrimary}
@@ -410,7 +461,7 @@ export default function IntegrationsPage() {
               data-testid="integration-save"
               onClick={submit}
             >
-              {save.isPending ? 'Saving…' : 'Save'}
+              Save
             </button>
             <button
               type="button"
@@ -441,6 +492,464 @@ export default function IntegrationsPage() {
           </p>
         </ConfirmDialog>
       )}
-    </PageContainer>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Webhooks tab (task 25)                                              */
+/* ------------------------------------------------------------------ */
+
+/** One hook's deliveries dialog: the last 50 attempts, newest first. */
+function DeliveriesDialog({
+  webhook,
+  onClose,
+}: {
+  webhook: Webhook
+  onClose: () => void
+}) {
+  const list = useQuery({
+    queryKey: ['webhook-deliveries', webhook.id],
+    queryFn: () => getWebhookDeliveries(webhook.id),
+  })
+
+  return (
+    <ModalDialog
+      label="Deliveries"
+      testId="webhook-deliveries-dialog"
+      onClose={onClose}
+      className="max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-slate-800/40 p-6 shadow-xl"
+    >
+      <h3 className="text-lg font-semibold">Deliveries — {webhook.name}</h3>
+      <p className="mt-1 text-sm text-slate-400">
+        The last attempts, newest first. Status 0 means the request never got an
+        answer.
+      </p>
+      {list.isPending && <SkeletonRows rows={2} />}
+      {list.isError && (
+        <ErrorBox title="Cannot load the deliveries." error={list.error} />
+      )}
+      {list.data && list.data.items.length === 0 && (
+        <p
+          className="mt-4 text-sm text-slate-500"
+          data-testid="webhook-deliveries-empty"
+        >
+          Nothing delivered yet.
+        </p>
+      )}
+      {list.data && list.data.items.length > 0 && (
+        <table
+          className="mt-4 w-full text-sm"
+          data-testid="webhook-deliveries-table"
+        >
+          <thead>
+            <tr className="text-left text-slate-400">
+              <th className="py-1 pr-3 font-medium">When</th>
+              <th className="py-1 pr-3 font-medium">Event</th>
+              <th className="py-1 pr-3 font-medium">Status</th>
+              <th className="py-1 font-medium">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.data.items.map((d) => (
+              <tr key={d.id} data-testid={`webhook-delivery-${d.id}`}>
+                <td className="py-1 pr-3" data-testid={`delivery-at-${d.id}`}>
+                  {new Date(d.at).toLocaleString()}
+                </td>
+                <td
+                  className="py-1 pr-3"
+                  data-testid={`delivery-event-${d.id}`}
+                >
+                  {eventLabel(d.event)}
+                </td>
+                <td
+                  className="py-1 pr-3"
+                  data-testid={`delivery-status-${d.id}`}
+                >
+                  {d.status === 0 ? 'No answer' : d.status}
+                </td>
+                <td
+                  className="py-1 pr-3"
+                  data-testid={`delivery-error-${d.id}`}
+                >
+                  {d.error ?? ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-6">
+        <button
+          type="button"
+          className={btnGhost}
+          data-testid="webhook-deliveries-close"
+          onClick={onClose}
+        >
+          Close
+        </button>
+      </div>
+    </ModalDialog>
+  )
+}
+
+function WebhooksTab() {
+  const client = useQueryClient()
+  const toast = useToast()
+  const list = useQuery({
+    queryKey: ['webhooks'],
+    queryFn: getWebhooks,
+  })
+
+  const [form, setForm] = useState<WebhookFormState | null>(null)
+  const [deleting, setDeleting] = useState<Webhook | null>(null)
+  const [deliveries, setDeliveries] = useState<Webhook | null>(null)
+  const [testResult, setTestResult] = useState<{
+    id: string
+    text: string
+  } | null>(null)
+  /** The secret, shown once, right after create. */
+  const [secret, setSecret] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const invalidate = () => {
+    void client.invalidateQueries({ queryKey: ['webhooks'] })
+  }
+
+  const save = useMutation({
+    mutationFn: (input: { id: string; body: WebhookBody }) =>
+      input.id
+        ? updateWebhook(input.id, input.body)
+        : createWebhook(input.body),
+    onSuccess: (created, input) => {
+      if (input.id === '' && 'secret' in created) {
+        // A new hook: the secret is on screen exactly once.
+        setSecret(String(created.secret))
+      }
+      toast.success('Webhook saved.')
+      invalidate()
+      setForm(null)
+    },
+    onError: (err: unknown) => toast.failure('Saving the webhook failed', err),
+  })
+
+  const toggle = useMutation({
+    mutationFn: (input: { row: Webhook; enabled: boolean }) =>
+      updateWebhook(input.row.id, {
+        name: input.row.name,
+        url: input.row.url,
+        events: input.row.events,
+        enabled: input.enabled,
+      }),
+    onSuccess: () => invalidate(),
+    onError: (err: unknown) => toast.failure('Saving the webhook failed', err),
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteWebhook(id),
+    onSuccess: () => {
+      invalidate()
+      setDeleting(null)
+    },
+    onError: (err: unknown) =>
+      toast.failure('Deleting the webhook failed', err),
+  })
+
+  const test = useMutation({
+    mutationFn: (id: string) => testWebhook(id),
+    onSuccess: (result, id) => {
+      const name = list.data?.items.find((row) => row.id === id)?.name ?? ''
+      setTestResult({
+        id,
+        text: result.ok
+          ? `Delivered the sample to ${name}.`
+          : result.error
+            ? result.error
+            : `${name} answered with status ${result.status}.`,
+      })
+    },
+    onError: (err: unknown) => toast.failure('Testing the webhook failed', err),
+  })
+
+  const editing = form !== null && form.id !== ''
+
+  const submit = () => {
+    if (!form) return
+    save.mutate({
+      id: form.id,
+      body: {
+        name: form.name,
+        url: form.url,
+        events: form.events,
+        enabled: form.enabled,
+      },
+    })
+  }
+
+  // Row controls take an onCard flag: the card tree's test ids carry a
+  // -card suffix (the task 20 pattern), so tests target one tree.
+  const rowSwitch = (row: Webhook, onCard: boolean) => (
+    <Switch
+      checked={row.enabled}
+      label={`${row.name} on/off`}
+      testId={`webhook-switch-${row.id}${onCard ? '-card' : ''}`}
+      onChange={(next) => toggle.mutate({ row, enabled: next })}
+    />
+  )
+
+  const rowActions = (row: Webhook, onCard: boolean) => (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        className={btn}
+        disabled={test.isPending}
+        data-testid={`webhook-test-${row.id}${onCard ? '-card' : ''}`}
+        onClick={() => test.mutate(row.id)}
+      >
+        Test
+      </button>
+      <button
+        type="button"
+        className={btnGhost}
+        data-testid={`webhook-deliveries-${row.id}${onCard ? '-card' : ''}`}
+        onClick={() => setDeliveries(row)}
+      >
+        Deliveries
+      </button>
+      <button
+        type="button"
+        className={btnGhost}
+        data-testid={`webhook-edit-${row.id}${onCard ? '-card' : ''}`}
+        onClick={() => setForm(webhookFormOf(row))}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className={btnGhost}
+        data-testid={`webhook-delete-${row.id}${onCard ? '-card' : ''}`}
+        onClick={() => setDeleting(row)}
+      >
+        Delete
+      </button>
+    </div>
+  )
+
+  const columns: Column<Webhook>[] = [
+    { key: 'name', header: 'Name', cell: (r) => r.name, primary: true },
+    {
+      key: 'url',
+      header: 'URL',
+      cell: (r) => <span className="break-all text-slate-300">{r.url}</span>,
+    },
+    {
+      key: 'events',
+      header: 'Events',
+      cell: (r) => r.events.map((e) => eventLabel(e)).join(', '),
+    },
+    {
+      key: 'enabled',
+      header: 'On',
+      cell: (r) => rowSwitch(r, false),
+      cardCell: (r) => rowSwitch(r, true),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      cell: (r) => rowActions(r, false),
+      cardCell: (r) => rowActions(r, true),
+    },
+  ]
+
+  const toggleEvent = (event: WebhookEvent) => {
+    if (!form) return
+    const next = form.events.includes(event)
+      ? form.events.filter((e) => e !== event)
+      : [...form.events, event]
+    setForm({ ...form, events: next })
+  }
+
+  const copySecret = () => {
+    if (!secret) return
+    void navigator.clipboard?.writeText(secret).then(
+      () => setCopied(true),
+      () => setCopied(false),
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <p className="max-w-2xl text-sm text-slate-400">
+        A webhook is a place outside this server that wants to hear what
+        happened: the URL receives a one-line message every time the chosen
+        thing occurs. Discord and Slack work out of the box.
+      </p>
+
+      {testResult && (
+        <p
+          role="status"
+          className="rounded-2xl bg-slate-800/60 p-4 text-sm ring-1 ring-slate-700"
+          data-testid="webhook-test-result"
+        >
+          {testResult.text}
+        </p>
+      )}
+
+      {secret && (
+        <section
+          className="rounded-2xl bg-emerald-950/40 p-6 ring-1 ring-emerald-800"
+          data-testid="webhook-secret-box"
+        >
+          <h3 className="text-lg font-semibold">Save this secret now</h3>
+          <p className="mt-1 text-sm text-emerald-200/80">
+            Every message is signed with it. You will not see this again — the
+            server keeps it and never shows it again.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <code
+              className="break-all rounded bg-slate-900 px-3 py-2 text-xs text-emerald-200"
+              data-testid="webhook-secret-value"
+            >
+              {secret}
+            </code>
+            <button
+              type="button"
+              className={btn}
+              data-testid="webhook-secret-copy"
+              onClick={copySecret}
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">Configured webhooks</h2>
+        <button
+          type="button"
+          className={btnPrimary}
+          data-testid="webhooks-add"
+          onClick={() => setForm(blankWebhookForm())}
+        >
+          Add webhook
+        </button>
+      </div>
+
+      {list.isPending && <SkeletonRows rows={3} />}
+      {list.isError && (
+        <ErrorBox title="Cannot load the webhooks." error={list.error} />
+      )}
+      {list.data && list.data.items.length === 0 && (
+        <p className="text-sm text-slate-500" data-testid="webhooks-empty">
+          No webhooks configured yet.
+        </p>
+      )}
+      {list.data && list.data.items.length > 0 && (
+        <DataList
+          rows={list.data.items}
+          columns={columns}
+          testid="webhooks-list"
+          rowTestId={(r) => `webhook-row-${r.id}`}
+          cardRowTestId={(r) => `webhook-card-${r.id}`}
+        />
+      )}
+
+      {form && (
+        <section
+          className="rounded-2xl bg-slate-800/40 p-6"
+          data-testid="webhook-form"
+        >
+          <h3 className="text-lg font-semibold">
+            {editing ? 'Edit webhook' : 'Add a webhook'}
+          </h3>
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="text-sm text-slate-300">Name</span>
+              <input
+                className={input}
+                value={form.name}
+                data-testid="webhook-name"
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Discord #media"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-slate-300">URL</span>
+              <input
+                className={input}
+                value={form.url}
+                data-testid="webhook-url"
+                onChange={(e) => setForm({ ...form, url: e.target.value })}
+                placeholder="https://discord.com/api/webhooks/…"
+              />
+            </label>
+            <fieldset className="space-y-2">
+              <legend className="text-sm text-slate-300">Tell it about</legend>
+              {WEBHOOK_EVENTS.map((e) => (
+                <label key={e.id} className="flex items-center gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-5 accent-emerald-600"
+                    checked={form.events.includes(e.id)}
+                    data-testid={`webhook-event-${e.id}`}
+                    onChange={() => toggleEvent(e.id)}
+                  />
+                  {e.label}
+                </label>
+              ))}
+            </fieldset>
+            <Switch
+              checked={form.enabled}
+              label="Enabled"
+              testId="webhook-enabled"
+              onChange={(next) => setForm({ ...form, enabled: next })}
+            />
+          </div>
+          <div className="mt-6 flex gap-2">
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={save.isPending}
+              data-testid="webhook-save"
+              onClick={submit}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className={btnGhost}
+              data-testid="webhook-cancel"
+              onClick={() => setForm(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </section>
+      )}
+
+      {deliveries && (
+        <DeliveriesDialog
+          webhook={deliveries}
+          onClose={() => setDeliveries(null)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete this webhook?"
+          confirmLabel="Delete"
+          busy={remove.isPending}
+          onConfirm={() => remove.mutate(deleting.id)}
+          onClose={() => setDeleting(null)}
+          testId="webhook-delete-dialog"
+        >
+          <p>
+            {deleting.name} stops hearing about anything, and its delivery
+            history is removed.
+          </p>
+        </ConfirmDialog>
+      )}
+    </div>
   )
 }
