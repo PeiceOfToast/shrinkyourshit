@@ -52,9 +52,32 @@ type PlanStep struct {
 // Plan is the ordered action plan the worker runs (ARCHITECTURE.md:
 // flow.Compile produces the plan; parity with the pre-flow builder is a
 // test gate). Steps run in order; the worker probes first, resolves each
-// step's conditions against the probe and applies what passes.
+// step's conditions against the probe and applies what passes. HealthCheck
+// and the move destination (task 24) ride along: they change nothing about
+// the encode, they act after the output is produced.
 type Plan struct {
 	Steps []PlanStep
+	// HealthCheck is set when the graph holds a health_check step. It is
+	// carried as compiled (defaults filled), because verification happens
+	// after the encode and never depends on the probe.
+	HealthCheck *HealthCheckSpec
+	// MoveTo is the trimmed destination of the graph's move step, empty
+	// when there is none. MoveKeepTree rebuilds the file's folder layout
+	// under it.
+	MoveTo       string
+	MoveKeepTree bool
+}
+
+// HealthCheckSpec is the compiled health_check step (task 24): how the
+// worker verifies the produced file before anything is reported complete.
+type HealthCheckSpec struct {
+	// Mode is "sample" (decode Minutes from the middle) or "full".
+	Mode string `json:"mode"`
+	// Minutes is the sample decode length, 1 to 120.
+	Minutes int `json:"minutes"`
+	// DurationTolerance is the fraction of the source duration the output
+	// must still have, 0 to 0.5.
+	DurationTolerance float64 `json:"duration_tolerance"`
 }
 
 // Compile validates a graph and flattens it into the ordered plan. Guards
@@ -95,6 +118,26 @@ func Compile(g Graph) (Plan, error) {
 				When:   pending,
 			})
 			pending = nil
+			// health_check and move ride along outside the steps list:
+			// they act after the output is produced (task 24), so the plan
+			// carries them as plain fields. Guards are ignored here — the
+			// step runs last no matter where it sits in the chain.
+			switch n.Type {
+			case StepHealthCheck:
+				var p healthCheckParams
+				if err := decodeParams(n.Params, &p); err != nil {
+					return Plan{}, fmt.Errorf("flow: step %s: %w", n.ID, err)
+				}
+				spec := normalizeHealthCheck(p)
+				plan.HealthCheck = &spec
+			case StepMove:
+				var p moveParams
+				if err := decodeParams(n.Params, &p); err != nil {
+					return Plan{}, fmt.Errorf("flow: step %s: %w", n.ID, err)
+				}
+				plan.MoveTo = TrimMoveDestination(p.Destination)
+				plan.MoveKeepTree = p.KeepTree
+			}
 		}
 	}
 	return plan, nil
@@ -140,6 +183,14 @@ type Effective struct {
 	SkipIfSmaller bool
 	// Rename is the rename template, empty when the plan has none.
 	Rename string
+	// HealthCheck is the plan's verification step (task 24), nil when the
+	// graph has none. It changes nothing about the encode; the worker runs
+	// it after the output is produced.
+	HealthCheck *HealthCheckSpec
+	// MoveTo is the move destination, empty when the plan has none.
+	// MoveKeepTree rebuilds the file's folder layout under it.
+	MoveTo       string
+	MoveKeepTree bool
 }
 
 // ResolvePlan evaluates the plan for one probed file and returns the
@@ -225,6 +276,20 @@ func ResolvePlan(p Plan, info probe.MediaInfo) (Effective, error) {
 				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
 			}
 			eff.Rename = par.Template
+		case StepHealthCheck:
+			var par healthCheckParams
+			if err := decodeParams(s.Params, &par); err != nil {
+				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
+			}
+			spec := normalizeHealthCheck(par)
+			eff.HealthCheck = &spec
+		case StepMove:
+			var par moveParams
+			if err := decodeParams(s.Params, &par); err != nil {
+				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
+			}
+			eff.MoveTo = TrimMoveDestination(par.Destination)
+			eff.MoveKeepTree = par.KeepTree
 		case StepProbe:
 			// The worker probes before resolving the plan; nothing to do.
 		}
@@ -243,6 +308,22 @@ func allCodecNot(when []Condition) bool {
 		}
 	}
 	return len(when) > 0
+}
+
+// normalizeHealthCheck fills a health_check step's zero fields with the
+// defaults (task 24): mode sample, minutes 2, tolerance 0.02.
+func normalizeHealthCheck(p healthCheckParams) HealthCheckSpec {
+	hc := HealthCheckSpec(p)
+	if hc.Mode == "" {
+		hc.Mode = HealthCheckSample
+	}
+	if hc.Minutes == 0 {
+		hc.Minutes = HealthCheckMinutesDefault
+	}
+	if hc.DurationTolerance == 0 {
+		hc.DurationTolerance = HealthCheckToleranceDefault
+	}
+	return hc
 }
 
 // Target collapses the plan to the Target it always produces, ignoring the
@@ -353,6 +434,12 @@ func ParseParams(s Step) (any, error) {
 	case StepRename:
 		var p renameParams
 		return p, decodeParams(s.Params, &p)
+	case StepHealthCheck:
+		var p healthCheckParams
+		return p, decodeParams(s.Params, &p)
+	case StepMove:
+		var p moveParams
+		return p, decodeParams(s.Params, &p)
 	}
 	return nil, fmt.Errorf("flow: unknown step type %q", s.Type)
 }
@@ -426,6 +513,21 @@ func describeStep(s PlanStep) string {
 		return guard + fmt.Sprintf("Name the result %q (where {name} is the original name).", p.Template)
 	case StepSkipIfSmaller:
 		return guard + "Keep the original when the new file is not smaller."
+	case StepHealthCheck:
+		var raw healthCheckParams
+		_ = decodeParams(s.Params, &raw)
+		p := normalizeHealthCheck(raw)
+		if p.Mode == HealthCheckFull {
+			return guard + "Play the whole finished file before anything is replaced; if it does not play cleanly, the job fails."
+		}
+		return guard + fmt.Sprintf("Play %d minute(s) from the middle of the finished file before anything is replaced; if it does not play cleanly, the job fails.", p.Minutes)
+	case StepMove:
+		var p moveParams
+		_ = decodeParams(s.Params, &p)
+		if p.KeepTree {
+			return guard + fmt.Sprintf("Move the finished file into %s, keeping its folder layout.", p.Destination)
+		}
+		return guard + fmt.Sprintf("Move the finished file into %s.", p.Destination)
 	}
 	return guard + "(unknown step)"
 }
@@ -496,14 +598,16 @@ func trimFloat(f float64) string {
 
 // ParamField describes one parameter of a step type: the schema the UI
 // renders the palette and the step forms from, so the step list is never
-// hardcoded twice (API.md task 14).
+// hardcoded twice (API.md task 14). Bounds are floats so fractional ranges
+// (the health check's duration tolerance, task 24) reach the editor; whole
+// numbers marshal unchanged.
 type ParamField struct {
 	Name     string   `json:"name"`
 	Label    string   `json:"label"`
 	Kind     string   `json:"kind"` // select | number | text | languages | toggle
 	Options  []string `json:"options,omitempty"`
-	Min      *int     `json:"min,omitempty"`
-	Max      *int     `json:"max,omitempty"`
+	Min      *float64 `json:"min,omitempty"`
+	Max      *float64 `json:"max,omitempty"`
 	Required bool     `json:"required,omitempty"`
 	Default  any      `json:"default,omitempty"`
 	Help     string   `json:"help,omitempty"`
@@ -519,7 +623,7 @@ type StepTypeInfo struct {
 	Params    []ParamField `json:"params"`
 }
 
-func intPtr(v int) *int { return &v }
+func floatPtr(v float64) *float64 { return &v }
 
 // StepTypes is the v1 palette, in stack order (probe first, guards before
 // the actions they gate).
@@ -549,7 +653,7 @@ func StepTypes() []StepTypeInfo {
 			Condition:   true,
 			Params: []ParamField{{
 				Name: "mbps", Label: "megabits per second", Kind: "number",
-				Min: intPtr(1), Required: true, Default: 10,
+				Min: floatPtr(1), Required: true, Default: 10,
 				Help: "Bitrate threshold in megabits per second.",
 			}},
 		},
@@ -559,7 +663,7 @@ func StepTypes() []StepTypeInfo {
 			Description: "Re-encode the video with this codec and quality (1 saves the most space, 5 the least).",
 			Params: []ParamField{
 				{Name: "codec", Label: "codec", Kind: "select", Options: []string{CodecHEVC, CodecAV1, CodecH264}, Required: true, Default: CodecHEVC},
-				{Name: "quality", Label: "quality", Kind: "number", Min: intPtr(QualityMin), Max: intPtr(QualityMax), Required: true, Default: 3},
+				{Name: "quality", Label: "quality", Kind: "number", Min: floatPtr(QualityMin), Max: floatPtr(QualityMax), Required: true, Default: 3},
 			},
 		},
 		{
@@ -605,6 +709,25 @@ func StepTypes() []StepTypeInfo {
 			Label:       "Skip when not smaller",
 			Description: "Keep the original when the new file is not smaller. Overrides the library's result policy for these jobs.",
 			Params:      nil,
+		},
+		{
+			Type:        StepHealthCheck,
+			Label:       "Verify the result",
+			Description: "Play the finished file before anything is replaced: if it does not play cleanly, the job fails and the original stays.",
+			Params: []ParamField{
+				{Name: "mode", Label: "mode", Kind: "select", Options: []string{HealthCheckSample, HealthCheckFull}, Required: true, Default: HealthCheckSample, Help: "sample plays a few minutes from the middle; full plays everything."},
+				{Name: "minutes", Label: "minutes to play", Kind: "number", Min: floatPtr(HealthCheckMinutesMin), Max: floatPtr(HealthCheckMinutesMax), Default: HealthCheckMinutesDefault, Help: "Only used by the sample mode."},
+				{Name: "duration_tolerance", Label: "duration tolerance", Kind: "number", Min: floatPtr(0), Max: floatPtr(HealthCheckToleranceMax), Default: HealthCheckToleranceDefault, Help: "How much shorter than the source the result may be, as a fraction (0 to 0.5)."},
+			},
+		},
+		{
+			Type:        StepMove,
+			Label:       "Move the result",
+			Description: "Put the finished file into a folder outside the library, keeping the folder layout when asked.",
+			Params: []ParamField{
+				{Name: "destination", Label: "destination folder", Kind: "text", Required: true, Help: "Absolute path outside the library, e.g. /media/shrunk."},
+				{Name: "keep_tree", Label: "keep the folder layout", Kind: "toggle", Help: "Rebuild the file's folder structure under the destination."},
+			},
 		},
 	}
 }

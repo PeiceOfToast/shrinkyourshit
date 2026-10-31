@@ -645,6 +645,172 @@ func TestRunnerHappyPathReplacesOriginal(t *testing.T) {
 // newCancelFlag returns a fresh cancellation flag for runner.run.
 func newCancelFlag() *atomic.Bool { return &atomic.Bool{} }
 
+// remuxInfoF is the fake probe of a copy/remux output: the source's codec
+// in the new container, same tracks (task 24 tests build flows around it).
+func remuxInfoF() probe.MediaInfo {
+	info := outInfoF()
+	info.Video[0].Codec = flow.CodecH264
+	return info
+}
+
+// healthFlowSpec builds a spec whose flow remuxes to mkv, optionally
+// followed by a health_check step with rawParams (task 24).
+func healthFlowSpec(t *testing.T, dir, jobID, hcParams string) (sourceFixture, *server.JobSpec) {
+	t.Helper()
+	src, spec := defaultSpec(t, dir, jobID)
+	g := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		},
+		Edges: []flow.Edge{{From: "probe", To: "remux"}},
+	}
+	if hcParams != "" {
+		g.Nodes = append(g.Nodes, flow.Step{ID: "hc", Type: flow.StepHealthCheck, Params: json.RawMessage(hcParams)})
+		g.Edges = append(g.Edges, flow.Edge{From: "remux", To: "hc"})
+	}
+	spec.Flow = &g
+	return src, spec
+}
+
+// runEncoding writes the payload for the encode call; a decode call (the
+// health check) fails the test, proving the check stopped before decoding.
+func runEncoding(t *testing.T, payload string) encoders.RunFn {
+	t.Helper()
+	return func(_ context.Context, args []string) error {
+		for _, a := range args {
+			if a == "null" {
+				t.Error("decode ran unexpectedly")
+			}
+		}
+		return os.WriteFile(args[len(args)-1], []byte(payload), 0o644)
+	}
+}
+
+// runEncodeAndDecode fakes both legs: the encode writes the payload, the
+// decode returns the given error (nil = clean).
+func runEncodeAndDecode(payload string, decodeErr error) encoders.RunFn {
+	return func(_ context.Context, args []string) error {
+		for _, a := range args {
+			if a == "null" {
+				return decodeErr
+			}
+		}
+		return os.WriteFile(args[len(args)-1], []byte(payload), 0o644)
+	}
+}
+
+// TestRunnerHealthCheckFailsShortOutput is the task 24 acceptance: an
+// output shorter than the tolerance fails the health_check job with the
+// durations named, and the source file is byte identical afterwards.
+func TestRunnerHealthCheckFailsShortOutput(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	src, spec := healthFlowSpec(t, dir, "job1", "{}")
+	api.enqueue("job1", spec)
+
+	// 9s of a 10s source passes the generic verification (2s slack) and
+	// fails the health check's 2% tolerance.
+	short := remuxInfoF()
+	short.DurationSeconds = 9
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run:    runEncoding(t, "OUTPUT-DATA"),
+		byBase: map[string]probe.MediaInfo{"source.mp4": srcInfoF(), "output.mkv": short},
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	rep, ok := api.failOf("job1")
+	require.True(t, ok, "job must be reported failed")
+	require.Contains(t, rep.Error, "health check failed")
+	require.Contains(t, rep.Error, "9.00s")
+	require.Contains(t, rep.Error, "10.00s")
+
+	content, err := os.ReadFile(src.Path)
+	require.NoError(t, err)
+	require.Equal(t, "SOURCE-CONTENT", string(content))
+	_, err = os.Stat(filepath.Join(dir, "movie.mkv"))
+	require.True(t, os.IsNotExist(err), "the result policy never ran")
+}
+
+// TestRunnerHealthCheckPasses: a healthy output passes the decode check and
+// the job completes like any other (task 24).
+func TestRunnerHealthCheckPasses(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	src, spec := healthFlowSpec(t, dir, "job1", "{}")
+	api.enqueue("job1", spec)
+
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run:    runEncodeAndDecode("OUTPUT-DATA", nil),
+		byBase: map[string]probe.MediaInfo{"source.mp4": srcInfoF(), "output.mkv": remuxInfoF()},
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	in := api.completeOf("job1")
+	require.Equal(t, filepath.Join(dir, "movie.mkv"), in.OutputPath)
+	require.Empty(t, in.SkippedReason)
+	content, err := os.ReadFile(in.OutputPath)
+	require.NoError(t, err)
+	require.Equal(t, "OUTPUT-DATA", string(content))
+	_, err = os.Stat(src.Path)
+	require.True(t, os.IsNotExist(err))
+}
+
+// TestRunnerHealthCheckDecodeFails: a failing decode fails the job before
+// the result policy; the error names the check and the source is untouched
+// (task 24).
+func TestRunnerHealthCheckDecodeFails(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	src, spec := healthFlowSpec(t, dir, "job1", "{}")
+	api.enqueue("job1", spec)
+
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run:    runEncodeAndDecode("OUTPUT-DATA", errors.New("exit status 183")),
+		byBase: map[string]probe.MediaInfo{"source.mp4": srcInfoF(), "output.mkv": remuxInfoF()},
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	rep, ok := api.failOf("job1")
+	require.True(t, ok)
+	require.Contains(t, rep.Error, "health check failed")
+	require.Contains(t, rep.Error, "decode check failed")
+	require.Contains(t, rep.Error, "exit status 183")
+
+	content, err := os.ReadFile(src.Path)
+	require.NoError(t, err)
+	require.Equal(t, "SOURCE-CONTENT", string(content))
+}
+
+// TestRunnerMovesPerSpec: the spec's move fields drive the final placement;
+// the worker itself never decides where files go (task 24).
+func TestRunnerMovesPerSpec(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	destRoot := t.TempDir() // the move destination lives outside the library
+	src, spec := healthFlowSpec(t, dir, "job1", "")
+	spec.MoveTo = filepath.Join(destRoot, "moved")
+	spec.MoveKeepTree = true
+	spec.MoveRelDir = "sub"
+	api.enqueue("job1", spec)
+
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run:    runEncoding(t, "OUTPUT-DATA"),
+		byBase: map[string]probe.MediaInfo{"source.mp4": srcInfoF(), "output.mkv": remuxInfoF()},
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	in := api.completeOf("job1")
+	want := filepath.Join(destRoot, "moved", "sub", "movie.mkv")
+	require.Equal(t, want, in.OutputPath)
+	content, err := os.ReadFile(want)
+	require.NoError(t, err)
+	require.Equal(t, "OUTPUT-DATA", string(content))
+	_, err = os.Stat(src.Path)
+	require.True(t, os.IsNotExist(err), "the original is removed after the verified move")
+}
+
 func TestRunnerFailsOnVerificationAndKeepsOriginal(t *testing.T) {
 	api := newFakeAPI(t, "key")
 	dir := t.TempDir()

@@ -116,6 +116,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	target := spec.Target
 	policy := spec.ResultPolicy
 	rename := ""
+	var hc *flow.HealthCheckSpec
 	if spec.Flow != nil {
 		plan, err := flow.Compile(*spec.Flow)
 		if err != nil {
@@ -130,6 +131,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 			policy = store.ResultPolicyReplaceIfSmaller
 		}
 		rename = eff.Rename
+		hc = eff.HealthCheck
 	}
 
 	// Encode with fallback while a ticker reports -progress every interval.
@@ -192,6 +194,19 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		return fail("output verification failed: %v", err)
 	}
 
+	// The health_check step (task 24): verify the produced file before
+	// anything is reported. A failed check must not apply the result
+	// policy — the source stays untouched and the job ends failed, exactly
+	// like an encode failure.
+	if hc != nil {
+		if err := r.runHealthCheck(runCtx, hc, output, srcInfo, outInfo, tail); err != nil {
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			return fail("health check failed: %v", err)
+		}
+	}
+
 	// Transfer mode (task 09): the output is uploaded and the server does
 	// the verify-and-replace with the library's result policy.
 	if mode == store.NodeAccessTransfer {
@@ -199,7 +214,11 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	}
 
 	applied, err := server.ApplyResultPolicy(ctx, policy, output, spec.SourcePath,
-		st.Size(), spec.BytesBefore, r.sc.extractFiles(dir, "output"), rename)
+		st.Size(), spec.BytesBefore, r.sc.extractFiles(dir, "output"), rename, server.MoveDirective{
+			Destination: spec.MoveTo,
+			KeepTree:    spec.MoveKeepTree,
+			RelDir:      spec.MoveRelDir,
+		})
 	if err != nil {
 		if cancelled.Load() || ctx.Err() != nil {
 			return nil

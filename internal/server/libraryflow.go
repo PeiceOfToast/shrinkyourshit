@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
@@ -100,6 +101,17 @@ func EffectivePolicy(lib *store.Library) (policy, rename string, err error) {
 		policy = store.ResultPolicyReplaceIfSmaller
 	}
 	return policy, plan.RenameTemplate(), nil
+}
+
+// EffectiveMove returns the library flow's move directive (task 24): the
+// trimmed destination in library-side terms and whether the folder layout
+// is kept. Empty destination when the flow has no move step.
+func EffectiveMove(lib *store.Library) (destination string, keepTree bool, err error) {
+	plan, _, err := LibraryPlan(lib)
+	if err != nil {
+		return "", false, fmt.Errorf("library flow: %w", err)
+	}
+	return plan.MoveTo, plan.MoveKeepTree, nil
 }
 
 // EffectiveContainer returns the output container of the library's flow —
@@ -229,6 +241,12 @@ func (m *LibraryManager) UpdateFlow(ctx context.Context, id, source string, g fl
 	if err != nil {
 		return nil, err
 	}
+	// The move destinations are checked against the library they will run
+	// on (task 24): files must land outside it, or the next scan would pick
+	// them up again.
+	if errs := validateMoveDestinations(lib, g); len(errs) > 0 {
+		return nil, &ErrInvalidFlow{Errors: errs}
+	}
 	raw, err := json.Marshal(g)
 	if err != nil {
 		return nil, fmt.Errorf("library: marshal flow: %w", err)
@@ -257,4 +275,27 @@ func validateFlowSource(source string) error {
 		}
 	}
 	return fmt.Errorf("invalid flow source %q: want one of %v", source, flow.FlowSources())
+}
+
+// validateMoveDestinations checks every move step's destination against the
+// library it will run on (task 24): it must not be the library root or
+// inside it. All sources live under the root; a file moved inside would be
+// picked up again by the next scan and re-encoded forever. Field errors
+// name the step so the UI can attach them to the destination row.
+func validateMoveDestinations(lib *store.Library, g flow.Graph) []flow.FieldError {
+	var errs []flow.FieldError
+	root := filepath.Clean(lib.Path)
+	for i, n := range g.Nodes {
+		if n.Type != flow.StepMove {
+			continue
+		}
+		dest := flow.MoveDestination(n)
+		if dest == "" || sameOrInside(root, dest) {
+			errs = append(errs, flow.FieldError{
+				Path:    fmt.Sprintf("nodes[%d].params.destination", i),
+				Message: fmt.Sprintf("the destination %q must be a folder outside the library %q; files inside it would be picked up again by the next scan", dest, lib.Path),
+			})
+		}
+	}
+	return errs
 }

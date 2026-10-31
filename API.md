@@ -91,6 +91,13 @@ Request/response details beyond the table:
   resolves it with the shared-storage access check. `flow` (task 14) is
   the library's rule graph; the worker compiles it and resolves it against
   the probed source, and the resolved Target drives the encode.
+  `move_to` / `move_keep_tree` / `move_rel_dir` (task 24) are set when the
+  flow holds a move step: `move_to` is the destination in the node's path
+  view, `move_keep_tree` asks the result policy to rebuild the file's path
+  relative to the library root, and `move_rel_dir` is that relative folder,
+  computed server-side (empty at the library root). The worker never moves
+  on its own; the result policy applies the move where the output is
+  placed.
 - `POST /api/v1/worker/jobs/{id}/progress` — response
   `{"status": "<job status>"}`; the worker polls it and stops the encode
   when the status is terminal (`cancelled`, `failed`, `done`). A job that

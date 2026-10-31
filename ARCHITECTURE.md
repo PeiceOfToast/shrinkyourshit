@@ -221,7 +221,8 @@ Edge{ from, to, when }
   conditions are `if_*` guard steps, so compile ignores a non-empty `when`.
 - Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`,
   `transcode_video`, `remux_container`, `convert_audio`, `subtitles`,
-  `rename`, `skip_if_smaller`. A graph is a single linear chain: at most one
+  `rename`, `skip_if_smaller`, `health_check`, `move` (the last two are
+  task 24). A graph is a single linear chain: at most one
   edge in and one out per node, exactly one entry step of type `probe`, no
   loops, no unreachable steps, and a guard always has a following step.
 - Parameters per type (validated with unknown-field rejection):
@@ -239,9 +240,19 @@ Edge{ from, to, when }
   - `rename {template}` — names the produced output for keep-both results;
     `{name}` is the original base name, `{ext}` the extension, no path
     separators, `{name}` required.
+  - `health_check {mode: sample|full, minutes: 1..120,
+    duration_tolerance: 0..0.5}` — zero fields take the defaults (`sample`,
+    2 minutes, 0.02). It never changes the Target; it may sit anywhere in
+    the chain because it always runs last.
+  - `move {destination: absolute path, keep_tree: bool}` — after a
+    successful result the file goes under `destination` (never the library
+    root or inside it, checked when the flow is saved); `keep_tree` rebuilds
+    the file's path relative to the library root under it. Exactly one per
+    graph, trailing slashes trimmed.
   - `skip_if_smaller` and `probe` take no parameters.
 - At most one step of each shaping type (transcode, container, audio,
-  subtitles, rename, skip); a graph always describes one policy.
+  subtitles, rename, skip, health check, move); a graph always describes
+  one policy.
 - `flow.Validate(Graph) []FieldError` checks all of the above; field errors
   name the path so the UI can attach them to a row.
 - `flow.Compile(Graph) (Plan, error)` flattens the chain into ordered plan
@@ -260,7 +271,21 @@ Edge{ from, to, when }
   - a `skip_if_smaller` step overrides the library's result policy with
     `replace_if_smaller` for the job (flow wins);
   - a `rename` step names the keep-both output; with replace policies it
-    cannot rename over the original, so it is logged and ignored.
+    cannot rename over the original, so it is logged and ignored;
+  - a `health_check` step (task 24) is carried as `Effective.HealthCheck`
+    and never touches the Target: after the output is produced the worker
+    fails the job when a stream type the encode pipeline must keep (video,
+    audio) is missing, when the output duration sits under
+    `source * (1 - duration_tolerance)`, or when a decode pass
+    (`ffmpeg -v error -xerror -nostdin -i <out> -f null -`, narrowed to the
+    sample window) exits non-zero. A failed check ends the job before the
+    result policy runs; the original is untouched;
+  - a `move` step is carried as `Effective.MoveTo`/`MoveKeepTree` and by
+    the job spec (`move_to`, `move_keep_tree`, `move_rel_dir`); the result
+    policy places the output under the destination (never clobbering,
+    rename with a verified copy fallback) and removes the original only
+    after the destination is verified at its expected size — replace
+    policies remove it, keep-both keeps it.
 - Storage: libraries carry `flow_json` plus `flow_source` of `easy`,
   `steps` or `advanced`. Easy mode and target-only saves keep writing
   `target` and regenerate the equivalent flow

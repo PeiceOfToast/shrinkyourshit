@@ -128,6 +128,19 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		a.internal(w, err) // stored flows are validated on write
 		return
 	}
+	plan, err := flow.Compile(graph)
+	if err != nil {
+		a.internal(w, err) // stored flows are validated on write
+		return
+	}
+	// The move destination (task 24) is given to the worker in its own path
+	// view, mapped like the source; the folder layout it should rebuild
+	// under it is computed here, where both the file and the library root
+	// are known.
+	moveTo := plan.MoveTo
+	if moveTo != "" {
+		moveTo = server.ResolveNodePath(node, moveTo)
+	}
 	writeJSON(w, http.StatusOK, server.JobSpec{
 		ID:                 job.ID,
 		FileID:             f.ID,
@@ -144,6 +157,9 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		ResultPolicy:       lib.ResultPolicy,
 		BytesBefore:        job.BytesBefore,
 		ThroughputLimitMBs: node.ThroughputLimit,
+		MoveTo:             moveTo,
+		MoveKeepTree:       plan.MoveKeepTree,
+		MoveRelDir:         server.RelDirUnder(lib.Path, f.Path),
 	})
 }
 
