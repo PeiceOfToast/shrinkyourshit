@@ -937,3 +937,85 @@ export function getWebhookDeliveries(
     `/api/v1/webhooks/${id}/deliveries${query}`,
   )
 }
+
+/** The plugins (task 31): hook plugins installed from a git URL or a
+ * directory. A plugin runs as the server user at the moment its manifest
+ * declares. Installed plugins are disabled until enabled on purpose. */
+export type PluginType = 'preflight' | 'postprocess' | 'notify'
+
+export interface PluginSetting {
+  key: string
+  label: string
+  required: boolean
+}
+
+export interface Plugin {
+  id: string
+  name: string
+  version: string
+  type: PluginType
+  enabled: boolean
+  source: string
+  description?: string
+  timeout_seconds: number
+  env?: string[]
+  settings?: PluginSetting[]
+  values?: Record<string, string>
+  manifest_error?: string
+  installed_at: string
+}
+
+/** POST /plugins/install — install from a git URL (+ ref) or a path.
+ * Exactly one source is sent. */
+export function installPlugin(body: {
+  git_url?: string
+  ref?: string
+  path?: string
+}): Promise<Plugin> {
+  return api<Plugin>('/api/v1/plugins/install', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/** PUT /plugins/{id} — the enabled switch and/or new settings values. */
+export function updatePlugin(
+  id: string,
+  body: {
+    enabled?: boolean
+    settings?: Record<string, string>
+  },
+): Promise<Plugin> {
+  return api<Plugin>(`/api/v1/plugins/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** The test run's answer: the captured output and the exit code, 200
+ * even when the plugin failed. */
+export interface PluginTestResult {
+  ok: boolean
+  skipped: boolean
+  skip_reason?: string
+  exit_code: number
+  error?: string
+  output?: string[]
+}
+
+/** POST /plugins/{id}/test — run once against a synthetic job. */
+export function testPlugin(id: string): Promise<PluginTestResult> {
+  return api<PluginTestResult>(`/api/v1/plugins/${id}/test`, {
+    method: 'POST',
+  })
+}
+
+/** DELETE /plugins/{id} — removes a disabled plugin's row and directory. */
+export function deletePlugin(id: string): Promise<void> {
+  return api<void>(`/api/v1/plugins/${id}`, { method: 'DELETE' })
+}
+
+/** GET /plugins — every installed plugin, oldest first. */
+export function getPlugins(): Promise<ListResponse<Plugin>> {
+  return api<ListResponse<Plugin>>('/api/v1/plugins')
+}

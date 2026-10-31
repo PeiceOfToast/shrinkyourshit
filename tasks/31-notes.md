@@ -61,5 +61,11 @@ Branch `task/31-plugins-v1` from `main`. Commit order:
 ## Summary (filled at the end)
 
 - Built:
-- Skipped:
-- Next task should know:
+  - `internal/plugin`: the manifest (`plugin.yaml`, strict unknown fields, name regex `^[a-z0-9][a-z0-9-]{1,41}$`, three types, exec'd command with a shell-metacharacter blacklist, timeout clamped 1..300, settings entries), the runner (stdin JSON `plugin.JobContext`, env exactly `SYS_PLUGIN_NAME`/`SYS_PHASE`/`SYS_DATA_DIR` plus the manifest's `env` names resolved from settings first then the server env, whole process group killed on timeout, output capped at 1000 lines), and installs from a git URL (`git clone --depth 1`, optional ref) or a directory copy.
+  - Store: migration `0013_plugins.sql` + `store.Plugin` CRUD (`CreatePlugin`, `GetPlugin`, `GetPluginByName`, `ListPlugins`, `ListEnabledPlugins`, `UpdatePlugin`, `DeletePlugin`).
+  - Server: `PluginService` with the three phases — `Preflight` (synchronous, in `Queue.Claim`; a non-zero exit fails the job with the plugin name and exit code, a timeout does not), `PostJob` (detached goroutines off the notifier router: postprocess for done, notify for done+failed, failures are warn lines and never fail a job) — output appended to the job log with `source: plugin` and the plugin name leading the message. `ErrPreflightRejected` is mapped to 204 in the worker claim handler (the job is already failed; the node polls again).
+  - Admin API: `GET/POST /api/v1/plugins/install`, `GET/PUT/DELETE /api/v1/plugins/{id}`, `POST /api/v1/plugins/{id}/test` (200 always, with output/exit code/skip reason); OpenAPI updated; endpoint tests.
+  - UI: `web/src/PluginsPage.tsx` as a third tab on the integrations page — DataList rows, install form (git URL + ref / folder mode), enable switch (explicit PUT), manifest-driven settings form, Test with captured output, Remove with a confirm dialog.
+  - Docs: `docs/plugins.md` (manifest reference, stdin JSON, env contract, timeout/failure rules, worked curl+python notify example, security statement) linked from README and the plugins tab; Dockerfile creates `/config/plugins`.
+- Skipped: none of the acceptance items; `make test`, `make test-integration` and `make lint` are green (one transient integration flake in cmd/shrinkyourshit on the first run; a fully clean rerun passes).
+- Next task should know: the plugin env contract is exact (nothing else inherited, no PATH/HOME in the child env — scripts spawn other programs with absolute paths); `Test` endpoint runs on disabled plugins too; the fetchMock test helper now exposes `routes` for mid-test route pushes.

@@ -404,6 +404,7 @@ Radarr/Plex/Jellyfin/Emby refresh sits on this API; per-library filters stay pos
 /internal/store        Store interface, sqlite implementation, migrations
 /internal/discovery    mDNS and broadcast
 /internal/config       env, flags, config file
+/internal/plugin       the plugin manifest, runner and install (task 31)
 /plugins               bundled plugin definitions (post-MVP)
 /web                   React app, built into web/dist and embedded
 /docker                Dockerfile, compose.example.yml

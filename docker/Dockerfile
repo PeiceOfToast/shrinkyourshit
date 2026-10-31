@@ -82,7 +82,9 @@ ENV PUID=1000 \
 
 COPY --from=build /out/shrinkyourshit /usr/local/bin/shrinkyourshit
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh \
+ && mkdir -p /config/plugins \
+ && chown -R "${PUID}:${PGID}" /config/plugins
 
 VOLUME ["/config", "/media", "/scratch"]
 EXPOSE 8765

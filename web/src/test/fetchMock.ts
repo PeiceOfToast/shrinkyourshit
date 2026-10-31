@@ -37,6 +37,8 @@ export interface FetchMock {
   requests: CapturedRequest[]
   /** All requests to `method` + pathname without query. */
   calls(method: string, pathname: RegExp): CapturedRequest[]
+  /** The live route list: push extra routes onto it mid-test. */
+  routes: MockRoute[]
   restore: () => void
 }
 
@@ -93,6 +95,7 @@ export function installFetchMock(routes: MockRoute[]): FetchMock {
   vi.stubGlobal('fetch', stub)
   return {
     requests,
+    routes,
     calls: (method, pathname) =>
       requests.filter(
         (r) => r.method === method && pathname.test(r.url.split('?')[0]),

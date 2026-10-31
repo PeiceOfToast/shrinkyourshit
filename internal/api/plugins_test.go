@@ -76,15 +76,6 @@ command: ["sh", "` + scriptPath + `"]
 	return dir
 }
 
-// dtoOf decodes one plugin DTO.
-func dtoOf(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
-	t.Helper()
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	var dto map[string]any
-	require.NoError(t, jsonUnmarshal(rec, &dto))
-	return dto
-}
-
 // TestPluginsEndpointsCRUD covers the plugins surface: install from a
 // directory (disabled by default), list, get, settings update, enable,
 // test, and remove — with the refusal while enabled.

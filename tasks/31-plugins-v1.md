@@ -67,11 +67,11 @@ UI: `web/src/PluginsPage.tsx`, a tab beside Servers and Webhooks on the integrat
 A plugin as a flow step, a plugin marketplace or index, signing or sandboxing beyond the process timeout (say explicitly in the docs that there is no sandbox yet), plugin-to-plugin dependencies, a plugin SDK in another language.
 
 ## Acceptance
-- [ ] A plugin directory with a valid manifest installs, appears disabled, and does nothing until enabled. Proven end to end in a test.
-- [ ] Installing from a git URL works against a local `file://` repository inside the test, and an invalid manifest is rejected with a message naming the field.
-- [ ] `preflight` output appears in the job log with `source: plugin`; `postprocess` failure leaves the job `done` with a warning; `preflight` failure fails the job with the plugin name in the error.
-- [ ] A plugin that sleeps past its timeout is killed and the job continues, proven by a test with a 1 second timeout.
-- [ ] A plugin requiring a missing setting does not run, and the job log says why.
-- [ ] Unknown manifest fields, a bad name and a bad command shape are each rejected with a test.
-- [ ] The plugins tab lists, enables, tests and removes a plugin, with tests; `docs/plugins.md` exists and is linked.
-- [ ] `make test`, `make test-integration` and `make lint` are green.
+- [x] A plugin directory with a valid manifest installs, appears disabled, and does nothing until enabled. Proven end to end in a test.
+- [x] Installing from a git URL works against a local `file://` repository inside the test, and an invalid manifest is rejected with a message naming the field.
+- [x] `preflight` output appears in the job log with `source: plugin`; `postprocess` failure leaves the job `done` with a warning; `preflight` failure fails the job with the plugin name in the error.
+- [x] A plugin that sleeps past its timeout is killed and the job continues, proven by a test with a 1 second timeout.
+- [x] A plugin requiring a missing setting does not run, and the job log says why.
+- [x] Unknown manifest fields, a bad name and a bad command shape are each rejected with a test.
+- [x] The plugins tab lists, enables, tests and removes a plugin, with tests; `docs/plugins.md` exists and is linked.
+- [x] `make test`, `make test-integration` and `make lint` are green.
