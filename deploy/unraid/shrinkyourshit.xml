@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Unraid Community Applications template for ShrinkYourShit.
+     Checked by deploy/deploy_test.go — if you edit this file and `make test`
+     fails, the template broke, not the test. The Repository tag is pinned
+     on purpose: change it to a newer release number (see
+     https://github.com/PeiceOfToast/shrinkyourshit/releases) to move up;
+     DateInstalled and TemplateURL are left for the CA tool to fill. -->
+<Container version="2">
+  <Name>shrinkyourshit</Name>
+  <Repository>ghcr.io/peiceoftoast/shrinkyourshit:0.1.2</Repository>
+  <Registry>https://github.com/PeiceOfToast/shrinkyourshit/pkgs/container/shrinkyourshit</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/PeiceOfToast/shrinkyourshit/issues</Support>
+  <Project>https://github.com/PeiceOfToast/shrinkyourshit</Project>
+  <Overview>ShrinkYourShit watches folders of media files and makes the ones that need it take much less space, then keeps a record of what it did. Point it at a folder, pick how much space you want to save, and it works through the folder in the background — files that are already small in the right way are left alone. Runs on the server itself, and other machines on the network can help it once you add them from the Nodes page.</Overview>
+  <Category>Media:Video Media:Music Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:8765]/</WebUI>
+  <TemplateURL></TemplateURL>
+  <Icon>https://raw.githubusercontent.com/PeiceOfToast/shrinkyourshit/main/deploy/unraid/icon.svg</Icon>
+  <ExtraParams></ExtraParams>
+  <PostArgs></PostArgs>
+  <CPUset></CPUset>
+  <DateInstalled></DateInstalled>
+  <Config Name="Web UI port" Target="8765" Default="8765" Mode="tcp" Description="The web UI and API. Open http://[IP]:[PORT:8765] after install." Type="Port" Display="always" Required="true" Mask="false">8765</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/shrinkyourshit/config" Mode="rw" Description="Settings and database. Must be writable." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/shrinkyourshit/config</Config>
+  <Config Name="Media" Target="/media" Default="/mnt/user/media" Mode="rw" Description="Your media folder. Must be writable: the smaller files replace the originals in place." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/media</Config>
+  <Config Name="Scratch" Target="/scratch" Default="/mnt/user/appdata/shrinkyourshit/scratch" Mode="rw" Description="Temp space used while a file is being worked on. Keep it on the array or pool." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/shrinkyourshit/scratch</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="Unraid user id that owns the folders (99 is nobody, the Unraid default). Check with: id -u" Type="Variable" Display="always" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Unraid group id that owns the folders (100 is users, the Unraid default). Check with: id -g" Type="Variable" Display="always" Required="false" Mask="false">100</Config>
+</Container>

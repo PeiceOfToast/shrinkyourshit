@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# ShrinkYourShit compose for TrueNAS SCALE (Apps → Discover → Custom App →
+# Install via YAML: paste this file, or run it with `docker compose` on the
+# host). Paths follow the pool convention (/mnt/<pool>/apps) and the ids
+# follow the `apps` user (568) SCALE runs apps as.
+#
+# The deploy/ templates are checked by deploy/deploy_test.go — if you edit
+# this file and `make test` fails, the template broke, not the test.
+
+services:
+  shrinkyourshit:
+    # Pinned to the 0.1.2 release on purpose. To move to a newer one, change
+    # the tag to that release's number (see
+    # https://github.com/PeiceOfToast/shrinkyourshit/releases) and redeploy
+    # the app. Do not use :latest — an upgrade should be a deliberate edit,
+    # not a surprise.
+    image: ghcr.io/peiceoftoast/shrinkyourshit:0.1.2
+    container_name: shrinkyourshit
+    restart: unless-stopped
+    ports:
+      - "8765:8765" # web UI and API, http://<nas-ip>:8765
+    environment:
+      - PUID=568 # the SCALE `apps` user; check with `id -u apps` in the shell
+      - PGID=568 # the `apps` group; check with `id -g apps` in the shell
+    volumes:
+      - /mnt/tank/apps/shrinkyourshit/config:/config # settings and database
+      - /mnt/tank/apps/shrinkyourshit/media:/media # EDIT: your media dataset (must be writable)
+      - /mnt/tank/apps/shrinkyourshit/scratch:/scratch # temp space for encodes
+    # Docker waits 10 seconds before killing a stopping container and this
+    # app shuts down in 10. Raise it here if you want an in-flight encode to
+    # get more time to wind down when the app stops:
+    # stop_grace_period: 2m

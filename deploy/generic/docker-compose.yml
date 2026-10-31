@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Generic ShrinkYourShit compose file: any Linux box, PC or VM with Docker.
+# Copy it, edit the /media line, then `docker compose up -d`.
+# Full instructions: docs/installing.md. GPU passthrough blocks (NVENC,
+# QSV/VAAPI) live in docker/compose.example.yml.
+#
+# The deploy/ templates are checked by deploy/deploy_test.go — if you edit
+# this file and `make test` fails, the template broke, not the test.
+
+services:
+  shrinkyourshit:
+    # Pinned to the 0.1.2 release on purpose. To move to a newer one, change
+    # the tag to that release's number (see
+    # https://github.com/PeiceOfToast/shrinkyourshit/releases) and run
+    # `docker compose pull && docker compose up -d`. Do not use :latest —
+    # an upgrade should be a deliberate edit, not a surprise.
+    image: ghcr.io/peiceoftoast/shrinkyourshit:0.1.2
+    container_name: shrinkyourshit
+    restart: unless-stopped
+    ports:
+      - "8765:8765" # web UI and API, http://<host>:8765
+    environment:
+      - PUID=1000 # your user id: run `id -u` on this machine
+      - PGID=1000 # your group id: run `id -g` on this machine
+    volumes:
+      - ./config:/config # settings and database
+      - ./media:/media # EDIT: your media folder (must be writable)
+      - ./scratch:/scratch # temp space for encodes
+    # Docker waits 10 seconds before killing a stopping container and this
+    # app shuts down in 10. Raise it here if you want an in-flight encode to
+    # get more time to wind down on `docker compose down`:
+    # stop_grace_period: 2m

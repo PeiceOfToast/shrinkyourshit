@@ -8,6 +8,19 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 
 ### Added
 
+- NAS deploy templates in `deploy/`: a generic compose file, Synology and
+  TrueNAS compose files with that platform's paths and user ids, and an
+  Unraid Community Applications template. Every template pins an image
+  release instead of `:latest`, and `deploy/deploy_test.go` (run by
+  `make test`) fails on a template that breaks the contract.
+- A way back out of the node installer: `installer.sh --uninstall` stops
+  and removes the service and the binary but never the data dir,
+  `--uninstall --purge` removes the data dir too (no prompts), and
+  `--prefix DIR` installs a node without root. Unknown flags now always
+  print usage and exit 2.
+- `docs/installing.md`: one page covering which template for which box,
+  the volume contract, why `/media` must be writable, PUID/PGID per
+  platform, the port, and how a paired node starts stopped.
 - The container image now runs on linux/arm64 as well as linux/amd64. The
   release pipeline builds both platforms, boots the arm64 image under
   emulation and checks its `/api/v1/health` endpoint and bundled ffmpeg
