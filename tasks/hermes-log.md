@@ -159,3 +159,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-10-31T03:03:00Z task 23: PR #24 merged squash 2b89c53, remote branch task/23-external-integrations deleted, main fast-forwarded e7afb46..2b89c53
 - 2026-10-31T03:03:00Z note: task 27 (full job log, owner request) and its two spec commits landed on main before this merge; STATUS.md order keeps 24 as the next task, 27 stays after 26
 - 2026-10-31T03:03:00Z task 24: dependencies satisfied (14 done), no task in flight, will start on the next tick
+- 2026-10-31T03:06:00Z task 24 started on VM 201, session ses_e701771c2ffeAXD206ay1CcqZw, branch task/24-health-check-and-move (health_check and move flow steps), fire and forget
