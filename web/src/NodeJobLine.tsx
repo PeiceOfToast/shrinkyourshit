@@ -4,10 +4,14 @@
  * One condensed live line for the file a node is working on (task 18):
  * the file name (truncated, full path on hover), a percent bar, the
  * encoding speed, the ETA and the original size against the growing
- * output. One line at `sm` and up, two lines below it.
+ * output, plus a Log action (task 27) that opens the structured log
+ * viewer. One line at `sm` and up, two lines below it.
  */
+import { useState } from 'react'
 import type { Job } from './api'
 import { formatBytes, formatEta } from './easyModel'
+import JobLogDialog from './JobLogDialog'
+import { btnGhost } from './uiControls'
 
 function progressWidth(percent: number): string {
   return `${Math.max(0, Math.min(100, percent))}%`
@@ -16,6 +20,7 @@ function progressWidth(percent: number): string {
 export default function NodeJobLine({ job }: { job: Job }) {
   const name = job.file_name || job.file_id
   const eta = formatEta(job.eta_seconds)
+  const [logOpen, setLogOpen] = useState(false)
   return (
     <div
       className="mt-2 text-xs text-slate-400"
@@ -45,6 +50,14 @@ export default function NodeJobLine({ job }: { job: Job }) {
           <span data-testid="node-job-line-size">
             {formatBytes(job.bytes_before)} → {formatBytes(job.bytes_so_far)}
           </span>
+          <button
+            type="button"
+            onClick={() => setLogOpen(true)}
+            className={`${btnGhost} !min-h-11 !px-3 !text-xs`}
+            data-testid="node-job-line-log"
+          >
+            Log
+          </button>
         </span>
       </div>
       <div
@@ -61,6 +74,7 @@ export default function NodeJobLine({ job }: { job: Job }) {
           style={{ width: progressWidth(job.percent) }}
         />
       </div>
+      {logOpen && <JobLogDialog job={job} onClose={() => setLogOpen(false)} />}
     </div>
   )
 }

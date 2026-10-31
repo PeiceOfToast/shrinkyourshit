@@ -51,6 +51,8 @@ function job(overrides: Partial<Job> = {}): Job {
     file_name: 'movie.mkv',
     file_path: '/media/movie.mkv',
     log: '',
+    log_lines: 0,
+    has_log: false,
     error: '',
     created_at: new Date(NOW - 60_000).toISOString(),
     ...overrides,

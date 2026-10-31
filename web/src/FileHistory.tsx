@@ -3,14 +3,18 @@
 /**
  * FileHistory (task 19): one file's job history in a dialog, over
  * GET /files/{id}/jobs. Every job shows its attempt, status, encoder,
- * fallback reasons, bytes before and after, and the log tail behind a
- * disclosure. Empty and error states follow the task 13 conventions.
+ * fallback reasons, bytes before and after, and the full structured log
+ * behind a Log action (task 27). Empty and error states follow the task 13
+ * conventions.
  */
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { getFileJobs, type FileItem, type Job } from './api'
 import { formatBytes, statusLabel } from './easyModel'
 import ErrorBox from './ErrorBox'
+import JobLogDialog from './JobLogDialog'
 import ModalDialog from './dialog'
+import { btnGhost } from './uiControls'
 
 function jobStatusColor(status: string): string {
   switch (status) {
@@ -29,7 +33,13 @@ function jobStatusColor(status: string): string {
 }
 
 /** One job's row in the history: the facts the owner asked for. */
-function JobRow({ job }: { job: Job }) {
+function JobRow({
+  job,
+  onOpenLog,
+}: {
+  job: Job
+  onOpenLog: (job: Job) => void
+}) {
   const hasSizes = job.bytes_before > 0
   return (
     <li
@@ -57,6 +67,16 @@ function JobRow({ job }: { job: Job }) {
         )}
         {job.status === 'running' && job.percent > 0 && (
           <span className="text-sky-300">{Math.round(job.percent)}%</span>
+        )}
+        {job.has_log && (
+          <button
+            type="button"
+            onClick={() => onOpenLog(job)}
+            className={`${btnGhost} !min-h-11 !px-3 !text-xs`}
+            data-testid={`file-history-log-${job.id}`}
+          >
+            Log
+          </button>
         )}
       </div>
       {job.fallback_reasons.length > 0 && (
@@ -102,6 +122,7 @@ export default function FileHistory({
   onClose: () => void
 }) {
   const name = file.path.split('/').pop() ?? file.path
+  const [logJob, setLogJob] = useState<Job | null>(null)
   const jobs = useQuery({
     queryKey: ['file-jobs', file.id],
     queryFn: () => getFileJobs(file.id, { limit: 100 }),
@@ -139,7 +160,7 @@ export default function FileHistory({
         ) : (
           <ul className="space-y-2" data-testid="file-history-jobs">
             {jobs.data.items.map((job) => (
-              <JobRow key={job.id} job={job} />
+              <JobRow key={job.id} job={job} onOpenLog={setLogJob} />
             ))}
           </ul>
         )}
@@ -153,6 +174,7 @@ export default function FileHistory({
       >
         Close
       </button>
+      {logJob && <JobLogDialog job={logJob} onClose={() => setLogJob(null)} />}
     </ModalDialog>
   )
 }
