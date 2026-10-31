@@ -44,6 +44,14 @@ ShrinkYourShit is AGPL-3.0. Anyone can use, modify and host it, but nobody can c
 4. Install ffmpeg and ffprobe on the machine where agents run tests (integration tests need them; unit tests do not).
 5. Point OpenCode at the repo and give it the kickoff prompt from `AGENTS.md`.
 
+## Quick start
+
+- **Docker / compose:** copy [`deploy/generic/docker-compose.yml`](deploy/generic/docker-compose.yml), point `/media` at your library, `docker compose up -d`.
+- **NAS (Unraid, Synology, TrueNAS):** ready-made templates in [`deploy/`](deploy/) — pick yours from [docs/installing.md](docs/installing.md).
+- **Binary node:** copy the one-line command from the Nodes page, paste it on the other machine (`shrinkyourshit` installer, no Docker needed).
+
+Full walkthrough — volumes, PUID/PGID per platform, the port, updating, and uninstalling — in [docs/installing.md](docs/installing.md).
+
 ## Run with Docker
 
 ```sh

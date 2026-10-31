@@ -62,6 +62,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Task 29: the NAS deploy templates must stay valid compose files.
+      # deploy/deploy_test.go checks the contract in `go test`; this step
+      # additionally proves the three files parse as compose on the engine
+      # users actually run (no daemon needed for `config`).
+      - name: NAS deploy templates validate (docker compose config)
+        run: |
+          set -eu
+          for f in deploy/generic/docker-compose.yml \
+            deploy/synology/docker-compose.yml \
+            deploy/truenas/docker-compose.yml; do
+            docker compose -f "$f" config --quiet
+            echo "ok: $f"
+          done
       - name: Build identity (task 26)
         run: echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Build image
