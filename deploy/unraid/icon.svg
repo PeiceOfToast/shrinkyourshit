@@ -1,0 +1,10 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Icon for the Unraid Community Applications template. The template
+     points at this file through the raw GitHub URL, so moving it means
+     updating deploy/unraid/shrinkyourshit.xml. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#1f2937"/>
+  <rect x="14" y="13" width="36" height="10" rx="3" fill="#e5e7eb"/>
+  <rect x="18" y="27" width="28" height="10" rx="3" fill="#9ca3af"/>
+  <rect x="22" y="41" width="20" height="10" rx="3" fill="#6b7280"/>
+</svg>

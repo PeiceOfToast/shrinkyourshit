@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# ShrinkYourShit compose for Synology DSM with Container Manager
+# (Package Center → Container Manager → Project → Create: paste this file).
+# Paths follow the DSM convention (/volume1/docker) and the ids follow the
+# DSM `docker` user (1024) and `users` group (100).
+#
+# The deploy/ templates are checked by deploy/deploy_test.go — if you edit
+# this file and `make test` fails, the template broke, not the test.
+
+services:
+  shrinkyourshit:
+    # Pinned to the 0.1.2 release on purpose. To move to a newer one, change
+    # the tag to that release's number (see
+    # https://github.com/PeiceOfToast/shrinkyourshit/releases) and rebuild
+    # the project in Container Manager. Do not use :latest — an upgrade
+    # should be a deliberate edit, not a surprise.
+    image: ghcr.io/peiceoftoast/shrinkyourshit:0.1.2
+    container_name: shrinkyourshit
+    restart: unless-stopped
+    ports:
+      - "8765:8765" # web UI and API, http://<nas-ip>:8765
+    environment:
+      - PUID=1024 # the DSM `docker` user; check with `id -u` over SSH
+      - PGID=100 # the DSM `users` group; check with `id -g` over SSH
+    volumes:
+      - /volume1/docker/shrinkyourshit/config:/config # settings and database
+      - /volume1/docker/shrinkyourshit/media:/media # EDIT: your media folder (must be writable)
+      - /volume1/docker/shrinkyourshit/scratch:/scratch # temp space for encodes
+    # Container Manager waits before killing a stopping container and this
+    # app shuts down in 10 seconds. Raise it here if you want an in-flight
+    # encode to get more time to wind down when you stop the project:
+    # stop_grace_period: 2m
