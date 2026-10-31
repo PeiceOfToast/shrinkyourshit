@@ -536,11 +536,14 @@ func TestIntegrationHealthCheckPasses(t *testing.T) {
 	s.waitForNoScratch()
 }
 
-// TestIntegrationHealthCheckDecodeFails: an output that probes fine but
-// does not decode fails the health_check job; the original stays
-// byte-identical (task 24 acceptance). The fake ffmpeg performs the real
-// remux, corrupts the result, and hands the decode check to the real
-// ffmpeg — -xerror turns the corruption into a failed job.
+// TestIntegrationHealthCheckDecodeFails: an output that fails its decode
+// check fails the health_check job; the original stays byte-identical
+// (task 24 acceptance). The fake ffmpeg performs the real remux and
+// corrupts the result, and the decode check — the health check's ffmpeg
+// call — fails the way a real ffmpeg fails on undecodable data. The failure
+// is scripted because how much corruption a given ffmpeg build tolerates
+// before -xerror trips varies; the pass side of the decode command is
+// proven for real by TestIntegrationHealthCheckPasses.
 func TestIntegrationHealthCheckDecodeFails(t *testing.T) {
 	s := newStack(t, stackConfig{})
 	lib := s.createLibraryFlow(healthCheckGraph("{}"), store.ResultPolicyReplace)
@@ -551,7 +554,10 @@ func TestIntegrationHealthCheckDecodeFails(t *testing.T) {
 	real := strconv.Quote(s.ffmpeg)
 	fake := writeFakeFFmpeg(t, s.dataDir, `
 for a; do
-  if [ "$a" = "null" ]; then exec `+real+` "$@"; fi
+  if [ "$a" = "null" ]; then
+    echo "[h264] Invalid data found when processing input" >&2
+    exit 183
+  fi
 done
 `+real+` -hide_banner -loglevel error "$@" || exit 1
 SZ=$(stat -c%s "$last")
@@ -578,6 +584,7 @@ dd if=/dev/urandom of="$last" bs=1 seek=$((SZ / 2)) count=$((SZ / 3)) conv=notru
 	job := s.jobFor(lib.ID)
 	require.Contains(t, job.Error, "health check failed")
 	require.Contains(t, job.Error, "decode check failed")
+	require.Contains(t, job.Error, "Invalid data found")
 
 	// The original is byte-identical and nothing replaced it.
 	require.Equal(t, origData, s.fileHash(origPath))
