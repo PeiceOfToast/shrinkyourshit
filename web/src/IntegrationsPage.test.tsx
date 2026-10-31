@@ -6,7 +6,13 @@
  * form calls updateIntegration with the typed values, and the Test button
  * surfaces the returned error text.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  cleanup,
+} from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -276,5 +282,206 @@ describe('IntegrationsPage', () => {
         mock.calls('DELETE', /\/api\/v1\/integrations\/int-1$/).length,
       ).toBe(1)
     })
+  })
+})
+
+describe('IntegrationsPage webhooks tab (task 25)', () => {
+  const hooks = [
+    {
+      id: 'hook-1',
+      name: 'Discord',
+      url: 'https://discord.com/api/webhooks/1/abc',
+      events: ['job.done'],
+      enabled: true,
+      secret_set: true,
+      created_at: '2026-10-30T10:00:00Z',
+      updated_at: '2026-10-30T10:00:00Z',
+    },
+  ]
+
+  const deliveries = [
+    {
+      id: 'del-2',
+      event: 'job.done',
+      status: 204,
+      created_at: '2026-10-30T10:05:00Z',
+    },
+    {
+      id: 'del-1',
+      event: 'job.done',
+      status: 500,
+      error: 'boom',
+      created_at: '2026-10-30T10:03:00Z',
+    },
+  ]
+
+  beforeEach(() => {
+    stubEventSource()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/webhooks$/,
+        body: { items: hooks, total: hooks.length },
+      },
+    ])
+  })
+
+  afterEach(() => {
+    mock.restore()
+    vi.unstubAllGlobals()
+  })
+
+  /** Renders the page, switches to the Webhooks tab and waits for the
+   * hook list to be on screen. */
+  async function renderWebhooksTab() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <MemoryRouter>
+            <IntegrationsPage />
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(await screen.findByTestId('integrations-tab-webhooks'))
+    await screen.findByTestId('webhook-row-hook-1')
+  }
+
+  it('renders the hook rows: name, url, enabled switch', async () => {
+    await renderWebhooksTab()
+    expect(await screen.findByTestId('webhook-row-hook-1')).toBeInTheDocument()
+    expect(screen.getAllByText('Discord').length).toBeGreaterThan(0)
+    expect(
+      screen.getByTestId('webhook-switch-hook-1').getAttribute('aria-checked'),
+    ).toBe('true')
+    // The secret is never rendered anywhere.
+    expect(document.body.textContent).not.toContain('whsec')
+  })
+
+  it('creating a webhook shows the secret once with a copy button and never again after a reload', async () => {
+    await renderWebhooksTab()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/webhooks$/,
+        body: { items: hooks, total: hooks.length },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/webhooks$/,
+        status: 201,
+        body: {
+          id: 'hook-2',
+          name: 'New hook',
+          url: 'https://example.com/hook',
+          events: ['job.done'],
+          enabled: true,
+          secret_set: true,
+          created_at: '2026-10-30T11:00:00Z',
+          updated_at: '2026-10-30T11:00:00Z',
+          secret: 'whsec-once-only-3b2f9d1c',
+        },
+      },
+    ])
+
+    fireEvent.click(screen.getByTestId('webhooks-add'))
+    fireEvent.change(screen.getByTestId('webhook-name'), {
+      target: { value: 'New hook' },
+    })
+    fireEvent.change(screen.getByTestId('webhook-url'), {
+      target: { value: 'https://example.com/hook' },
+    })
+    fireEvent.click(screen.getByTestId('webhook-save'))
+
+    // The secret box appears exactly once, with the copy button.
+    const box = await screen.findByTestId('webhook-secret-box')
+    expect(box.textContent).toContain('whsec-once-only-3b2f9d1c')
+    expect(screen.getByTestId('webhook-secret-copy')).toBeInTheDocument()
+
+    // A reload: a fresh mount shows the list again, and the secret is
+    // nowhere in it — not in the rows, not in a "secret" field.
+    cleanup()
+    await renderWebhooksTab()
+    expect(screen.getByTestId('webhook-row-hook-1')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('whsec-once-only-3b2f9d1c')
+    expect(document.body.textContent).not.toContain('"secret"')
+  })
+
+  it('the deliveries dialog renders each attempt with time, event and status', async () => {
+    await renderWebhooksTab()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/webhooks\/hook-1\/deliveries$/,
+        body: { items: deliveries, total: deliveries.length },
+      },
+    ])
+    fireEvent.click(screen.getByTestId('webhook-deliveries-hook-1'))
+    const dialog = await screen.findByTestId('webhook-deliveries-dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(
+      await screen.findByTestId('delivery-status-del-1'),
+    ).toHaveTextContent('500')
+    expect(screen.getByTestId('delivery-status-del-2')).toHaveTextContent('204')
+    expect(screen.getByTestId('delivery-event-del-1')).toHaveTextContent(
+      'A file is shrunk',
+    )
+    expect(screen.getByTestId('delivery-error-del-1')).toHaveTextContent('boom')
+  })
+
+  it('the Test button reports the result', async () => {
+    await renderWebhooksTab()
+    mock = installFetchMock([
+      {
+        method: 'POST',
+        match: /\/api\/v1\/webhooks\/hook-1\/test$/,
+        status: 200,
+        body: { ok: false, status: 500, error: 'boom' },
+      },
+    ])
+    fireEvent.click(screen.getByTestId('webhook-test-hook-1'))
+    const result = await screen.findByTestId('webhook-test-result')
+    expect(result.textContent).toContain('boom')
+  })
+
+  it('the enabled switch flips the hook without opening the form, keeping the secret out of the body', async () => {
+    await renderWebhooksTab()
+    mock = installFetchMock([
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/webhooks\/hook-1$/,
+        status: 200,
+        body: {
+          id: 'hook-1',
+          name: 'Discord',
+          url: 'https://discord.com/api/webhooks/1/abc',
+          events: ['job.done'],
+          enabled: false,
+          secret_set: true,
+          created_at: '2026-10-30T10:00:00Z',
+          updated_at: '2026-10-30T10:00:00Z',
+        },
+      },
+    ])
+    fireEvent.click(screen.getByTestId('webhook-switch-hook-1'))
+    await waitFor(() => {
+      expect(mock.calls('PUT', /\/api\/v1\/webhooks\/hook-1$/).length).toBe(1)
+    })
+    // The body never carries a secret: the server keeps the stored one.
+    const call = mock.calls('PUT', /\/api\/v1\/webhooks\/hook-1$/)[0]
+    expect(Object.keys(call.body as Record<string, unknown>)).toEqual([
+      'name',
+      'url',
+      'events',
+      'enabled',
+    ])
   })
 })

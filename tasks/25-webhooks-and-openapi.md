@@ -72,10 +72,10 @@ Admin only, existing error shape, 204 on delete. `POST /{id}/test` sends a synth
 Webhook signing rotation UI, per-library webhooks, replay of a stored delivery, generated clients, publishing the document anywhere outside the app, any change to `DECISIONS.md`.
 
 ## Acceptance
-- [ ] `job.done`, `job.failed` and `library.scanned` each deliver to an `httptest` server with the right `X-SYS-Event`, a signature that verifies with the secret, and a body matching the documented shape. Proven in `internal/server/webhooks_test.go`.
-- [ ] A 500 response is retried 3 times with backoff and recorded in `webhook_deliveries`.
-- [ ] Delivery never blocks or fails a job, and a dead hook logs a warning only.
-- [ ] Discord and Slack URLs receive the wrapped body; everything else receives the raw event.
-- [ ] The secret is returned exactly once, and never appears in any later response. Proven by an API test asserting the string is absent from a subsequent GET.
-- [ ] `GET /api/v1/openapi.json` returns the document, and `openapi_test.go` proves the document and the route table agree in both directions.
-- [ ] The webhooks tab works, shows deliveries, and its tests pass. `make test` and `make lint` are green.
+- [x] `job.done`, `job.failed` and `library.scanned` each deliver to an `httptest` server with the right `X-SYS-Event`, a signature that verifies with the secret, and a body matching the documented shape. Proven in `internal/server/webhooks_test.go`.
+- [x] A 500 response is retried 3 times with backoff and recorded in `webhook_deliveries`.
+- [x] Delivery never blocks or fails a job, and a dead hook logs a warning only.
+- [x] Discord and Slack URLs receive the wrapped body; everything else receives the raw event.
+- [x] The secret is returned exactly once, and never appears in any later response. Proven by an API test asserting the string is absent from a subsequent GET.
+- [x] `GET /api/v1/openapi.json` returns the document, and `openapi_test.go` proves the document and the route table agree in both directions.
+- [x] The webhooks tab works, shows deliveries, and its tests pass. `make test` and `make lint` are green.

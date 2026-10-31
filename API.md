@@ -506,3 +506,54 @@ Details:
 - The refresher (task 23) calls each enabled integration with `refresh_on_done` after a job ends `done`
   with real savings: one in-flight call per integration id, a 30 second floor between calls for the same
   id, a 5 second per-request timeout, warn-only failures. It never fails a job.
+
+### Task 25
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/webhooks` | admin | every configured webhook, oldest first |
+| POST | `/api/v1/webhooks` | admin | create one; 201 with the keyless DTO **plus `secret`, exactly once** |
+| GET | `/api/v1/webhooks/{id}` | admin | one webhook |
+| PUT | `/api/v1/webhooks/{id}` | admin | replace one; an empty secret keeps the stored one; 404 for an unknown id |
+| DELETE | `/api/v1/webhooks/{id}` | admin | remove one and its delivery history; 204, 404 for an unknown id |
+| POST | `/api/v1/webhooks/{id}/test` | admin | one delivery of a fixed sample `job.done` payload; single attempt, 200 even when it fails |
+| GET | `/api/v1/webhooks/{id}/deliveries` | admin | the recorded delivery outcomes, newest first; `?limit=` (1–50, default 50) |
+| GET | `/api/v1/openapi.json` | open | the OpenAPI document as JSON |
+| GET | `/openapi.yaml` | open | the same document, verbatim YAML |
+
+Details:
+
+- The webhook DTO is `{id, name, url, events: [...], enabled, secret_set, created_at, updated_at}`.
+  Every response after the create carries `secret_set: true|false` and **never** the secret itself —
+  proven by an API test asserting the secret string is absent from the list and the GET-one response.
+  The server generates the 32-byte hex secret at create time (`NewWebhookSecret`, crypto/rand) and the
+  create response is the only time a client can read it.
+- `events` is the subscription list with values `job.done`, `job.failed`, `library.scanned`
+  (ARCHITECTURE.md). Create/update validate: empty name, a URL that does not parse or is not http/https
+  (or has no host), an unknown event name or an empty subscription are `400 {"code":"invalid_request"}`;
+  duplicate or blank event names are dropped, name and URL are trimmed.
+- `POST /{id}/test` sends one fixed sample payload (`SampleEvent`: a synthetic `job.done` with example
+  numbers and file names) to the configured URL as a single attempt — no retries, an explicit
+  diagnostic — records the outcome in the delivery history and answers
+  `{"ok": bool, "status": int, "error": "..."}`, 200 even when the delivery failed.
+- Webhook deliveries (task 25): every delivery to a subscribed, enabled hook is attempted up to 3 times
+  (backoff 1 s then 4 s, a 5 s per-request timeout) and its final outcome is recorded in
+  `webhook_deliveries` — one row per event per hook, pruned to the newest 50 per hook. A 2xx records the
+  status and no error; a non-2xx records the status and the first 200 characters of the body as the
+  error; a transport failure records status 0. Delivery is fire and forget: a dead hook is a warn line
+  plus a recorded row and can never fail a job.
+- The wire contract: every delivery is a `POST` with JSON, headers `X-SYS-Event` (the event name),
+  `X-SYS-Signature: sha256=<hex HMAC-SHA256 of the exact request body under the hook's secret>` and
+  `User-Agent: shrinkyourshit/<version>`. The body is the documented event JSON
+  (ARCHITECTURE.md, WebhookEvent); Discord and Slack hosts (`discord.com`, `discordapp.com`, `slack.com`
+  and their subdomains) receive the wrapped one-line summary instead — `{"content": ...}` for Discord,
+  `{"text": ...}` for Slack — and the signature still covers the bytes actually sent. The summary
+  wording lives in one place (`webhookSummary`): a `job.done` reads
+  "The Matrix (1999) 4.1 GB to 1.2 GB, 71% smaller" (a kept original says so instead of inventing
+  numbers), a `job.failed` carries the encoder error, a `library.scanned` carries the counts.
+- The OpenAPI document (`docs/openapi.yaml`, OpenAPI 3.1) documents every `/api/*` route. It is
+  embedded in the binary and served at the two endpoints above. `internal/api/openapi_test.go` parses
+  the `mux.HandleFunc` registrations out of `internal/api/api.go` and diffs them against the document in
+  both directions, so a route without a doc entry (or vice versa) fails `make test`. The static
+  installer downloads (`GET /install.sh`, `GET /install.ps1`) are outside the document by decision: they
+  are plain file downloads, not part of the API surface.

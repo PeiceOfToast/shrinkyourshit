@@ -112,6 +112,20 @@ type Store interface {
 	UpdateIntegration(ctx context.Context, in *Integration) error
 	DeleteIntegration(ctx context.Context, id string) error
 
+	// Webhooks (task 25): outbound HTTP hooks the dispatcher notifies on
+	// job.done, job.failed and library.scanned. The secret signs every
+	// delivery and is never echoed by the API after the create response.
+	// AddWebhookDelivery records one delivery outcome;
+	// PruneWebhookDeliveries keeps the newest keep rows per hook.
+	CreateWebhook(ctx context.Context, w *Webhook) error
+	GetWebhook(ctx context.Context, id string) (*Webhook, error)
+	ListWebhooks(ctx context.Context) ([]*Webhook, error)
+	UpdateWebhook(ctx context.Context, w *Webhook) error
+	DeleteWebhook(ctx context.Context, id string) error
+	AddWebhookDelivery(ctx context.Context, d *WebhookDelivery) error
+	ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*WebhookDelivery, error)
+	PruneWebhookDeliveries(ctx context.Context, keep int) (int64, error)
+
 	// Settings is an open key/value table; the Setting* constants name
 	// the keys ARCHITECTURE.md defines.
 	GetSetting(ctx context.Context, key string) (string, bool, error)

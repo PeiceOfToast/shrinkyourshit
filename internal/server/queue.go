@@ -301,7 +301,8 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	// keeps pointing at the original (its fingerprint and probe are still
 	// valid, so rescans skip it instead of reprocessing forever).
 	policy := store.ResultPolicyReplaceIfSmaller
-	if lib, err := q.st.GetLibrary(ctx, job.LibraryID); err != nil {
+	lib, err := q.st.GetLibrary(ctx, job.LibraryID)
+	if err != nil {
 		q.log.Error("queue: complete policy lookup", "library", job.LibraryID, "err", err)
 	} else if lib.ResultPolicy != "" {
 		policy = lib.ResultPolicy
@@ -318,6 +319,7 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 			return job, fmt.Errorf("queue: complete skipped file: %w", err)
 		}
 		q.finishEvents(job, f)
+		q.emitJobEvent(ctx, EventWebhookJobDone, job, f, lib)
 		return job, nil
 	}
 
@@ -342,6 +344,7 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 				return job, fmt.Errorf("queue: complete failed file: %w", err)
 			}
 			q.finishEvents(job, f)
+			q.emitJobEvent(ctx, EventWebhookJobDone, job, f, lib)
 			return job, nil
 		}
 
@@ -364,26 +367,60 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	q.log.Info("job completed", "job", job.ID, "file", f.Path,
 		"bytes_saved", f.BytesSaved, "encoder", job.EncoderUsed)
 	q.finishEvents(job, f)
+	q.emitJobEvent(ctx, EventWebhookJobDone, job, f, lib)
 
 	// The library at home updates itself (task 23): the configured
 	// integrations learn about the completion — but only when the job
-	// ended done and the output was actually used (real savings). A skip,
-	// a keep-both or an unverifiable output stays quiet. Notify never
-	// fails the job: it returns after listing rows and drops inside the
-	// coalescing window.
-	if job.Status == store.JobStatusDone && f.BytesSaved > 0 {
-		q.notify(ctx)
-	}
+	// ended done and the output was actually used (real savings). That
+	// filter lives inside the refresher now (task 25 routes every done
+	// outcome through the one hook); a skip, a keep-both or an
+	// unverifiable output stays quiet. Notify never fails the job: it
+	// returns after listing rows and drops inside the coalescing window.
 	return job, nil
 }
 
-// notify is a nil-safe call into the integration hook. Notify itself is
-// fire-and-forget, so a slow remote can never slow a completion.
-func (q *Queue) notify(ctx context.Context) {
+// emitJobEvent hands a finished job to the outbound hook (the integration
+// refresher and the webhook dispatcher; tasks 23 and 25). The payload is
+// built from the rows in hand so it is one consistent documented shape.
+// Fire and forget: notify never blocks or fails the job.
+func (q *Queue) emitJobEvent(ctx context.Context, event string, job *store.Job, f *store.File, lib *store.Library) {
+	ev := WebhookEvent{
+		Event:   event,
+		Job:     jobEventDTO(job, f),
+		File:    fileEventDTO(f),
+		Library: libEventDTO(lib),
+		At:      time.Now().UTC(),
+	}
+	q.notify(ctx, ev)
+}
+
+// DTO builders for the event payload; each keeps the nil cases explicit.
+func jobEventDTO(job *store.Job, f *store.File) *JobDTO {
+	dto := NewJobDTO(job, f)
+	return &dto
+}
+
+func fileEventDTO(f *store.File) *FileDTO {
+	dto := NewFileDTO(f)
+	return &dto
+}
+
+func libEventDTO(lib *store.Library) *LibraryDTO {
+	if lib == nil {
+		return nil
+	}
+	dto := NewLibraryDTO(lib)
+	return &dto
+}
+
+// notify is a nil-safe call into the outbound hook (integrations and
+// webhooks). Notify itself is fire-and-forget, so a slow remote can never
+// slow a completion.
+func (q *Queue) notify(ctx context.Context, ev WebhookEvent) {
 	if q.notifier == nil {
 		return
 	}
-	q.notifier.Notify(ctx)
+	q.notifier.Notify(ctx, ev)
 }
 
 // FailParams are the fields a worker reports on failure.
@@ -416,7 +453,9 @@ func (q *Queue) Fail(ctx context.Context, jobID, nodeID string, p FailParams) (*
 		return q.refreshed(ctx, job)
 	}
 
-	if f, ferr := q.st.GetFile(ctx, job.FileID); ferr == nil {
+	var f *store.File
+	if got, ferr := q.st.GetFile(ctx, job.FileID); ferr == nil {
+		f = got
 		if f.Status == store.FileStatusProcessing {
 			f.Status = store.FileStatusFailed
 			if uerr := q.st.UpdateFile(ctx, f); uerr != nil {
@@ -431,6 +470,15 @@ func (q *Queue) Fail(ctx context.Context, jobID, nodeID string, p FailParams) (*
 
 	q.log.Warn("job failed", "job", job.ID, "error", p.Error)
 	q.publish(EventJobUpdated, q.jobDTO(ctx, job))
+
+	// The webhooks learn about the failure too (task 25); the refresher
+	// stays quiet (its filter only reacts to done completions). The
+	// library is best effort — the event carries it when it is known.
+	var lib *store.Library
+	if got, lerr := q.st.GetLibrary(ctx, job.LibraryID); lerr == nil {
+		lib = got
+	}
+	q.emitJobEvent(ctx, EventWebhookJobFailed, job, f, lib)
 	return job, nil
 }
 

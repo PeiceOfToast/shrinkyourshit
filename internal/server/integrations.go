@@ -167,11 +167,15 @@ func CallIntegration(ctx context.Context, client *http.Client, in Integration) (
 	return resp.StatusCode, fmt.Errorf("integration %q: unexpected status", in.Name)
 }
 
-// Notifier is the hook Queue.Complete calls after a done completion whose
-// output was actually used (task 23). Implemented by *Refresher; nil on
-// the Queue keeps the constructor working for tests that do not care.
+// Notifier is the outbound hook of the Queue and the scanner (task 23
+// integrations, task 25 webhooks): one hook through which every
+// "something happened" notification flows. The server wires a composite
+// that fans each event out to the refresher and the webhook dispatcher;
+// both filter internally, so neither channel sees events it does not care
+// about. Nil on the Queue keeps the constructor working for tests that do
+// not care.
 type Notifier interface {
-	Notify(ctx context.Context)
+	Notify(ctx context.Context, ev WebhookEvent)
 }
 
 // notifyGap is the floor between two calls for the same integration id
@@ -231,12 +235,19 @@ func (r *Refresher) List(ctx context.Context) ([]Integration, error) {
 	return out, nil
 }
 
-// Notify reads the enabled integrations with refresh_on_done and calls
-// each one that is due. It returns as soon as the rows are listed: every
-// call runs in its own goroutine, so a slow remote can never slow a
-// completion. The calls use their own context — the caller's is a request
-// context that dies with the worker response — bounded by notifyTimeout.
-func (r *Refresher) Notify(ctx context.Context) {
+// Notify reacts to the event the Queue hands over (task 23 + 25): only a
+// done completion whose output was actually used (real savings, the file
+// row satisfied) reaches the integrations — a skip, a keep-both or an
+// unverifiable output stays quiet. It returns as soon as the rows are
+// listed: every call runs in its own goroutine, so a slow remote can never
+// slow a completion. The calls use their own context — the caller's is a
+// request context that dies with the worker response — bounded by
+// notifyTimeout.
+func (r *Refresher) Notify(ctx context.Context, ev WebhookEvent) {
+	if ev.Event != EventWebhookJobDone || ev.File == nil ||
+		ev.File.Status != store.FileStatusSatisfied || ev.File.BytesSaved <= 0 {
+		return
+	}
 	rows, err := r.st.ListIntegrations(ctx)
 	if err != nil {
 		r.log.Error("integrations: list", "err", err)

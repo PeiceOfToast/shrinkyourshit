@@ -115,6 +115,7 @@ type Server struct {
 	transfer     *Transfer
 	update       *UpdateCheck
 	integrations *Refresher
+	webhooks     *Dispatcher
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -163,14 +164,18 @@ func New(cfg Config) *Server {
 		updOpts.ScratchDir = cfg.ScratchDir
 	}
 	updateSvc := NewUpdateCheck(events, settings, cfg.Store, updOpts, cfg.Log)
-	// External integrations (task 23): the refresher is the queue's
-	// completion hook — every done job with real savings drops a Notify.
+	// External integrations (task 23) and webhooks (task 25) share one
+	// outbound hook: the queue hands each lifecycle event to the router,
+	// which fans it out to the refresher and the webhook dispatcher. The
+	// scanner reports only to the dispatcher (library.scanned).
 	integrations := NewRefresher(cfg.Store, cfg.Log)
-	queue.SetNotifier(integrations)
+	webhooks := NewWebhookDispatcher(cfg.Store, cfg.Log, cfg.Update.Current.Version)
+	queue.SetNotifier(&notifierRouter{integrations: integrations, webhooks: webhooks})
+	scanner.SetNotifier(webhooks)
 	return &Server{cfg: cfg, log: cfg.Log, events: events, queue: queue,
 		scanner: scanner, watcher: watcher, scheduler: scheduler, libs: libs, nodes: nodes,
 		auth: auth, settings: settings, stats: stats, transfer: transfer, update: updateSvc,
-		integrations: integrations}
+		integrations: integrations, webhooks: webhooks}
 }
 
 // Events exposes the event bus (the SSE endpoint subscribes here).
@@ -219,6 +224,10 @@ func (s *Server) Update() *UpdateCheck { return s.update }
 // Integrations exposes the refresher (task 23): the API's Test button and
 // the queue's completion hook.
 func (s *Server) Integrations() *Refresher { return s.integrations }
+
+// Webhooks exposes the webhook dispatcher (task 25): the API's Test button
+// and the queue's and scanner's event hook.
+func (s *Server) Webhooks() *Dispatcher { return s.webhooks }
 
 // discoveredTTL is how long Discovered reuses the last LAN scan.
 const discoveredTTL = 10 * time.Second

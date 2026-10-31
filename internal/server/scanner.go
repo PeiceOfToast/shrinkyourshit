@@ -47,16 +47,17 @@ const (
 	stabilityMaxWait      = time.Hour
 )
 
-// ScanResult summarizes one library scan.
+// ScanResult summarizes one library scan. The tags make it part of the
+// webhook event payload (task 25's library.scanned body).
 type ScanResult struct {
-	Seen      int // media files found on disk
-	Probed    int // ffprobe runs
-	Reused    int // re-evaluated from the cached probe without ffprobe
-	Skipped   int // fingerprint unchanged, nothing to do
-	Queued    int // jobs newly queued
-	Satisfied int // files (re)classified as satisfied
-	Missing   int // DB rows marked missing (no longer on disk)
-	Errors    int // probe or store failures for single files
+	Seen      int `json:"seen"`     // media files found on disk
+	Probed    int `json:"probed"`   // ffprobe runs
+	Reused    int `json:"reused"`   // re-evaluated from the cached probe without ffprobe
+	Skipped   int `json:"skipped"`  // fingerprint unchanged, nothing to do
+	Queued    int `json:"queued"`   // jobs newly queued
+	Satisfied int `json:"satisfied"` // files (re)classified as satisfied
+	Missing   int `json:"missing"`  // DB rows marked missing (no longer on disk)
+	Errors    int `json:"errors"`   // probe or store failures for single files
 }
 
 // Scanner walks libraries, probes changed files, applies Evaluate and
@@ -74,6 +75,10 @@ type Scanner struct {
 	stable      time.Duration // stability window before probing
 	procs       chan struct{} // bounds simultaneous fingerprint+probe work
 	locks       *libraryLocks
+	// notifier is the outbound webhook hook (task 25): called with a
+	// library.scanned event after every successful scan. Nil notifies
+	// nothing.
+	notifier Notifier
 
 	ctx     context.Context // lifecycle context for async scans
 	scanMu  sync.Mutex
@@ -130,6 +135,10 @@ func NewScanner(st store.Store, queue *Queue, events *EventBus, cfg ScannerConfi
 // setContext installs the lifecycle context used by async scans. Server
 // startup calls this before any scan is scheduled.
 func (s *Scanner) setContext(ctx context.Context) { s.ctx = ctx }
+
+// SetNotifier wires the outbound webhook hook (task 25): a library.scanned
+// event after every successful scan.
+func (s *Scanner) SetNotifier(n Notifier) { s.notifier = n }
 
 // finding is one examined file ready to be applied to the store.
 type finding struct {
@@ -249,7 +258,25 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	if err := s.st.SetLibraryScanTime(ctx, libraryID, time.Now().UTC()); err != nil {
 		s.log.Error("scanner: stamp last scan", "library", libraryID, "err", err)
 	}
+
+	// The webhooks learn about the finished scan (task 25). Fire and
+	// forget: the hook fans each subscriber out to its own goroutine.
+	s.notifyScanned(ctx, lib, res)
 	return res, nil
+}
+
+// notifyScanned hands a finished scan to the outbound webhook hook
+// (task 25). Nil-safe; never blocks and never fails the scan.
+func (s *Scanner) notifyScanned(ctx context.Context, lib *store.Library, res ScanResult) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.Notify(ctx, WebhookEvent{
+		Event:   EventWebhookLibScanned,
+		Library: libEventDTO(lib),
+		Scan:    &res,
+		At:      time.Now().UTC(),
+	})
 }
 
 // ScanAsync schedules a scan of a library in the background. Bursts of
