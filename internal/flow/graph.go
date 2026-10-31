@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -26,6 +27,8 @@ const (
 	StepSubtitles      = "subtitles"
 	StepRename         = "rename"
 	StepSkipIfSmaller  = "skip_if_smaller"
+	StepHealthCheck    = "health_check"
+	StepMove           = "move"
 )
 
 // Flow sources: who owns the graph on a library.
@@ -33,6 +36,20 @@ const (
 	FlowSourceEasy     = "easy"     // generated from the easy screen
 	FlowSourceSteps    = "steps"    // built in the step stack editor
 	FlowSourceAdvanced = "advanced" // manual (target panel, later the canvas)
+)
+
+// health_check modes and bounds (task 24).
+const (
+	HealthCheckSample = "sample"
+	HealthCheckFull   = "full"
+
+	HealthCheckMinutesMin     = 1
+	HealthCheckMinutesMax     = 120
+	HealthCheckMinutesDefault = 2
+	// HealthCheckToleranceMax bounds duration_tolerance; the default lets the
+	// output sit 2% under the source duration.
+	HealthCheckToleranceMax     = 0.5
+	HealthCheckToleranceDefault = 0.02
 )
 
 // FlowSources lists the valid flow sources.
@@ -123,6 +140,24 @@ type (
 	// directory as the source, no separators.
 	renameParams struct {
 		Template string `json:"template"`
+	}
+
+	// health_check: verify the produced file. "sample" decodes minutes from
+	// the middle of the file, "full" decodes all of it. duration_tolerance is
+	// the fraction of the source duration the output must still have. Zero
+	// fields are legal: Validate fills them with the defaults below.
+	healthCheckParams struct {
+		Mode              string  `json:"mode"`
+		Minutes           int     `json:"minutes"`
+		DurationTolerance float64 `json:"duration_tolerance"`
+	}
+
+	// move: after a successful result, put the file under destination,
+	// keeping its path relative to the library root when keep_tree is set.
+	// Exactly one move step per graph.
+	moveParams struct {
+		Destination string `json:"destination"`
+		KeepTree    bool   `json:"keep_tree"`
 	}
 )
 
@@ -276,7 +311,7 @@ func isGuard(t string) bool { return t == StepIfCodecNot || t == StepIfBitrateAb
 func isShaping(t string) bool {
 	switch t {
 	case StepTranscodeVideo, StepRemuxContainer, StepConvertAudio, StepSubtitles,
-		StepRename, StepSkipIfSmaller:
+		StepRename, StepSkipIfSmaller, StepHealthCheck, StepMove:
 		return true
 	}
 	return false
@@ -413,6 +448,49 @@ func validateStepParams(n Step) *paramError {
 			return perr("params.template", `the template must contain {name} so every file keeps its own name`)
 		}
 		return nil
+	case StepHealthCheck:
+		var p healthCheckParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		// Zero fields are the defaults; only real values are checked.
+		mode := p.Mode
+		if mode == "" {
+			mode = HealthCheckSample
+		}
+		switch mode {
+		case HealthCheckSample, HealthCheckFull:
+		default:
+			return perr("params.mode", "want sample or full, got %q", p.Mode)
+		}
+		minutes := p.Minutes
+		if minutes == 0 {
+			minutes = HealthCheckMinutesDefault
+		}
+		if minutes < HealthCheckMinutesMin || minutes > HealthCheckMinutesMax {
+			return perr("params.minutes", "want %d to %d, got %d", HealthCheckMinutesMin, HealthCheckMinutesMax, p.Minutes)
+		}
+		tolerance := p.DurationTolerance
+		if tolerance == 0 {
+			tolerance = HealthCheckToleranceDefault
+		}
+		if tolerance < 0 || tolerance > HealthCheckToleranceMax {
+			return perr("params.duration_tolerance", "want 0 to %v, got %v", HealthCheckToleranceMax, p.DurationTolerance)
+		}
+		return nil
+	case StepMove:
+		var p moveParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		d := TrimMoveDestination(p.Destination)
+		switch {
+		case d == "":
+			return perr("params.destination", "a destination folder is required")
+		case !filepath.IsAbs(d):
+			return perr("params.destination", "the destination must be an absolute path, got %q", p.Destination)
+		}
+		return nil
 	default:
 		return perr("type", "unknown step type %q", n.Type)
 	}
@@ -438,6 +516,40 @@ func validateLanguages(langs []string) error {
 		}
 	}
 	return nil
+}
+
+// TrimMoveDestination trims spaces and trailing slashes from a move
+// destination: the canonical form the plan, the spec and the result policy
+// all use (task 24).
+func TrimMoveDestination(d string) string {
+	return strings.TrimRight(strings.TrimSpace(d), "/")
+}
+
+// MoveDestination returns a move step's trimmed destination, empty when the
+// step is not a move or its params do not decode. The server checks it
+// against the library root at save time.
+func MoveDestination(s Step) string {
+	if s.Type != StepMove {
+		return ""
+	}
+	var p moveParams
+	if err := decodeParams(s.Params, &p); err != nil {
+		return ""
+	}
+	return TrimMoveDestination(p.Destination)
+}
+
+// KeepMoveTree reports whether a move step rebuilds the file's folder
+// layout under the destination.
+func KeepMoveTree(s Step) bool {
+	if s.Type != StepMove {
+		return false
+	}
+	var p moveParams
+	if err := decodeParams(s.Params, &p); err != nil {
+		return false
+	}
+	return p.KeepTree
 }
 
 // chain is the result of walking the single chain from the entry step.
