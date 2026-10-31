@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -473,6 +474,161 @@ func TestIntegrationNotSmallerSkips(t *testing.T) {
 
 	// The original is untouched.
 	require.Equal(t, origData, s.fileHash(origPath))
+	s.waitForNoScratch()
+}
+
+// createLibraryFlow adds a library and stores an explicit rule graph on it
+// (task 24): UpdateFlow re-syncs the Target from the compiled flow, so the
+// graph is the single source of truth for the jobs.
+func (s *stack) createLibraryFlow(g flow.Graph, policy string) *store.Library {
+	s.t.Helper()
+	lib := s.createLibraryTarget(flow.Default(), policy)
+	if _, err := s.svc.Libraries().UpdateFlow(context.Background(), lib.ID, "steps", g); err != nil {
+		s.t.Fatalf("store flow: %v", err)
+	}
+	return lib
+}
+
+// healthCheckGraph remuxes to MKV and verifies the result with a
+// health_check step carrying hcParams ("{}" = the defaults).
+func healthCheckGraph(hcParams string) flow.Graph {
+	g := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "remux", Type: flow.StepRemuxContainer, Params: []byte(`{"container":"mkv"}`)},
+			{ID: "hc", Type: flow.StepHealthCheck, Params: []byte(hcParams)},
+		},
+		Edges: []flow.Edge{{From: "probe", To: "remux"}, {From: "remux", To: "hc"}},
+	}
+	return g
+}
+
+// TestIntegrationHealthCheckPasses: a real remux plus a real decode check
+// completes; the healthy output replaces the original (task 24).
+func TestIntegrationHealthCheckPasses(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	lib := s.createLibraryFlow(healthCheckGraph("{}"), store.ResultPolicyReplace)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+
+	s.scanSync(lib.ID)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job done", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status != store.FileStatusProcessing && row.Status != store.FileStatusQueued
+	})
+
+	// The remuxed output replaced the original and still plays.
+	out, err := probe.Probe(context.Background(), "", filepath.Join(s.library, "movie.mkv"))
+	require.NoError(t, err)
+	require.Equal(t, flow.CodecH264, out.Video[0].Codec)
+	_, err = os.Stat(origPath)
+	require.True(t, os.IsNotExist(err))
+	row := s.fileRow(lib.ID)
+	require.Equal(t, store.FileStatusSatisfied, row.Status)
+	s.waitForNoScratch()
+}
+
+// TestIntegrationHealthCheckDecodeFails: an output that probes fine but
+// does not decode fails the health_check job; the original stays
+// byte-identical (task 24 acceptance). The fake ffmpeg performs the real
+// remux, corrupts the result, and hands the decode check to the real
+// ffmpeg — -xerror turns the corruption into a failed job.
+func TestIntegrationHealthCheckDecodeFails(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	lib := s.createLibraryFlow(healthCheckGraph("{}"), store.ResultPolicyReplace)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+	origData := s.fileHash(origPath)
+	s.scanSync(lib.ID)
+
+	real := strconv.Quote(s.ffmpeg)
+	fake := writeFakeFFmpeg(t, s.dataDir, `
+for a; do
+  if [ "$a" = "null" ]; then exec `+real+` "$@"; fi
+done
+`+real+` -hide_banner -loglevel error "$@" || exit 1
+SZ=$(stat -c%s "$last")
+dd if=/dev/urandom of="$last" bs=1 seek=$((SZ / 2)) count=$((SZ / 3)) conv=notrunc 2>/dev/null
+`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(func(c *Config) {
+		c.FFmpegPath = fake
+		c.Capabilities = &encoders.Capability{}
+		c.Encoders = []encoders.Encoder{encoders.CPU}
+	}))
+
+	s.waitFor("job failed", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusFailed
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status != store.FileStatusProcessing && row.Status != store.FileStatusQueued
+	})
+
+	job := s.jobFor(lib.ID)
+	require.Contains(t, job.Error, "health check failed")
+	require.Contains(t, job.Error, "decode check failed")
+
+	// The original is byte-identical and nothing replaced it.
+	require.Equal(t, origData, s.fileHash(origPath))
+	entries, err := os.ReadDir(s.library)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	s.waitForNoScratch()
+}
+
+// TestIntegrationMovePlacesResult: the move step puts the finished file
+// into a folder outside the library and the original is gone (task 24).
+func TestIntegrationMovePlacesResult(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	dest := t.TempDir() // outside the library, as the save-time check demands
+	g := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "remux", Type: flow.StepRemuxContainer, Params: []byte(`{"container":"mkv"}`)},
+			{ID: "mv", Type: flow.StepMove, Params: []byte(`{"destination":"` + dest + `","keep_tree":false}`)},
+		},
+		Edges: []flow.Edge{{From: "probe", To: "remux"}, {From: "remux", To: "mv"}},
+	}
+	lib := s.createLibraryFlow(g, store.ResultPolicyReplace)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+	s.scanSync(lib.ID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job done", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status != store.FileStatusProcessing && row.Status != store.FileStatusQueued
+	})
+
+	moved := filepath.Join(dest, "movie.mkv")
+	st, err := os.Stat(moved)
+	require.NoError(t, err, "the result must sit at the destination")
+	require.Greater(t, st.Size(), int64(0))
+	_, err = os.Stat(origPath)
+	require.True(t, os.IsNotExist(err), "the original is removed after the verified move")
+
+	// The file row follows the moved file.
+	row := s.fileRow(lib.ID)
+	require.Equal(t, store.FileStatusSatisfied, row.Status)
+	require.Equal(t, moved, row.Path)
 	s.waitForNoScratch()
 }
 
