@@ -72,6 +72,9 @@ const ICONS = {
   nodes: 'M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01',
   encode: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M11 16v4',
   app: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 17.7l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 17.7l-1.4 1.4',
+  // Integrations (task 23): an outgoing arrow into a node.
+  integrations:
+    'M12 4v6m0 0-3-3m3 3 3-3M5 10v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6m-4 4h-4m-4 0h.01',
 }
 
 const NAV_ITEMS = [
@@ -79,6 +82,7 @@ const NAV_ITEMS = [
   { to: '/libraries', label: 'Library', icon: ICONS.library },
   { to: '/nodes', label: 'Nodes', icon: ICONS.nodes },
   { to: '/encode', label: 'Encode settings', icon: ICONS.encode },
+  { to: '/integrations', label: 'Integrations', icon: ICONS.integrations },
   { to: '/app', label: 'App settings', icon: ICONS.app },
 ]
 

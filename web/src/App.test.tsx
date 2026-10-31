@@ -90,6 +90,11 @@ beforeEach(() => {
       match: /\/api\/v1\/nodes$/,
       body: { items: [], total: 0 },
     },
+    {
+      method: 'GET',
+      match: /\/api\/v1\/integrations$/,
+      body: { items: [], total: 0 },
+    },
   ])
 })
 
@@ -138,27 +143,29 @@ describe('route guard', () => {
         screen.getByRole('navigation', { name: 'Main' }),
       ).toBeInTheDocument()
     })
-    // Five entries (task 10): Dash, Library, Nodes, Encode settings,
-    // App settings.
+    // Six entries (task 10 + task 23): Dash, Library, Nodes, Encode
+    // settings, Integrations, App settings.
     const nav = screen.getByRole('navigation', { name: 'Main' })
     const links = nav.querySelectorAll('a')
-    expect(links).toHaveLength(5)
+    expect(links).toHaveLength(6)
     const labels = Array.from(links).map((a) => a.textContent)
     expect(labels).toEqual([
       'Dash',
       'Library',
       'Nodes',
       'Encode settings',
+      'Integrations',
       'App settings',
     ])
   })
 
-  it('renders each of the five nav routes with its page', async () => {
+  it('renders each of the six nav routes with its page', async () => {
     const cases: Array<[string, string]> = [
       ['/', 'dashboard'],
       ['/libraries', 'libraries-page'],
       ['/nodes', 'nodes-page'],
       ['/encode', 'encode-settings-page'],
+      ['/integrations', 'integrations-page'],
       ['/app', 'app-settings-page'],
     ]
     for (const [path, testid] of cases) {
