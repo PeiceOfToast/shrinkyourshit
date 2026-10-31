@@ -473,3 +473,29 @@ Details:
 - `FileDTO` gains `last_job_encoder` (omitted when the file has no job yet):
   the encoder of the file's most recent job, resolved for the page's files
   so the file table can show the encoder used.
+
+### Task 23
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/integrations` | admin | every configured integration, oldest first |
+| POST | `/api/v1/integrations` | admin | create one; 201 with the keyless DTO |
+| PUT | `/api/v1/integrations/{id}` | admin | replace one; 404 for an unknown id |
+| DELETE | `/api/v1/integrations/{id}` | admin | remove one; 204, 404 for an unknown id |
+| POST | `/api/v1/integrations/{id}/test` | admin | one-shot refresh call; 200 even when the remote refuses |
+
+Details:
+
+- `kind` is one of `jellyfin | emby | plex | sonarr | radarr` (ARCHITECTURE.md).
+- A response **never** contains `api_key`: the DTO carries `api_key_set: true|false` instead, so the
+  admin's key is written once and never echoed back. A `PUT` with an empty `api_key` keeps the stored key
+  (the form shows `(unchanged)` in its field); a non-empty key replaces it.
+- Create/update validate: unknown kind, a `base_url` that does not parse or is not http/https, and an
+  empty `base_url` or `api_key` are `400 {"code":"invalid_request"}`. Trailing slashes are trimmed from
+  `base_url` before it is stored.
+- `POST /{id}/test` performs that one integration's call once and answers `{"ok": bool, "status": int,
+  "error": "..."}` (error omitted when the remote answered 2xx). It is 200 even when the remote fails,
+  and it skips the refresher's coalescing on purpose: an explicit diagnostic.
+- The refresher (task 23) calls each enabled integration with `refresh_on_done` after a job ends `done`
+  with real savings: one in-flight call per integration id, a 30 second floor between calls for the same
+  id, a 5 second per-request timeout, warn-only failures. It never fails a job.

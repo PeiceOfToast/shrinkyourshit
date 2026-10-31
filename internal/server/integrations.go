@@ -217,6 +217,20 @@ func NewRefresher(st store.Store, log *slog.Logger) *Refresher {
 	}
 }
 
+// List returns every configured integration (the admin's list page),
+// oldest first.
+func (r *Refresher) List(ctx context.Context) ([]Integration, error) {
+	rows, err := r.st.ListIntegrations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Integration, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, IntegrationFromRow(row))
+	}
+	return out, nil
+}
+
 // Notify reads the enabled integrations with refresh_on_done and calls
 // each one that is due. It returns as soon as the rows are listed: every
 // call runs in its own goroutine, so a slow remote can never slow a

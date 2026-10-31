@@ -146,6 +146,15 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("POST /api/v1/update/check", a.requireAdmin(a.updateCheck))
 		mux.HandleFunc("POST /api/v1/update/apply", a.requireAdmin(a.updateApply))
 
+		// External integrations (task 23): the media servers and download
+		// clients the refresher notifies after a job ends. All admin only;
+		// no response body ever carries an api key.
+		mux.HandleFunc("GET /api/v1/integrations", a.requireAdmin(a.listIntegrations))
+		mux.HandleFunc("POST /api/v1/integrations", a.requireAdmin(a.createIntegration))
+		mux.HandleFunc("PUT /api/v1/integrations/{id}", a.requireAdmin(a.updateIntegration))
+		mux.HandleFunc("DELETE /api/v1/integrations/{id}", a.requireAdmin(a.deleteIntegration))
+		mux.HandleFunc("POST /api/v1/integrations/{id}/test", a.requireAdmin(a.testIntegration))
+
 		// Node administration (task 08) plus lifecycle controls (task 11).
 		// The lifecycle endpoints move desired_state only: start sets
 		// running, stop chooses stopped or draining, pause-all/resume-all
