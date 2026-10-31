@@ -2,7 +2,9 @@
 BINARY := shrinkyourshit
 BIN_DIR := bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo v0.0.0)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo none)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
 IMAGE ?= ghcr.io/peiceoftoast/shrinkyourshit:dev
 EMBED_DIST := internal/webui/dist
 
@@ -90,7 +92,11 @@ installer-check:
 	shellcheck scripts/installer.sh scripts/test-installer.sh
 
 docker:
-	docker build -f docker/Dockerfile --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+	docker build -f docker/Dockerfile \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t $(IMAGE) .
 
 # cross produces static binaries for every target in STACK.md (no cgo).
 # The embedded UI is the placeholder unless `make web` ran first; the release

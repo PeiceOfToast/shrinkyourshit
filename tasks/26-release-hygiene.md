@@ -49,10 +49,10 @@ Investigate and write `docs/container-architectures.md`, short and factual:
 Tagging a release or pushing a tag (the owner does that, not a build agent), publishing anything to a registry, arm64 image implementation, installer polish, NAS templates.
 
 ## Acceptance
-- [ ] `docker/Dockerfile` takes `VERSION`, `COMMIT` and `BUILD_DATE` and the image's `GET /api/v1/version` reports all three. Proven by building locally and printing the JSON in the PR body.
-- [ ] `release.yml` passes the three args and fails the docker job when the version endpoint reports `commit: none` or a commit that is not `github.sha`.
-- [ ] `CHANGELOG.md` exists with 0.1.0, 0.1.1 and an unreleased section that matches the actual git history.
-- [ ] `docs/releasing.md` documents the nine steps and the ffmpeg pin maintenance, with real commands and no placeholders.
-- [ ] `docs/container-architectures.md` states the arm64 facts with the URL that was checked, and recommends one option without implementing it.
-- [ ] No tag was created and nothing was published by this task.
-- [ ] `make test` and `make lint` are green.
+- [x] `docker/Dockerfile` takes `VERSION`, `COMMIT` and `BUILD_DATE` and the image's `GET /api/v1/version` reports all three. Proven by building locally and printing the JSON in the PR body.
+- [x] `release.yml` passes the three args and fails the docker job when the version endpoint reports `commit: none` or a commit that is not `github.sha`.
+- [x] `CHANGELOG.md` exists with 0.1.0, 0.1.1 and an unreleased section that matches the actual git history.
+- [x] `docs/releasing.md` documents the nine steps and the ffmpeg pin maintenance, with real commands and no placeholders.
+- [x] `docs/container-architectures.md` states the arm64 facts with the URL that was checked, and recommends one option without implementing it.
+- [x] No tag was created and nothing was published by this task.
+- [x] `make test` and `make lint` are green.
