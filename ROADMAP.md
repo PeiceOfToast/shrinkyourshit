@@ -82,6 +82,19 @@ Chosen from the unscheduled backlog below, in the owner's order: make the librar
 
 Deliberately not in this wave: AMD and Apple encoders (every host in the owner's lab has an Intel iGPU and QSV already works), plugin repos, the script escape hatch, non-media files.
 
+## v1.7: Reach and extensibility (scheduled)
+
+Order chosen for a public tool that replaces Tdarr: run where people actually run it, install in minutes, use their hardware, then let them extend it.
+
+| Task | File | What it does | Depends on |
+|------|------|--------------|------------|
+| 28 | `tasks/28-multiarch-image.md` | Multi-arch image (amd64 and arm64) with the arm64 deb pinned, proven by an emulated boot in CI | 26 |
+| 29 | `tasks/29-nas-templates-and-installer.md` | Unraid, Synology, TrueNAS and generic templates validated by a test, plus installer uninstall and purge | 26 |
+| 30 | `tasks/30-vaapi-and-videotoolbox.md` | A real VAAPI backend for AMD and other GPUs, and VideoToolbox on macOS | 4 |
+| 31 | `tasks/31-plugins-v1.md` | Plugin manifest, install from a git URL or directory, preflight/postprocess/notify hooks, timeout, output in the job log | 27 |
+
+Still unscheduled after this wave: a plugin as a flow step, the script escape hatch with a sandboxed runtime, non-media file types, Intel Deep Link, AMF (documented non-goal).
+
 ## After v1.2 (order flexible)
 
 1. Remux-only, audio-only conversion, subtitle extract, health check, rename/move as first-class actions with UI.
