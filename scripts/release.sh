@@ -7,7 +7,10 @@
 #
 # Subcommands:
 #   build <version> [dist-dir]  cross compile all five targets, embedding
-#                               version, commit and build date via ldflags
+#                               version, commit and build date via ldflags.
+#                               COMMIT and BUILD_DATE env vars override the
+#                               git/clock defaults so the image gets the
+#                               exact same identity (task 26).
 #   package [dist-dir]          archive each binary, then write checksums.txt
 #   checksums [dist-dir]        write checksums.txt over the archives present
 #   verify [dist-dir]           re-hash every archive against checksums.txt
@@ -54,8 +57,10 @@ cmd_build() {
 	[ $# -ge 1 ] || usage
 	version="$1"
 	dist="${2:-dist}"
-	commit="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-	build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	# COMMIT and BUILD_DATE can be injected by the workflow so the binaries
+	# and the container image carry the exact same values (task 26).
+	commit="${COMMIT:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
+	build_date="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 	mkdir -p "$dist"
 	for target in $TARGETS; do
 		os="${target%/*}"

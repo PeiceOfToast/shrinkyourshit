@@ -17,7 +17,26 @@ permissions:
   attestations: write
 
 jobs:
+  # Task 26: one job owns the build identity. The binaries and the image
+  # get the same version, commit and UTC build date from its outputs.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+      build_date: ${{ steps.identity.outputs.build_date }}
+    steps:
+      - name: Compute version, commit and UTC build date
+        id: identity
+        run: |
+          {
+            echo "version=${GITHUB_REF_NAME}"
+            echo "commit=${GITHUB_SHA}"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
   binaries:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +55,10 @@ jobs:
           rm -rf internal/webui/dist
           cp -r web/dist internal/webui/dist
       - name: Cross-compile all five targets (version, commit and build date embedded)
-        run: ./scripts/release.sh build "${GITHUB_REF_NAME}" dist
+        env:
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+          BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+        run: ./scripts/release.sh build "${{ needs.prepare.outputs.version }}" dist
       - name: Package archives (tar.gz unix, zip windows)
         run: ./scripts/release.sh package dist
       - name: Attest build provenance
@@ -86,7 +108,7 @@ jobs:
   # Docker publishes only after the binaries and their checksums are
   # proven, so an image never goes out from a broken release.
   docker:
-    needs: [binaries, checksums]
+    needs: [prepare, binaries, checksums]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,21 +129,80 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest
-      - name: Build and push
+      - name: Build image (loaded locally, not pushed)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
-          push: ${{ github.event_name == 'push' }}
+          push: false
+          load: true
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ needs.prepare.outputs.commit }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=AGPL-3.0-only
-            org.opencontainers.image.version=${{ github.ref_name }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_date }}
             org.opencontainers.image.description=Self-hosted media compression for home media servers
+
+      # Task 26: the running image must report the release identity. A
+      # `commit: none` here means the Dockerfile stopped forwarding the
+      # build args; fail now, before anything reaches the registry.
+      - name: Smoke test the version endpoint
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
+          EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          set -eu
+          image="$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n1)"
+          container="$(docker run -d -p 18765:8765 \
+            -e SHRINK_DISCOVERY_MDNS=false \
+            -e SHRINK_DISCOVERY_BROADCAST=false \
+            "$image")"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          json=""
+          for _ in $(seq 1 30); do
+            if json="$(curl -fsS http://127.0.0.1:18765/api/v1/version 2>/dev/null)"; then
+              break
+            fi
+            sleep 1
+          done
+          printf '%s\n' "$json"
+          if [ -z "$json" ]; then
+            echo "::error::/api/v1/version did not answer within 30 seconds" >&2
+            exit 1
+          fi
+          read_field() {
+            printf '%s' "$json" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$1\"])"
+          }
+          version="$(read_field version)"
+          commit="$(read_field commit)"
+          build_date="$(read_field date)"
+          if [ "$commit" != "$EXPECTED_COMMIT" ]; then
+            echo "::error::image commit is '$commit', expected '$EXPECTED_COMMIT'" >&2
+            exit 1
+          fi
+          if [ -z "$build_date" ] || [ "$build_date" = "unknown" ]; then
+            echo "::error::image build date is '$build_date', expected a UTC timestamp" >&2
+            exit 1
+          fi
+          if [ "$version" != "$EXPECTED_VERSION" ]; then
+            echo "::error::image version is '$version', expected '$EXPECTED_VERSION'" >&2
+            exit 1
+          fi
+
+      - name: Push image
+        if: github.event_name == 'push'
+        run: |
+          set -eu
+          printf '%s\n' "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker push "$tag"
+          done
 
 # Package visibility note (task 16): the first push creates the ghcr
 # package private even on a public repository. One manual step, once:

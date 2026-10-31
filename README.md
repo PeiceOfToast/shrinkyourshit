@@ -66,6 +66,15 @@ docker compose up -d
 
 The web UI is at http://localhost:8765. GPU passthrough (NVIDIA NVENC, Intel QSV/VAAPI) is in the commented blocks of the compose example. `PUID`/`PGID` are supported by the image entrypoint.
 
+## Releases
+
+Every `vX.Y.Z` tag publishes:
+
+- five binary archives — Linux amd64/arm64, macOS amd64/arm64, Windows amd64 — plus `checksums.txt` and build provenance, on the [GitHub releases page](https://github.com/PeiceOfToast/shrinkyourshit/releases);
+- `ghcr.io/peiceoftoast/shrinkyourshit:X.Y.Z` and `:latest`, with the version, commit and build date baked in so the app's About card and `GET /api/v1/version` agree with the binaries.
+
+The container image is **amd64 only** today ([why, and the arm64 option](docs/container-architectures.md)); the `linux/arm64` binary archive is available. User-visible changes are listed in [CHANGELOG.md](CHANGELOG.md), and the release procedure is in [docs/releasing.md](docs/releasing.md).
+
 ## Updating
 
 Three install shapes, three update paths. `shrinkyourshit version` always tells you which one you are on (`runtime: binary` or `runtime: container`). Nothing auto-applies an update — checking is on by default, applying is always a human click or command.

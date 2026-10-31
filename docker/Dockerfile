@@ -24,14 +24,21 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./internal/webui/dist
+# The three build identity args match the -X names in cmd/shrinkyourshit.
+# `make docker` and the release workflow pass the same values the release
+# binaries get, so /api/v1/version agrees with `shrinkyourshit version`.
 ARG VERSION=v0.0.0
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X main.version=${VERSION}" \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
     -o /out/shrinkyourshit ./cmd/shrinkyourshit
 
 # --- runtime ---
-# amd64 only: the pinned jellyfin-ffmpeg deb below has no arm64 build on
-# this channel; another image source would be needed for arm64.
+# amd64 only: the image has never been built or tested for arm64. The
+# pinned jellyfin-ffmpeg deb does have an arm64 build on the same channel
+# (https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/), so a
+# multi-arch image is possible; see docs/container-architectures.md.
 FROM debian:bookworm-slim AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 # jellyfin-ffmpeg comes from the official deb, not the jellyfin apt repo

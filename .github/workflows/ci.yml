@@ -62,8 +62,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build identity (task 26)
+        run: echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Build image
-        run: docker build -f docker/Dockerfile -t shrinkyourshit:ci .
+        run: |
+          docker build -f docker/Dockerfile \
+            --build-arg VERSION="v0.0.0-ci" \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$BUILD_DATE" \
+            -t shrinkyourshit:ci .
+      # Task 26: every PR proves the image carries the commit and the
+      # build date, not just the version. This is the regression gate for
+      # `commit: none` inside Docker (docker is unavailable on dev VMs).
+      - name: Image reports version, commit and build date
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          container="$(docker run -d -p 18765:8765 \
+            -e SHRINK_DISCOVERY_MDNS=false \
+            -e SHRINK_DISCOVERY_BROADCAST=false \
+            shrinkyourshit:ci)"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+          json=""
+          for _ in $(seq 1 30); do
+            if json="$(curl -fsS http://127.0.0.1:18765/api/v1/version 2>/dev/null)"; then
+              break
+            fi
+            sleep 1
+          done
+          printf '%s\n' "$json"
+          if [ -z "$json" ]; then
+            echo "::error::/api/v1/version did not answer within 30 seconds" >&2
+            exit 1
+          fi
+          read_field() {
+            printf '%s' "$json" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"$1\"])"
+          }
+          [ "$(read_field commit)" = "$EXPECTED_COMMIT" ] || {
+            echo "::error::image commit is '$(read_field commit)', expected '$EXPECTED_COMMIT'" >&2
+            exit 1
+          }
+          build_date="$(read_field date)"
+          if [ -z "$build_date" ] || [ "$build_date" = "unknown" ]; then
+            echo "::error::image build date is '$build_date', expected a UTC timestamp" >&2
+            exit 1
+          fi
+          [ "$(read_field version)" = "v0.0.0-ci" ] || {
+            echo "::error::image version is '$(read_field version)', expected 'v0.0.0-ci'" >&2
+            exit 1
+          }
       - name: ffmpeg has the v1 encoder stack (NVENC + QSV/VAAPI)
         run: |
           docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -version \
