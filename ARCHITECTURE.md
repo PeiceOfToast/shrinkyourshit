@@ -69,7 +69,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **JobLogLine (job_log, task 27):** one structured line of a job's complete log, stored in SQLite (not files on disk) so it survives a worker crash, a node reboot and a container replace. `id, job_id (FK → jobs, ON DELETE CASCADE), seq, at, level, source, message, repeated`.
 - `level`: `info | warn | error`
-- `source`: `ffmpeg` (stderr lines) or `sys` (the worker's own narrative: the probe summary, the resolved target and policy, the encoder chosen, fallback reasons as warn, the result policy outcome, bytes before and after, the health check verdict)
+- `source`: `ffmpeg` (stderr lines), `sys` (the worker's own narrative: the probe summary, the resolved target and policy, the encoder chosen, fallback reasons as warn, the result policy outcome, bytes before and after, the health check verdict) or `plugin` (the server-side plugin phases, task 31: the plugin's captured stdout as info, stderr as warn, plus one verdict line per run, each message led by the plugin's name)
 - `seq` is the worker's chunk order; `repeated` collapses consecutive identical messages (an ffmpeg warning loop writes one row, not thousands).
 - Caps: 2,000 rows per job, enforced on append, with one final `error` line `log truncated at 2000 lines`; a single message is capped at 4 KB and marked `[truncated]`. The worker uploads batches (flush at 200 lines, at 5 s, and once more on completion and failure); a failed upload is dropped and never fails the job.
 - Retention (hourly, and at server start): rows older than 14 days are deleted, then the oldest rows beyond 500,000 total; rows of a queued or running job are never deleted; `PRAGMA incremental_vacuum` reclaims the space afterwards (the database runs in incremental auto vacuum mode).
@@ -111,6 +111,13 @@ Status enums are fixed strings; do not add values without updating this file.
 - `kind`: `jellyfin | emby | plex | sonarr | radarr`
 - `api_key` is stored verbatim for the outbound call and never leaves the server through the API: responses carry `api_key_set: true|false` instead.
 - `enabled` gates every call; `refresh_on_done` subscribes the integration to job completions (the manual test endpoint works either way).
+
+**Plugin:** `id, name (unique), version, type, enabled (default off), source, settings (JSON, the collected values), installed_at` (task 31, migration 0013)
+- `type`: `preflight | postprocess | notify` — the moment the plugin runs around a job's life.
+- `name` matches `^[a-z0-9][a-z0-9-]{1,40}$` and is the identity of the plugin directory under `<data dir>/plugins/<name>/` (on the `/config` volume, so installs survive a container replace). The manifest (`plugin.yaml`) on disk is the truth about the version and the settings list; the row is the index and the switch.
+- `source` is where the plugin was installed from (the git URL or the path); `settings` holds the values collected in the UI, each becoming the environment variable its manifest entry names when the plugin runs.
+- `enabled=false` until the admin turns the plugin on: nothing runs otherwise. Removal deletes the row and the directory and refuses while enabled.
+- `preflight` runs synchronously when a job is claimed; a non-zero exit fails the job with the plugin's name and exit code in the error, while a timeout or an unrunnable plugin is skipped with a warn in the job log. `postprocess` runs for a `done` job, `notify` for `done` and `failed`; both are detached, bounded by the manifest's timeout (1–300 s, default 30), and can never fail a job that finished fine.
 
 ## Target schema
 
@@ -373,11 +380,33 @@ Rules that apply to all three:
 - Unpaired or revoked nodes cannot claim jobs or read files.
 - TLS: optional manual cert and key paths; reverse proxy is the expected setup.
 
-## Plugins (post-MVP)
+## Plugins (v1, task 31)
 
-- Bundled set shipped with the binary.
-- User-added git repos, cloned and cached locally. Works offline after first fetch.
-- Declarative YAML/JSON with FFmpeg templates. Script escape hatch is a later, sandboxed runtime.
+Hook plugins run around a job's life, not inside it: `preflight` (claim
+time, can veto a job), `postprocess` (a done job whose output was applied)
+and `notify` (every done and failed job). One notifier path: the plugin
+phases fan out through the same router the webhooks and the integration
+refresher hang off, and preflight is the queue's own synchronous hook.
+
+- A plugin is a directory with a `plugin.yaml` manifest (`name`, `version`,
+  `type`, optional `description`/`author`, `command` (exec'd argv, no
+  shell), `timeout_seconds` (1–300, default 30), `env` names and `settings`
+  entries) plus the program it declares. Unknown manifest fields are an
+  error so a typo fails at install time.
+- Installed from a git URL (`git clone --depth 1`, the Docker image ships
+  `git`) or a directory path; validated, then copied under
+  `<data dir>/plugins/<name>/`. Installed plugins are disabled until the
+  admin enables them.
+- The process gets the job context as JSON on stdin (`job_id`, `library`,
+  `source_path`, `output_path`, `bytes_before`, `bytes_after`, `encoder`,
+  `status`, `phase`), an environment of exactly `SYS_PLUGIN_NAME`,
+  `SYS_PHASE`, `SYS_DATA_DIR` and the manifest's declared names, and its
+  stdout/stderr land in the job's structured log (`source: plugin`). The
+  whole process group is killed at the timeout.
+- No sandbox (yet): a plugin runs as the server user with the server's
+  access to the media folders. The bundled curated set, a plugin as a flow
+  step, a marketplace and a sandboxed script runtime stay post-MVP. The
+  plugin author's contract is docs/plugins.md.
 
 ## Integrations
 

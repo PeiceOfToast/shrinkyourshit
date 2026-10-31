@@ -596,3 +596,51 @@ Details:
   first, then oldest-first beyond 500,000 total rows, never touching a
   queued or running job's rows; `PRAGMA incremental_vacuum` runs after a
   prune that deleted rows (ARCHITECTURE.md, JobLogLine).
+
+### Task 31
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/plugins` | admin | every installed plugin, oldest first, merged with its manifest on disk |
+| POST | `/api/v1/plugins/install` | admin | install from a git URL (+ optional ref) or a directory path; 201 with the plugin **disabled** |
+| GET | `/api/v1/plugins/{id}` | admin | one installed plugin |
+| PUT | `/api/v1/plugins/{id}` | admin | the enabled switch and/or the collected settings values |
+| POST | `/api/v1/plugins/{id}/test` | admin | run once against a synthetic job; 200 even when the plugin fails |
+| DELETE | `/api/v1/plugins/{id}` | admin | remove a disabled plugin (row and directory); 409 while enabled |
+
+Details:
+
+- The plugin DTO is `{id, name, version, type, enabled, source, description?,
+  author?, timeout_seconds, env?, settings?, values?, manifest_error?,
+  installed_at}`. `type` is `preflight | postprocess | notify`
+  (ARCHITECTURE.md). The stored row is merged with the manifest on disk, so
+  `version`, `description` and the settings list always reflect the
+  directory; `manifest_error` is set when the manifest cannot be read (the
+  plugin stays listed, nothing runs, and the row is still removable).
+- `POST /plugins/install` takes exactly one source: `{"git_url": "...",
+  "ref": "..."}` or `{"path": "/abs/dir"}`. Git installs shallow-clone with
+  the host's `git` (`400 {"code":"invalid_request"}` when git is missing —
+  the Docker image ships it); path installs copy a directory the server can
+  already see. The manifest is validated before anything is recorded, and a
+  rejection names the field (`400`). A plugin with the same name already
+  installed is `409 {"code":"already_installed"}`. The new plugin is
+  disabled — enabling is the PUT's explicit `enabled: true`.
+- `PUT /plugins/{id}` accepts `{enabled?: bool, settings?: {key: value}}`.
+  Unknown setting keys (not declared in the manifest) are
+  `400 {"code":"invalid_request"}` naming the manifest's keys. A nil
+  `enabled` leaves the switch unchanged.
+- `POST /plugins/{id}/test` runs the plugin once against a synthetic job
+  (`sample-job`, the shape the webhook test uses) and answers 200 regardless
+  of the outcome: `{"ok", "skipped", "skip_reason?", "exit_code", "error?",
+  "output": [...]}`. It works on disabled plugins too — an explicit
+  diagnostic — and appends nothing to any job log.
+- `DELETE /plugins/{id}` refuses an enabled plugin with
+  `409 {"code":"plugin_enabled"}` (turn it off first); a disabled plugin
+  loses its row and its directory.
+- Runtime effect (not an endpoint): enabled plugins run at the moments their
+  manifest declares — preflight synchronously inside the worker claim (a
+  non-zero exit fails the job with the plugin's name and exit code in the
+  error; the claim answers 204 so the node polls again later), postprocess
+  and notify as detached runs off the same outbound hook the webhooks and
+  the refresher use, with every captured line in the job log under
+  `source: "plugin"`. The contract for plugin authors is docs/plugins.md.

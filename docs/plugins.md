@@ -60,7 +60,7 @@ settings:
 | `type` | yes | `preflight`, `postprocess` or `notify`. |
 | `description` | no | Shown under the name. |
 | `author` | no | Shown in the UI. |
-| `command` | yes | The program's argv elements. Each element must be free of shell metacharacters — `| & ; < > ( ) $ \` \ " ' * ? [ ] # ~` and newlines — since the command is `exec`'d directly, never through a shell. |
+| `command` | yes | The program's argv elements. Each element must be free of shell metacharacters — `| & ; < > ( ) $ \` \ " ' * ? [ ] # ~` and line breaks (newline or carriage return) — since the command is `exec`'d directly, never through a shell. |
 | `timeout_seconds` | no | 1–300. The default is 30 seconds. |
 | `env` | no | The names of extra environment variables to pass through (the app's other settings are not read). |
 | `settings` | no | The collected values the UI asks for. |
