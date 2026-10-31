@@ -20,6 +20,7 @@ import (
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/encoders"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
 // serverNodeRunning is what an empty desired_state means (a server built
@@ -237,6 +238,20 @@ func (c *Client) Fail(ctx context.Context, jobID, errMsg, logTail string) error 
 			Error   string `json:"error"`
 			LogTail string `json:"log_tail"`
 		}{Error: errMsg, LogTail: logTail}, nil)
+}
+
+// JobLogBatch is one POST .../log request body (task 27): a chunk of log
+// lines in order. Seq is the first line's chunk order, so an out-of-order
+// arrival can be sorted and a gap noticed.
+type JobLogBatch struct {
+	Seq   int64              `json:"seq"`
+	Lines []store.JobLogLine `json:"lines"`
+}
+
+// PostJobLog uploads one batch of job log lines (task 27). Best effort:
+// the caller logs failures and drops the batch.
+func (c *Client) PostJobLog(ctx context.Context, jobID string, batch JobLogBatch) error {
+	return c.do(ctx, http.MethodPost, "/api/v1/worker/jobs/"+jobID+"/log", batch, nil)
 }
 
 // fallbackStrings flattens encoder fallback reasons into the string form

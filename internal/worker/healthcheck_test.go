@@ -126,7 +126,7 @@ func TestRunHealthCheckDecodeFailure(t *testing.T) {
 	_, _ = tail.Write([]byte("[h264] Invalid data found when processing input\n"))
 
 	err := r.runHealthCheck(context.Background(), hcSpec(flow.HealthCheckFull, 2, 0.02),
-		"/scratch/output.mkv", srcWith(1, 1, 0, 10), srcWith(1, 1, 0, 10), tail)
+		"/scratch/output.mkv", srcWith(1, 1, 0, 10), srcWith(1, 1, 0, 10), tail, nil)
 	require.ErrorContains(t, err, "decode check failed")
 	require.ErrorContains(t, err, "exit status 183")
 	require.ErrorContains(t, err, "Invalid data")

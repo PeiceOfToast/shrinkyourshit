@@ -67,6 +67,10 @@ type fakeAPI struct {
 	challenges  map[string]*AccessChallenge
 	uploadState map[string]*uploadCapture
 	dropped     map[string]bool
+	// Task 27: log batches recorded per job in arrival order, and a
+	// switch that makes every log upload answer 500.
+	logs    map[string][]JobLogBatch
+	logFail bool
 	// rejectChecksum answers 422 on every final chunk (corrupt upload).
 	rejectChecksum bool
 	srv            *httptest.Server
@@ -94,6 +98,7 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 		sources:     map[string][]byte{},
 		uploads:     map[string][]byte{},
 		challenges:  map[string]*AccessChallenge{},
+		logs:        map[string][]JobLogBatch{},
 		uploadState: map[string]*uploadCapture{},
 		runningWaits: map[string]chan struct{}{},
 	}
@@ -182,6 +187,20 @@ func newFakeAPI(t *testing.T, key string) *fakeAPI {
 			status = store.JobStatusRunning
 		}
 		writeFakeJSON(w, http.StatusOK, map[string]string{"status": status})
+	}))
+	mux.HandleFunc("POST /api/v1/worker/jobs/{id}/log", guard(func(w http.ResponseWriter, r *http.Request) {
+		var in JobLogBatch
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		id := r.PathValue("id")
+		f.mu.Lock()
+		if f.logFail {
+			f.mu.Unlock()
+			writeFakeError(w, http.StatusInternalServerError, "internal", "log upload failed")
+			return
+		}
+		f.logs[id] = append(f.logs[id], in)
+		f.mu.Unlock()
+		writeFakeJSON(w, http.StatusOK, map[string]int{"appended": len(in.Lines)})
 	}))
 	mux.HandleFunc("POST /api/v1/worker/jobs/{id}/complete", guard(func(w http.ResponseWriter, r *http.Request) {
 		var in CompleteInput
