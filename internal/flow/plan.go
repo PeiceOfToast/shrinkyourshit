@@ -313,7 +313,7 @@ func allCodecNot(when []Condition) bool {
 // normalizeHealthCheck fills a health_check step's zero fields with the
 // defaults (task 24): mode sample, minutes 2, tolerance 0.02.
 func normalizeHealthCheck(p healthCheckParams) HealthCheckSpec {
-	hc := HealthCheckSpec{Mode: p.Mode, Minutes: p.Minutes, DurationTolerance: p.DurationTolerance}
+	hc := HealthCheckSpec(p)
 	if hc.Mode == "" {
 		hc.Mode = HealthCheckSample
 	}

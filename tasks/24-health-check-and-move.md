@@ -75,8 +75,8 @@ Plumbing: `JobSpec` in `internal/server/dto.go` gains `MoveTo string \`json:"mov
 Repairing a failed health check, per-step retry counts, moving *between* machines, any change to `DECISIONS.md`.
 
 ## Acceptance
-- [ ] `health_check` and `move` validate, appear in `GET /api/v1/flows/step-types`, and round trip through `PUT /api/v1/libraries/{id}/flow`. Proven by an API test.
-- [ ] A job whose output is shorter than the tolerance fails with a message naming the durations, and its source file is byte identical afterwards.
-- [ ] `move` places the file at the destination, refuses to overwrite, and never loses the original when the move fails. Proven by `resultpolicy_test.go`.
-- [ ] Both steps are editable in the step stack and the palette, and the flow canvas still renders read only below `md`.
-- [ ] `make test`, `make test-integration` and `make lint` are green.
+- [x] `health_check` and `move` validate, appear in `GET /api/v1/flows/step-types`, and round trip through `PUT /api/v1/libraries/{id}/flow`. Proven by an API test.
+- [x] A job whose output is shorter than the tolerance fails with a message naming the durations, and its source file is byte identical afterwards.
+- [x] `move` places the file at the destination, refuses to overwrite, and never loses the original when the move fails. Proven by `resultpolicy_test.go`.
+- [x] Both steps are editable in the step stack and the palette, and the flow canvas still renders read only below `md`.
+- [x] `make test`, `make test-integration` and `make lint` are green.
