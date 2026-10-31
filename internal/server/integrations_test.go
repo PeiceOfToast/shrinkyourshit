@@ -242,6 +242,14 @@ func testIntegration(t *testing.T, kind, baseURL string) *store.Integration {
 	}
 }
 
+// doneWithSavings is the event shape that satisfies the refresher's
+// filter (task 25): a done completion whose output was applied and is
+// smaller.
+func doneWithSavings() WebhookEvent {
+	file := FileDTO{Status: store.FileStatusSatisfied, BytesSaved: 100}
+	return WebhookEvent{Event: EventWebhookJobDone, File: &file}
+}
+
 // One in-flight call per id and a floor between calls for the same id:
 // a Notify inside the window is dropped, not queued (task 23). With a
 // shrunk gap the next Notify after the window goes through.
@@ -254,12 +262,12 @@ func TestRefresherCoalescing(t *testing.T) {
 	r.gap = 250 * time.Millisecond
 	ctx := context.Background()
 
-	r.Notify(ctx)
+	r.Notify(ctx, doneWithSavings())
 	waitForCount(t, remote, 1)
-	r.Notify(ctx) // inside the window: dropped
-	r.Notify(ctx) // still dropped
+	r.Notify(ctx, doneWithSavings()) // inside the window: dropped
+	r.Notify(ctx, doneWithSavings()) // still dropped
 	time.Sleep(300 * time.Millisecond)
-	r.Notify(ctx)
+	r.Notify(ctx, doneWithSavings())
 	waitForCount(t, remote, 2)
 	assert.Equal(t, 2, remote.requests())
 }
@@ -365,7 +373,7 @@ func TestRefresherSkipsQuietIntegrations(t *testing.T) {
 	require.NoError(t, h.st.CreateIntegration(ctx, noRefresh))
 
 	r := h.svc.Integrations()
-	r.Notify(ctx)
+	r.Notify(ctx, doneWithSavings())
 	time.Sleep(200 * time.Millisecond)
 	assert.Zero(t, remote.requests())
 
