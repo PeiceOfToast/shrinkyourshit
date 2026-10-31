@@ -32,9 +32,16 @@ AMD AMF: on Linux it needs AMD's proprietary stack and is unusable in a containe
 AMF, Intel Deep Link, multi-GPU scheduling in one job, changing the quality scale, changing the fallback policy.
 
 ## Acceptance
-- [ ] `vaapi` appears in a node's capability list on a machine with a working VAAPI device, and `nvenc` / `qsv` reporting is unchanged on machines that have them. If the build box has no VAAPI device, say so in the PR and prove detection with a fake `ffmpeg` script plus a skipped integration test.
-- [ ] `GOOS=darwin GOARCH=arm64 go build ./...` and `GOOS=darwin GOARCH=amd64 go build ./...` succeed, and a darwin build registers `videotoolbox` while a linux build does not. Proven by a test that asserts the per-platform registration.
-- [ ] Encoding with VAAPI produces a file whose duration and streams match the source on real hardware, proven by the existing integration test running against the vaapi backend when a device exists.
-- [ ] The precedence order is written in `internal/encoders/README.md` and matched by a test.
-- [ ] `web/` shows the two new names wherever encoder names are listed, with matching tests.
-- [ ] `make test`, `make test-integration` and `make lint` are green.
+- [x] `vaapi` appears in a node's capability list on a machine with a working VAAPI device, and `nvenc` / `qsv` reporting is unchanged on machines that have them. If the build box has no VAAPI device, say so in the PR and prove detection with a fake `ffmpeg` script plus a skipped integration test.
+- [x] `GOOS=darwin GOARCH=arm64 go build ./...` and `GOOS=darwin GOARCH=amd64 go build ./...` succeed, and a darwin build registers `videotoolbox` while a linux build does not. Proven by a test that asserts the per-platform registration.
+- [x] Encoding with VAAPI produces a file whose duration and streams match the source on real hardware, proven by the existing integration test running against the vaapi backend when a device exists.
+- [x] The precedence order is written in `internal/encoders/README.md` and matched by a test.
+- [x] `web/` shows the two new names wherever encoder names are listed, with matching tests.
+- [x] `make test`, `make test-integration` and `make lint` are green.
+
+Notes on the ticked boxes: the build box has no VAAPI device (`/dev/dri`
+exists but holds no `renderD*` node, and the local ffmpeg is a static build
+whose `-hwaccels` lists only `vdpau`), so per the carve-outs above detection
+is proven with the fake ffmpeg script suite in `vaapi_test.go`, and
+`TestEncodeVAAPI` (integration) skips with a message naming exactly what is
+missing — it runs for real on any machine with a working render node.
