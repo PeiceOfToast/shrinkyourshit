@@ -4,7 +4,11 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Newest first.
 
-## [0.1.2] - unreleased
+## [0.1.3] - unreleased
+
+Nothing yet.
+
+## [0.1.2] - 2026-10-31
 
 ### Added
 
@@ -98,6 +102,7 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 - The container image was `linux/amd64` only.
 - Mobile layout and explicit node start/stop arrived in 0.1.1.
 
-[0.1.2]: https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.1...HEAD
+[0.1.3]: https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/PeiceOfToast/shrinkyourshit/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/PeiceOfToast/shrinkyourshit/releases/tag/v0.1.0
