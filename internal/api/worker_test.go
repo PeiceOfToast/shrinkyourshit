@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -160,6 +161,67 @@ func TestWorkerSpecRejectsUnclaimedJob(t *testing.T) {
 
 	resp := h.doNode(http.MethodGet, "/api/v1/worker/jobs/"+job.ID, nil, key)
 	require.Equal(t, http.StatusConflict, resp.Code)
+}
+
+// TestWorkerSpecCarriesMove: the flow's move step reaches the worker in its
+// own path view, with the folder layout to rebuild computed server-side
+// (task 24).
+func TestWorkerSpecCarriesMove(t *testing.T) {
+	h := newAPIHarness(t)
+	key, _ := h.addNode(t, "w1", store.NodeStatusApproved, true)
+
+	// A library with a move flow; the destination must sit outside the
+	// library root (the save-time check).
+	targetRaw, err := json.Marshal(flow.Default())
+	require.NoError(t, err)
+	lib, err := h.svc.Libraries().Create(context.Background(), server.LibraryParams{
+		Name: "Movies", Path: h.root, TargetJSON: targetRaw,
+	})
+	require.NoError(t, err)
+	dest := filepath.Join(filepath.Dir(h.root), "shrunk")
+	g := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "remux", Type: flow.StepRemuxContainer, Params: []byte(`{"container":"mkv"}`)},
+			{ID: "mv", Type: flow.StepMove, Params: []byte(`{"destination":"` + dest + `","keep_tree":true}`)},
+		},
+		Edges: []flow.Edge{{From: "probe", To: "remux"}, {From: "remux", To: "mv"}},
+	}
+	_, err = h.svc.Libraries().UpdateFlow(context.Background(), lib.ID, "steps", g)
+	require.NoError(t, err)
+
+	// The file sits in a subfolder, so keep_tree has a layout to rebuild.
+	f := &store.File{
+		LibraryID: lib.ID, Path: h.root + "/season-1/movie.mp4", Size: 500,
+		Status: store.FileStatusNew, ProbeJSON: `{"container":"mp4"}`,
+		Fingerprint: "500:1700000000:abcdef",
+	}
+	require.NoError(t, h.st.UpsertFile(context.Background(), f))
+	job, queued, err := h.svc.Queue().QueueJob(context.Background(), lib, f, []string{"video is h264"})
+	require.NoError(t, err)
+	require.True(t, queued)
+
+	resp := h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, key)
+	require.Equal(t, http.StatusOK, resp.Code)
+	resp = h.doNode(http.MethodGet, "/api/v1/worker/jobs/"+job.ID, nil, key)
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	var spec server.JobSpec
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &spec))
+	require.Equal(t, dest, spec.MoveTo, "no mappings: the destination is unchanged")
+	require.True(t, spec.MoveKeepTree)
+	require.Equal(t, "season-1", spec.MoveRelDir)
+
+	// A library without a move step leaves the fields empty.
+	_, _, plain := h.queueOne(t)
+	resp = h.doNode(http.MethodPost, "/api/v1/worker/claim", nil, key)
+	require.Equal(t, http.StatusOK, resp.Code)
+	resp = h.doNode(http.MethodGet, "/api/v1/worker/jobs/"+plain.ID, nil, key)
+	var plainSpec server.JobSpec
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &plainSpec))
+	require.Empty(t, plainSpec.MoveTo)
+	require.False(t, plainSpec.MoveKeepTree)
+	require.Empty(t, plainSpec.MoveRelDir)
 }
 
 func TestWorkerProgressCompleteFail(t *testing.T) {

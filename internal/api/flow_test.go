@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
@@ -245,6 +246,95 @@ func TestFlowStepTypesAndPreview(t *testing.T) {
 	// Neither is a 400.
 	rec = h.do(http.MethodPost, "/api/v1/flows/preview", map[string]any{})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// TestFlowHealthCheckAndMoveRoundTrip is the task 24 acceptance: both new
+// steps validate, appear in the step-types palette, and round trip through
+// PUT /libraries/{id}/flow. A move destination inside the library is
+// refused with a field error naming the row.
+func TestFlowHealthCheckAndMoveRoundTrip(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+
+	// The palette carries both steps with their editor schemas.
+	rec := h.do(http.MethodGet, "/api/v1/flows/step-types", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var types server.ListResponse[flow.StepTypeInfo]
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &types))
+	labels := map[string]flow.StepTypeInfo{}
+	for _, st := range types.Items {
+		labels[st.Type] = st
+	}
+	hc, ok := labels[flow.StepHealthCheck]
+	require.True(t, ok, "health_check must be in the palette")
+	require.Equal(t, "Verify the result", hc.Label)
+	_, ok = labels[flow.StepMove]
+	require.True(t, ok, "move must be in the palette")
+
+	// A graph with both steps round trips byte identical.
+	dest := filepath.Join(filepath.Dir(h.root), "shrunk")
+	graph := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "remux_container", Type: flow.StepRemuxContainer, Params: rawParams(`{"container":"mkv"}`)},
+			{ID: "hc", Type: flow.StepHealthCheck, Params: rawParams(`{"mode":"sample","minutes":3,"duration_tolerance":0.05}`)},
+			{ID: "mv", Type: flow.StepMove, Params: rawParams(`{"destination":"` + dest + `","keep_tree":true}`)},
+		},
+		Edges: []flow.Edge{
+			{From: "probe", To: "remux_container"},
+			{From: "remux_container", To: "hc"},
+			{From: "hc", To: "mv"},
+		},
+	}
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+		"source": "steps", "graph": graph,
+	})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/flow", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got flowResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	sentJSON, err := json.Marshal(graph)
+	require.NoError(t, err)
+	gotJSON, err := json.Marshal(got.Graph)
+	require.NoError(t, err)
+	require.JSONEq(t, string(sentJSON), string(gotJSON))
+
+	// The preview renders the plain lines for both steps.
+	rec = h.do(http.MethodPost, "/api/v1/flows/preview", map[string]any{"graph": graph})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var preview previewResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &preview))
+	require.Len(t, preview.Steps, 4)
+	require.Contains(t, preview.Steps[2].Plain, "Play 3 minute(s)")
+	require.Contains(t, preview.Steps[3].Plain, dest)
+
+	// A destination inside the library never saves.
+	inside := graph
+	inside.Nodes[3].Params = rawParams(`{"destination":"` + filepath.Join(h.root, "shrunk") + `"}`)
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+		"source": "steps", "graph": inside,
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "invalid_flow")
+	require.Contains(t, rec.Body.String(), "nodes[3].params.destination")
+
+	// Nor does a relative destination.
+	relative := graph
+	relative.Nodes[3].Params = rawParams(`{"destination":"shrunk"}`)
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+		"source": "steps", "graph": relative,
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "absolute path")
+
+	// The valid flow survived the failed PUTs.
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/flow", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Graph.Nodes, 4)
 }
 
 // TestLegacyLibraryFlow: a library row written before the flow columns
