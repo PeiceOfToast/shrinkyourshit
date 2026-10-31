@@ -108,7 +108,9 @@ jobs:
   # Docker publishes only after the binaries and their checksums are
   # proven, so an image never goes out from a broken release. Task 28:
   # the image is built for linux/amd64 and linux/arm64; the arm64 image
-  # is booted under emulation before anything is pushed.
+  # is booted under emulation before anything is pushed, and the
+  # multi-platform manifest is assembled and inspected on a local
+  # registry (dry run included) before it is published to GHCR.
   docker:
     needs: [prepare, binaries, checksums]
     runs-on: ubuntu-latest
@@ -137,8 +139,33 @@ jobs:
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
+      # The builder gets the registry config for the local proof registry,
+      # and host networking so it can reach it; the config also drives
+      # buildx imagetools inspect (it reads the builder's buildkitd.toml).
+      - name: Buildx config (plain HTTP for the local proof registry)
+        run: |
+          cat > /tmp/buildkitd.toml <<'EOF'
+          [registry."127.0.0.1:5000"]
+            http = true
+          [registry."localhost:5000"]
+            http = true
+          EOF
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          config: /tmp/buildkitd.toml
+          driver-opts: |
+            network=host
+      - name: Start the local proof registry (nothing published externally)
+        run: |
+          set -eu
+          docker run -d --name proof-registry -p 127.0.0.1:5000:5000 registry:2
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5000/v2/ >/dev/null; then ok=1; break; fi
+            sleep 1
+          done
+          test "${ok:-0}" = 1 || { echo "::error::local proof registry did not start" >&2; exit 1; }
       - name: Build amd64 image (loaded for the version smoke check)
         uses: docker/build-push-action@v6
         with:
@@ -245,19 +272,54 @@ jobs:
             -v /tmp/armcfg:/config \
             -p 127.0.0.1:8765:8765 \
             "$image"
+          trap 'docker rm -f sys-arm64 >/dev/null 2>&1 || true' EXIT
           ok=0
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8765/api/v1/health; then ok=1; break; fi
+            if json="$(curl -fsS http://127.0.0.1:8765/api/v1/health 2>/dev/null)"; then ok=1; break; fi
             sleep 2
           done
           docker logs sys-arm64 | tail -50
           test "${ok:-0}" = "1" || { docker rm -f sys-arm64; exit 1; }
-          docker exec sys-arm64 /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -version | head -2
+          printf '%s\n' "$json"
+          banner="$(docker exec sys-arm64 /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -version | head -2)"
+          printf '%s\n' "$banner"
+          test -n "$banner" || { echo "::error::bundled ffmpeg did not run inside the arm64 image" >&2; exit 1; }
           docker rm -f sys-arm64
 
       # Task 28: one build assembles the manifest list for both platforms
-      # and pushes it (tag push only; workflow_dispatch stays a dry run).
-      - name: Push multi-platform image
+      # and pushes it to the local proof registry, so the dry run proves
+      # the manifest with imagetools inspect before anything is published.
+      - name: Push multi-platform image to the local proof registry
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ needs.prepare.outputs.commit }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+          tags: 127.0.0.1:5000/shrinkyourshit:proof
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_date }}
+            org.opencontainers.image.description=Self-hosted media compression for home media servers
+
+      - name: Verify the manifest list has both architectures
+        run: |
+          set -eu
+          inspect="$(docker buildx imagetools inspect 127.0.0.1:5000/shrinkyourshit:proof)"
+          printf '%s\n' "$inspect"
+          grep -q 'linux/amd64' <<< "$inspect" || {
+            echo "::error::manifest does not list linux/amd64" >&2; exit 1; }
+          grep -q 'linux/arm64' <<< "$inspect" || {
+            echo "::error::manifest does not list linux/arm64" >&2; exit 1; }
+
+      - name: Push multi-platform image to GHCR
         if: github.event_name == 'push'
         uses: docker/build-push-action@v6
         with:

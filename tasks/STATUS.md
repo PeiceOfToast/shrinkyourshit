@@ -31,7 +31,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 25 | 25-webhooks-and-openapi.md | done | PR https://github.com/PeiceOfToast/shrinkyourshit/pull/26 |
 | 26 | 26-release-hygiene.md | done | v1.6, PR #27 |
 | 27 | 27-full-job-log.md | done | PR #28 https://github.com/PeiceOfToast/shrinkyourshit/pull/28, CI green, checklist ticked |
-| 28 | 28-multiarch-image.md | todo | v1.7 |
+| 28 | 28-multiarch-image.md | in_progress | v1.7 |
 | 29 | 29-nas-templates-and-installer.md | todo | v1.7 |
 | 30 | 30-vaapi-and-videotoolbox.md | todo | v1.7 |
 | 31 | 31-plugins-v1.md | todo | v1.7 |

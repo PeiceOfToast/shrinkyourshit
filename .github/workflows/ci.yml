@@ -122,6 +122,28 @@ jobs:
             | grep -w 'h264_qsv'
           docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -hide_banner -encoders \
             | grep -w 'h264_nvenc'
+      # Task 28: the Dockerfile must fail the build naming the arch for
+      # any architecture without a pinned jellyfin-ffmpeg deb, never
+      # default silently to amd64. Regression gate for the TARGETARCH
+      # selection rule.
+      - name: Unsupported TARGETARCH fails the build
+        run: |
+          set -eu
+          if docker build -f docker/Dockerfile \
+            --build-arg TARGETARCH=riscv64 \
+            --build-arg VERSION="v0.0.0-ci" \
+            --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$BUILD_DATE" \
+            -t shrinkyourshit:bad-arch . 2>/tmp/bad-arch.log; then
+            echo "::error::TARGETARCH=riscv64 build succeeded, but it must fail" >&2
+            exit 1
+          fi
+          grep -q "is not pinned for TARGETARCH 'riscv64'; supported: amd64, arm64" /tmp/bad-arch.log || {
+            echo "::error::the failure must name the arch; log tail:" >&2
+            tail -20 /tmp/bad-arch.log >&2
+            exit 1
+          }
+          tail -3 /tmp/bad-arch.log
       - name: Image serves the UI and the health endpoint
         run: |
           container=$(docker run -d -p 8765:8765 shrinkyourshit:ci)

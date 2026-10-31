@@ -61,7 +61,11 @@ The release workflow (`release.yml`, docker job) does this in order:
    `/usr/lib/jellyfin-ffmpeg/ffmpeg -version` is executed inside the
    container. Failure here stops the release.
 5. One build assembles `linux/amd64,linux/arm64` and pushes the manifest
-   list; `docker buildx imagetools inspect` must list both platforms.
+   list to a local registry on the runner (nothing is published externally),
+   and `docker buildx imagetools inspect` must list both platforms — this
+   runs on the dry run too.
+6. On a real tag push the manifest list is pushed to GHCR, and the same
+   inspect check runs against the published tag.
 
 ## What is still not proven
 

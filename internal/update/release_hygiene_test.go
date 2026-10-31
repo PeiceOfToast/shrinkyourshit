@@ -68,7 +68,6 @@ func TestReleaseWorkflowCarriesBuildIdentity(t *testing.T) {
 		`[ "$commit" != "$EXPECTED_COMMIT" ]`,
 		`[ "$build_date" = "unknown" ]`,
 		"load: true",
-		"name: Push multi-platform image",
 		// Task 28: the multi-arch proof before the push.
 		"docker/setup-qemu-action",
 		"docker/setup-buildx-action",
@@ -77,26 +76,32 @@ func TestReleaseWorkflowCarriesBuildIdentity(t *testing.T) {
 		"--platform linux/arm64",
 		"/api/v1/health",
 		"docker buildx imagetools inspect",
+		"Push multi-platform image to the local proof registry",
+		"Push multi-platform image to GHCR",
 	} {
 		assert.Contains(t, body, want, "release.yml must pass and verify the build identity")
 	}
 
 	// The smoke checks must run after the builds and before the push, so
-	// a bad image can never reach the registry.
+	// a bad image can never reach the registry. The multi-platform
+	// manifest must be assembled and inspected before the GHCR push.
 	build := strings.Index(body, "Build amd64 image (loaded for the version smoke check)")
 	arm64Build := strings.Index(body, "Build arm64 image (loaded for the boot smoke test)")
 	smoke := strings.Index(body, "Smoke test the version endpoint")
 	arm64Smoke := strings.Index(body, "Smoke test the arm64 image (boot under emulation)")
-	push := strings.Index(body, "name: Push multi-platform image")
+	localPush := strings.Index(body, "Push multi-platform image to the local proof registry")
+	ghcrPush := strings.Index(body, "Push multi-platform image to GHCR")
 	require.NotEqual(t, -1, build)
 	require.NotEqual(t, -1, arm64Build)
 	require.NotEqual(t, -1, smoke)
 	require.NotEqual(t, -1, arm64Smoke)
-	require.NotEqual(t, -1, push)
+	require.NotEqual(t, -1, localPush)
+	require.NotEqual(t, -1, ghcrPush)
 	assert.Less(t, build, smoke)
 	assert.Less(t, smoke, arm64Build)
 	assert.Less(t, arm64Build, arm64Smoke)
-	assert.Less(t, arm64Smoke, push)
+	assert.Less(t, arm64Smoke, localPush)
+	assert.Less(t, localPush, ghcrPush)
 }
 
 func TestCIDockerJobProvesBuildIdentity(t *testing.T) {
@@ -113,6 +118,13 @@ func TestCIDockerJobProvesBuildIdentity(t *testing.T) {
 	} {
 		assert.Contains(t, body, want, "the CI docker job is the PR regression gate for task 26")
 	}
+
+	// Task 28: every PR proves an unsupported TARGETARCH fails the build
+	// naming the arch (the docker container is the only docker the
+	// project's agents can rely on).
+	assert.Contains(t, body, "Unsupported TARGETARCH fails the build",
+		"ci.yml must gate the TARGETARCH selection rule")
+	assert.Contains(t, body, "TARGETARCH=riscv64")
 }
 
 func TestChangelogMatchesGitHistory(t *testing.T) {
