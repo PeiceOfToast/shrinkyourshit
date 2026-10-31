@@ -30,6 +30,6 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 24 | 24-health-check-and-move.md | done | PR #25 https://github.com/PeiceOfToast/shrinkyourshit/pull/25 |
 | 25 | 25-webhooks-and-openapi.md | done | PR https://github.com/PeiceOfToast/shrinkyourshit/pull/26 |
 | 26 | 26-release-hygiene.md | done | v1.6, PR #27 |
-| 27 | 27-full-job-log.md | todo | v1.6, owner request |
+| 27 | 27-full-job-log.md | in_progress | branch task/27-full-job-log, PR pending |
 
 Dependencies are listed in ROADMAP.md. Do not start a task whose dependencies are not `done`.
