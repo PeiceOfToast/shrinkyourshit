@@ -28,7 +28,7 @@ Agents update this file. Statuses: `todo`, `in_progress`, `blocked`, `done`.
 | 22 | 22-flow-canvas-mobile.md | done | PR #23 https://github.com/PeiceOfToast/shrinkyourshit/pull/23 |
 | 23 | 23-external-integrations.md | done | PR #24 https://github.com/PeiceOfToast/shrinkyourshit/pull/24 |
 | 24 | 24-health-check-and-move.md | done | PR #25 https://github.com/PeiceOfToast/shrinkyourshit/pull/25 |
-| 25 | 25-webhooks-and-openapi.md | todo | v1.6, depends on 23 |
+| 25 | 25-webhooks-and-openapi.md | in_progress | branch task/25-webhooks-and-openapi |
 | 26 | 26-release-hygiene.md | todo | v1.6 |
 | 27 | 27-full-job-log.md | todo | v1.6, owner request |
 
