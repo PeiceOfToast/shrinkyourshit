@@ -106,7 +106,9 @@ jobs:
             dist/checksums.txt
 
   # Docker publishes only after the binaries and their checksums are
-  # proven, so an image never goes out from a broken release.
+  # proven, so an image never goes out from a broken release. Task 28:
+  # the image is built for linux/amd64 and linux/arm64; the arm64 image
+  # is booted under emulation before anything is pushed.
   docker:
     needs: [prepare, binaries, checksums]
     runs-on: ubuntu-latest
@@ -129,11 +131,20 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest
-      - name: Build image (loaded locally, not pushed)
+      # Task 28: qemu emulates the arm64 runtime stage (dpkg/apt/curl) and
+      # the arm64 boot smoke test; buildx drives both platforms.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build amd64 image (loaded for the version smoke check)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
+          platforms: linux/amd64
           push: false
           load: true
           build-args: |
@@ -195,14 +206,91 @@ jobs:
             exit 1
           fi
 
-      - name: Push image
+      # Task 28, proof not assumption: the arm64 image must boot under
+      # emulation and answer /api/v1/health, and its bundled ffmpeg must
+      # run, before the multi-platform image is pushed. The docker driver
+      # cannot load a multi-platform build, so the arm64 platform is
+      # built on its own (cache hit from the amd64 build's shared layers)
+      # and loaded for this test.
+      - name: Build arm64 image (loaded for the boot smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          push: false
+          load: true
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ needs.prepare.outputs.commit }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_date }}
+            org.opencontainers.image.description=Self-hosted media compression for home media servers
+
+      - name: Smoke test the arm64 image (boot under emulation)
+        run: |
+          set -eu
+          image="$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n1)"
+          mkdir -p /tmp/armcfg
+          docker run --rm --platform linux/arm64 -d --name sys-arm64 \
+            -e PUID=1000 -e PGID=1000 \
+            -e SHRINK_DISCOVERY_MDNS=false \
+            -e SHRINK_DISCOVERY_BROADCAST=false \
+            -v /tmp/armcfg:/config \
+            -p 127.0.0.1:8765:8765 \
+            "$image"
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8765/api/v1/health; then ok=1; break; fi
+            sleep 2
+          done
+          docker logs sys-arm64 | tail -50
+          test "${ok:-0}" = "1" || { docker rm -f sys-arm64; exit 1; }
+          docker exec sys-arm64 /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -version | head -2
+          docker rm -f sys-arm64
+
+      # Task 28: one build assembles the manifest list for both platforms
+      # and pushes it (tag push only; workflow_dispatch stays a dry run).
+      - name: Push multi-platform image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ needs.prepare.outputs.commit }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.created=${{ needs.prepare.outputs.build_date }}
+            org.opencontainers.image.description=Self-hosted media compression for home media servers
+
+      # Task 28: the published manifest must carry both architectures.
+      # Doc step 7 (docs/releasing.md) reruns this against the registry.
+      - name: Verify the published manifest has both architectures
         if: github.event_name == 'push'
         run: |
           set -eu
-          printf '%s\n' "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            docker push "$tag"
-          done
+          tag="$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n1)"
+          inspect="$(docker buildx imagetools inspect "$tag")"
+          printf '%s\n' "$inspect"
+          grep -q 'linux/amd64' <<< "$inspect" || {
+            echo "::error::manifest for $tag does not list linux/amd64" >&2; exit 1; }
+          grep -q 'linux/arm64' <<< "$inspect" || {
+            echo "::error::manifest for $tag does not list linux/arm64" >&2; exit 1; }
 
 # Package visibility note (task 16): the first push creates the ghcr
 # package private even on a public repository. One manual step, once:
