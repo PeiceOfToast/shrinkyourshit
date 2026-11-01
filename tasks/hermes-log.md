@@ -236,3 +236,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-01T09:20:00Z task 34: PM verification on branch task/34-non-media-file-types - 8/8 acceptance boxes ticked, STATUS.md done, make test green (go packages plus 231 web tests), make test-integration green, make lint 0 issues plus eslint and prettier clean, DECISIONS.md unchanged versus origin/main; note api and server packages are slow on the VM (475s/529s) but under the 10m go test timeout
 - 2026-11-01T09:20:00Z task 34: pushed branch, opened PR #37, all nine CI checks green (go 4m1s, web, docker, docker-arm64 9m8s, cross, e2e, installer, installer-powershell, report)
 - 2026-11-01T09:19:08Z task 34: PR #37 merged with squash d058034, branch task/34-non-media-file-types deleted on the remote; main pulled on the VM to d058034
+2026-11-01T14:00:00Z task 34 merge confirmed on main (d058034), STATUS.md note updated to PR #37; starting task 35 (intel qsv tuning)
