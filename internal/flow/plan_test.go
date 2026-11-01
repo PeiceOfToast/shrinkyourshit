@@ -51,7 +51,7 @@ func TestCompileAndResolveCarryNewSteps(t *testing.T) {
 	require.Equal(t, "/data/shrunk", plan.MoveTo, "trailing slashes trimmed")
 	require.True(t, plan.MoveKeepTree)
 
-	eff, err := ResolvePlan(plan, probe.MediaInfo{})
+	eff, err := ResolvePlan(plan, probe.MediaInfo{}, probe.KindVideo)
 	require.NoError(t, err)
 	require.NotNil(t, eff.HealthCheck)
 	require.Equal(t, *plan.HealthCheck, *eff.HealthCheck)
@@ -80,9 +80,9 @@ func TestHealthCheckDoesNotChangeTarget(t *testing.T) {
 
 	require.Equal(t, pWithout.Target(), pWith.Target())
 
-	effWith, err := ResolvePlan(pWith, probe.MediaInfo{})
+	effWith, err := ResolvePlan(pWith, probe.MediaInfo{}, probe.KindVideo)
 	require.NoError(t, err)
-	effWithout, err := ResolvePlan(pWithout, probe.MediaInfo{})
+	effWithout, err := ResolvePlan(pWithout, probe.MediaInfo{}, probe.KindVideo)
 	require.NoError(t, err)
 	require.Equal(t, effWithout.Target, effWith.Target)
 }
@@ -104,7 +104,7 @@ func TestResolvePlanHealthCheckDefaults(t *testing.T) {
 	// A graph without the new steps resolves with nothing set.
 	plain, err := Compile(graphBase())
 	require.NoError(t, err)
-	eff, err := ResolvePlan(plain, probe.MediaInfo{})
+	eff, err := ResolvePlan(plain, probe.MediaInfo{}, probe.KindVideo)
 	require.NoError(t, err)
 	require.Nil(t, eff.HealthCheck)
 	require.Empty(t, eff.MoveTo)

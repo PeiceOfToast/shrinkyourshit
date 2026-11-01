@@ -47,7 +47,7 @@ func TestValidateHealthCheckDefaults(t *testing.T) {
 		DurationTolerance: HealthCheckToleranceDefault,
 	}, *plan.HealthCheck)
 
-	eff, err := ResolvePlan(plan, probe.MediaInfo{})
+	eff, err := ResolvePlan(plan, probe.MediaInfo{}, probe.KindVideo)
 	require.NoError(t, err)
 	require.NotNil(t, eff.HealthCheck)
 	require.Equal(t, *plan.HealthCheck, *eff.HealthCheck)
@@ -289,7 +289,7 @@ func TestCompileCarriesPluginAsChainStep(t *testing.T) {
 func TestResolvePlanIgnoresPluginStep(t *testing.T) {
 	plan, err := Compile(pluginGraph())
 	require.NoError(t, err)
-	eff, err := ResolvePlan(plan, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264}}})
+	eff, err := ResolvePlan(plan, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264}}}, probe.KindVideo)
 	require.NoError(t, err)
 	assert.Equal(t, CodecCopy, eff.Target.Video.Codec, "the plugin step never shapes the Target")
 	assert.False(t, eff.SkipIfSmaller)
@@ -299,7 +299,7 @@ func TestResolvePlanIgnoresPluginStep(t *testing.T) {
 	// probe resolves to the same Effective (the worker's walk parity).
 	walk := FreshEffective()
 	for _, s := range plan.Steps {
-		ran, err := ApplyStep(&walk, s, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264}}})
+		ran, err := ApplyStep(&walk, s, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264}}}, probe.KindVideo)
 		require.NoError(t, err)
 		require.True(t, ran)
 	}
@@ -324,14 +324,14 @@ func TestApplyStepSkipsOnGuard(t *testing.T) {
 	require.NoError(t, err)
 	// hevc video: the codec_not hevc guard fails → the transcode is
 	// skipped, the video stays copy.
-	eff, err := ResolvePlan(plan, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecHEVC}}})
+	eff, err := ResolvePlan(plan, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecHEVC}}}, probe.KindVideo)
 	require.NoError(t, err)
 	assert.Equal(t, CodecCopy, eff.Target.Video.Codec)
 
 	// Same result through the walk.
 	walk := FreshEffective()
 	for _, s := range plan.Steps {
-		ran, err := ApplyStep(&walk, s, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecHEVC}}})
+		ran, err := ApplyStep(&walk, s, probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecHEVC}}}, probe.KindVideo)
 		require.NoError(t, err)
 		if s.Type == StepTranscodeVideo {
 			assert.False(t, ran, "the guarded transcode does not run")

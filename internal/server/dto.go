@@ -24,7 +24,10 @@ import (
 // Flow is the canonical rule graph (ARCHITECTURE.md flow schema) and
 // FlowSource records who owns it: easy, steps or advanced. The flow wins
 // when it disagrees with the Target; legacy rows without a stored flow
-// get the flow compiled from their Target.
+// get the flow compiled from their Target. FileKinds is what the library
+// holds (task 34) and LastScan is the summary of the last successful scan,
+// including the distinct count of files skipped because their kind is not
+// what the library looks for.
 type LibraryDTO struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
@@ -36,11 +39,15 @@ type LibraryDTO struct {
 	Watch        bool            `json:"watch"`
 	Schedule     string          `json:"schedule"`
 	ResultPolicy string          `json:"result_policy"`
+	FileKinds    []string        `json:"file_kinds"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
 	// LastScanAt is when a scan of this library last finished without
 	// error (task 19); omitted when it has never been scanned.
 	LastScanAt string `json:"last_scan_at,omitempty"`
+	// LastScan is the persisted summary of that scan (task 34); omitted
+	// when the library has never been scanned.
+	LastScan *ScanResult `json:"last_scan,omitempty"`
 }
 
 // FileDTO is the JSON shape of a file. Probe carries the stored probe
@@ -112,6 +119,13 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		target = flow.Target{}
 	}
 	graph, source := libraryFlowOrNull(l)
+	var lastScan *ScanResult
+	if s := strings.TrimSpace(l.LastScanJSON); s != "" {
+		var sr ScanResult
+		if err := json.Unmarshal([]byte(s), &sr); err == nil {
+			lastScan = &sr
+		}
+	}
 	return LibraryDTO{
 		ID:           l.ID,
 		Name:         l.Name,
@@ -123,9 +137,11 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		Watch:        l.Watch,
 		Schedule:     l.Schedule,
 		ResultPolicy: l.ResultPolicy,
+		FileKinds:    l.FileKinds,
 		CreatedAt:    rfc3339(l.CreatedAt),
 		UpdatedAt:    rfc3339(l.UpdatedAt),
 		LastScanAt:   rfc3339(l.LastScanAt),
+		LastScan:     lastScan,
 	}
 }
 

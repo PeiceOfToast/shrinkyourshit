@@ -13,8 +13,10 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
@@ -139,8 +141,15 @@ func (t *Transfer) verifiedOutputPath(jobID, ext string) string {
 // outputExt resolves the output container of a job's library: the flow's
 // remux_container step decides (the flow is the rule), falling back to the
 // stored Target. This keeps the upload path consistent with what the worker
-// actually encoded even when the flow changes the container.
+// actually encoded even when the flow changes the container. A file that is
+// not media (task 34) keeps its own extension: nothing encodes it, so the
+// result carries the extension it arrived with.
 func (t *Transfer) outputExt(ctx context.Context, job *store.Job) (string, error) {
+	if f, ferr := t.st.GetFile(ctx, job.FileID); ferr == nil && !probe.IsMedia(probe.KindForPath(f.Path)) {
+		if ext := filepath.Ext(f.Path); ext != "" {
+			return strings.ToLower(ext), nil
+		}
+	}
 	lib, err := t.st.GetLibrary(ctx, job.LibraryID)
 	if err != nil {
 		return "", fmt.Errorf("transfer: library lookup: %w", err)

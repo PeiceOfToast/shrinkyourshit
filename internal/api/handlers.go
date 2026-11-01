@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
@@ -34,6 +35,10 @@ type libraryBody struct {
 	Watch        bool                `json:"watch"`
 	Schedule     string              `json:"schedule"`
 	ResultPolicy string              `json:"result_policy"`
+	// FileKinds is a pointer so the API can tell "not sent" from "sent
+	// empty": a missing field defaults to ["video"], an explicit empty
+	// list is rejected (task 34).
+	FileKinds *[]string `json:"file_kinds"`
 }
 
 // listLibraries returns every library.
@@ -692,12 +697,19 @@ var errSettingsRead = errors.New("api: read settings for easy compile")
 // target falls back to the default; on update one of the two is required
 // (PUT semantics).
 func (a *API) libraryParams(ctx context.Context, body libraryBody, update bool) (server.LibraryParams, error) {
+	// File kinds (task 34): a missing field defaults to ["video"], an
+	// explicitly empty list is rejected by the manager's validation.
+	kinds := []string{string(probe.KindVideo)}
+	if body.FileKinds != nil {
+		kinds = *body.FileKinds
+	}
 	params := server.LibraryParams{
 		Name:         body.Name,
 		Path:         body.Path,
 		Watch:        body.Watch,
 		Schedule:     body.Schedule,
 		ResultPolicy: body.ResultPolicy,
+		FileKinds:    kinds,
 	}
 	if body.Target != nil && body.Easy != nil {
 		return params, errors.New("provide either target or easy, not both")

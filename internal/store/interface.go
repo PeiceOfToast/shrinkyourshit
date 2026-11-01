@@ -33,10 +33,11 @@ type Store interface {
 	ListLibraries(ctx context.Context) ([]*Library, error)
 	UpdateLibrary(ctx context.Context, l *Library) error
 	DeleteLibrary(ctx context.Context, id string) error
-	// SetLibraryScanTime stamps the library's last successful scan (task
-	// 19). Deliberately not part of UpdateLibrary: the scanner stamps it
-	// without rewriting the rest of the row.
-	SetLibraryScanTime(ctx context.Context, id string, at time.Time) error
+	// SetLibraryScanResult stamps the library's last successful scan (task
+	// 19) with the scan's summary JSON (task 34). Deliberately not part of
+	// UpdateLibrary: the scanner stamps it without rewriting the rest of
+	// the row.
+	SetLibraryScanResult(ctx context.Context, id string, at time.Time, summary string) error
 
 	// Files. UpsertFile keys on (LibraryID, Path): the scanner calls it
 	// for new and changed files alike.

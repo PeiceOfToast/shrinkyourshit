@@ -25,6 +25,11 @@ import (
 // ffprobe entirely; production uses probe.Probe.
 type Prober func(ctx context.Context, ffprobePath, path string) (probe.MediaInfo, error)
 
+// kindSkippedReason is the file row's reason for a file whose kind the
+// library does not look for (task 34): it stays on disk untouched, but it
+// is never queued or probed.
+const kindSkippedReason = "not the file type this library looks for"
+
 func defaultProber(ctx context.Context, ffprobePath, path string) (probe.MediaInfo, error) {
 	return probe.Probe(ctx, ffprobePath, path)
 }
@@ -141,6 +146,7 @@ type finding struct {
 	existing  *store.File
 	info      probe.MediaInfo
 	fromCache bool // re-evaluate the cached probe instead of info
+	nonMedia  bool // task 34: the file is not media; nothing probed it
 }
 
 // ScanLibrary scans one library: walk, probe changed files, evaluate, queue
@@ -160,11 +166,11 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	}
 	logFlowTargetMismatch(s.log, lib, plan)
 
-	paths, skippedKinds, err := s.collectMediaPaths(lib.Path, lib.FileKinds)
+	paths, skippedPaths, err := s.collectMediaPaths(lib.Path, lib.FileKinds)
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("scanner: walk %s: %w", lib.Path, err)
 	}
-	res := ScanResult{Seen: len(paths), SkippedKinds: skippedKinds}
+	res := ScanResult{Seen: len(paths), SkippedKinds: len(skippedPaths)}
 
 	findings := make([]*finding, 0, len(paths))
 	var (
@@ -201,8 +207,11 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 
 	// Everything the walk saw is on disk: only DB rows whose path was not
 	// seen (examined or skipped) are missing.
-	seen := make(map[string]bool, len(paths))
+	seen := make(map[string]bool, len(paths)+len(skippedPaths))
 	for _, p := range paths {
+		seen[p] = true
+	}
+	for _, p := range skippedPaths {
 		seen[p] = true
 	}
 	for _, f := range findings {
@@ -212,7 +221,10 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 			res.Errors++
 			continue
 		}
-		if f.fromCache {
+		if f.nonMedia {
+			// Nothing probed a non-media file (task 34); the fingerprint
+			// was the whole examination.
+		} else if f.fromCache {
 			res.Reused++
 		} else {
 			res.Probed++
@@ -229,8 +241,28 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	if err != nil {
 		return res, fmt.Errorf("scanner: list files: %w", err)
 	}
+	skippedSet := make(map[string]bool, len(skippedPaths))
+	for _, p := range skippedPaths {
+		skippedSet[p] = true
+	}
 	for _, f := range existing {
-		if seen[f.Path] || f.Status == store.FileStatusMissing {
+		if seen[f.Path] {
+			if skippedSet[f.Path] &&
+				f.Status != store.FileStatusProcessing && f.Status != store.FileStatusQueued &&
+				(f.Status != store.FileStatusSatisfied || f.SatisfiedReason != kindSkippedReason) {
+				// A row whose kind the library no longer looks for (task
+				// 34): the file is on disk but not wanted, so the row is
+				// recorded as satisfied with the reason instead of
+				// disappearing into missing.
+				f.Status = store.FileStatusSatisfied
+				f.SatisfiedReason = kindSkippedReason
+				if err := s.st.UpdateFile(ctx, f); err != nil {
+					s.log.Error("scanner: skip kind row", "path", f.Path, "err", err)
+					res.Errors++
+					continue
+				}
+				s.publish(EventFileUpdated, NewFileDTO(f))
+			}
 			continue
 		}
 		f.Status = store.FileStatusMissing
@@ -245,9 +277,16 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	}
 
 	// The scan came through: stamp when it finished (task 19, the library
-	// detail header's "last scan"). Best effort — a stamping failure must
-	// not turn a finished scan into an error.
-	if err := s.st.SetLibraryScanTime(ctx, libraryID, time.Now().UTC()); err != nil {
+	// detail header's "last scan") and record the summary (task 34) — the
+	// distinct kind-skip count is how a photos library explains why it is
+	// doing nothing. Best effort — a stamping failure must not turn a
+	// finished scan into an error.
+	if raw, err := json.Marshal(res); err == nil {
+		err = s.st.SetLibraryScanResult(ctx, libraryID, time.Now().UTC(), string(raw))
+	} else {
+		err = fmt.Errorf("marshal scan summary: %w", err)
+	}
+	if err != nil {
 		s.log.Error("scanner: stamp last scan", "library", libraryID, "err", err)
 	}
 
@@ -321,7 +360,10 @@ const (
 	probeFailed                       // fingerprint or probe error on this file
 )
 
-// examine fingerprints one path and probes it when needed.
+// examine fingerprints one path and probes it when needed. A file that is
+// not media (task 34) is never probed: the fingerprint alone identifies it
+// and carries its size, and no stability wait is needed because there is
+// nothing that reads it part-way.
 func (s *Scanner) examine(ctx context.Context, libraryID, path string) (*finding, examineOutcome) {
 	size, mtime, fp, err := statAndFingerprint(path)
 	if err != nil {
@@ -341,6 +383,13 @@ func (s *Scanner) examine(ctx context.Context, libraryID, path string) (*finding
 				existing: existing, fromCache: true}, examined
 		}
 		return nil, notRelevant
+	}
+	kind := probe.KindForPath(path)
+	if !probe.IsMedia(kind) {
+		// Nothing probes a non-media file: identity and size come from the
+		// fingerprint alone (task 34).
+		return &finding{path: path, size: size, mtime: mtime, fp: fp,
+			existing: existing, nonMedia: true}, examined
 	}
 
 	// The file is new or changed: wait until it stops growing (a copy in
@@ -414,13 +463,27 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, plan flow.Plan,
 	var (
 		probeJSON string
 		decision  flow.Decision
+		eff       flow.Effective
 	)
-	if f.fromCache {
+	if f.nonMedia {
+		// A non-media file (task 34) resolves without a probe: the media
+		// steps do not apply, the Target stays empty, and the plan carries
+		// the not-media reason. The file is queued only when the flow
+		// carries kind-agnostic work (rename, move, plugin).
+		eff, err = flow.ResolvePlan(plan, probe.MediaInfo{}, probe.KindForPath(f.path))
+		if err != nil {
+			return false, false, fmt.Errorf("resolve flow: %w", err)
+		}
+		if plan.HasKindAgnosticWork() {
+			decision.Needs = true
+			decision.Reasons = plan.KindAgnosticReasons()
+		}
+	} else if f.fromCache {
 		var cached probe.MediaInfo
 		if err := json.Unmarshal([]byte(f.existing.ProbeJSON), &cached); err != nil {
 			return false, false, fmt.Errorf("decode cached probe: %w", err)
 		}
-		eff, err := flow.ResolvePlan(plan, cached)
+		eff, err = flow.ResolvePlan(plan, cached, probe.KindForPath(f.path))
 		if err != nil {
 			return false, false, fmt.Errorf("resolve flow: %w", err)
 		}
@@ -432,7 +495,7 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, plan flow.Plan,
 			return false, false, fmt.Errorf("marshal probe: %w", err)
 		}
 		probeJSON = string(data)
-		eff, err := flow.ResolvePlan(plan, f.info)
+		eff, err = flow.ResolvePlan(plan, f.info, probe.KindForPath(f.path))
 		if err != nil {
 			return false, false, fmt.Errorf("resolve flow: %w", err)
 		}
@@ -475,7 +538,10 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, plan flow.Plan,
 	}
 
 	file.Status = store.FileStatusSatisfied
-	file.SatisfiedReason = ""
+	// eff.Reason is empty for media files (the satisfied rule reports
+	// through status alone) and carries the not-media skip reason for a
+	// file that is not media (task 34).
+	file.SatisfiedReason = eff.Reason
 	if f.existing != nil &&
 		f.existing.Status == store.FileStatusSatisfied &&
 		f.existing.Fingerprint == f.fp {
@@ -488,18 +554,17 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, plan flow.Plan,
 	return false, true, nil
 }
 
-// collectMediaPaths walks root and returns every regular, non-hidden file
-// whose kind the library looks for. Files of other kinds are counted as
-// skipped and logged at debug, never queued and never a failure (task 34).
-// The root itself may be a dotfolder — only entries inside are filtered.
-func (s *Scanner) collectMediaPaths(root string, kinds []string) ([]string, int, error) {
+// collectMediaPaths walks root and returns the file paths whose kind the
+// library looks for, plus the paths it skipped because their kind is not
+// wanted (task 34): skipped files are counted, logged at debug, never
+// queued and never a failure. The root itself may be a dotfolder — only
+// entries inside are filtered.
+func (s *Scanner) collectMediaPaths(root string, kinds []string) (wanted, skipped []string, err error) {
 	allowed := map[string]bool{}
 	for _, k := range kinds {
 		allowed[k] = true
 	}
-	var paths []string
-	skipped := 0
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err // missing root or unreadable dir fails the scan
 		}
@@ -514,17 +579,17 @@ func (s *Scanner) collectMediaPaths(root string, kinds []string) ([]string, int,
 		}
 		kind := probe.KindForPath(path)
 		if !allowed[string(kind)] {
-			skipped++
 			s.log.Debug("scanner: skipped file: kind not wanted", "path", path, "kind", kind)
+			skipped = append(skipped, path)
 			return nil
 		}
-		paths = append(paths, path)
+		wanted = append(wanted, path)
 		return nil
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	return paths, skipped, nil
+	return wanted, skipped, nil
 }
 
 // statAndFingerprint returns size, mtime (unix seconds) and the
