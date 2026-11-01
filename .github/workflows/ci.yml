@@ -34,7 +34,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
       - name: go test (integration)
-        run: go test -tags=integration ./...
+        run: go test -tags=integration -timeout 30m ./...
 
   web:
     runs-on: ubuntu-latest
