@@ -74,7 +74,7 @@ func TestEasyFlowParity(t *testing.T) {
 					require.NoError(t, err)
 					plan, err := flow.Compile(graph)
 					require.NoError(t, err)
-					eff, err := flow.ResolvePlan(plan, info)
+					eff, err := flow.ResolvePlan(plan, info, probe.KindVideo)
 					require.NoError(t, err)
 
 					direct := NewSpec("/in.mkv", "/out.mkv", info, target)
@@ -107,7 +107,7 @@ func TestFlowCopyParity(t *testing.T) {
 	require.NoError(t, err)
 	plan, err := flow.Compile(graph)
 	require.NoError(t, err)
-	eff, err := flow.ResolvePlan(plan, info)
+	eff, err := flow.ResolvePlan(plan, info, probe.KindVideo)
 	require.NoError(t, err)
 	require.Equal(t, flow.CodecCopy, eff.Target.Video.Codec)
 
@@ -137,7 +137,7 @@ func TestFlowAlwaysReencode(t *testing.T) {
 	}
 	plan, err := flow.Compile(graph)
 	require.NoError(t, err)
-	eff, err := flow.ResolvePlan(plan, info)
+	eff, err := flow.ResolvePlan(plan, info, probe.KindVideo)
 	require.NoError(t, err)
 	require.True(t, eff.Target.Video.ReencodeIfSameCodec, "an unguarded transcode always runs")
 
@@ -177,11 +177,11 @@ func TestFlowBitrateGuard(t *testing.T) {
 	low := mkProbe(4_000_000)
 	high := mkProbe(12_000_000)
 
-	skipped, err := flow.ResolvePlan(plan, low)
+	skipped, err := flow.ResolvePlan(plan, low, probe.KindVideo)
 	require.NoError(t, err)
 	require.Equal(t, flow.CodecCopy, skipped.Target.Video.Codec)
 
-	runs, err := flow.ResolvePlan(plan, high)
+	runs, err := flow.ResolvePlan(plan, high, probe.KindVideo)
 	require.NoError(t, err)
 	require.Equal(t, flow.CodecHEVC, runs.Target.Video.Codec)
 	require.True(t, runs.Target.Video.ReencodeIfSameCodec,
@@ -210,7 +210,7 @@ func TestFlowSkipAndRename(t *testing.T) {
 	require.True(t, plan.HasSkipIfSmaller())
 	require.Equal(t, "{name}.shrunk", plan.RenameTemplate())
 
-	eff, err := flow.ResolvePlan(plan, parityProbes[0])
+	eff, err := flow.ResolvePlan(plan, parityProbes[0], probe.KindVideo)
 	require.NoError(t, err)
 	require.True(t, eff.SkipIfSmaller)
 	require.Equal(t, "{name}.shrunk", eff.Rename)

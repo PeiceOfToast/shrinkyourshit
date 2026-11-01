@@ -114,6 +114,14 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		}
 	}
 
+	kind := probe.KindForPath(local)
+	// A file that is not media (task 34) is never probed: no encoder
+	// runs, the fingerprint alone is the identity, and the result policy
+	// applies the working copy as it is.
+	if !probe.IsMedia(kind) {
+		return r.completeNonMedia(ctx, spec, local, dir, mode, sink, tail, cancelled)
+	}
+
 	srcInfo, err := r.prober(ctx, r.cfg.FFprobePath, local)
 	if err != nil {
 		return fail("probe source: %v", err)
@@ -160,7 +168,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		}
 		eff := flow.FreshEffective()
 		for i, step := range plan.Steps {
-			ran, err := flow.ApplyStep(&eff, step, cur)
+			ran, err := flow.ApplyStep(&eff, step, cur, kind)
 			if err != nil {
 				return fail("resolve flow: %v", err)
 			}
@@ -338,6 +346,192 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 
 	r.log.Info("job complete", "job", spec.ID, "output", applied.FinalPath,
 		"encoder", res.EncoderUsed, "bytes_after", st.Size())
+	return nil
+}
+
+// completeNonMedia runs a job whose file is not media (task 34): no
+// encoder and no ffprobe is ever involved. The flow's media steps are
+// skipped with a reason naming the step and the kind; the kind-agnostic
+// steps (rename, move, skip_if_smaller, plugin) run. The working copy —
+// the source as any plugins left it — is the result the result policy
+// places. A flow with nothing to do on this kind completes as a skip with
+// the not-media reason, never a failure.
+func (r *runner) completeNonMedia(ctx context.Context, spec *server.JobSpec, local, dir, mode string,
+	sink *jobLogSink, tail *tailBuffer, cancelled *atomic.Bool) error {
+	fail := func(format string, args ...any) error {
+		msg := fmt.Sprintf(format, args...)
+		r.log.Warn("job failed", "job", spec.ID, "error", msg)
+		sink.errorf("%s", msg)
+		sink.finish()
+		if err := r.client.Fail(ctx, spec.ID, msg, tail.Tail()); err != nil && !isAPIStatus(err, 409) {
+			r.log.Error("worker: fail report", "job", spec.ID, "err", err)
+		}
+		return nil
+	}
+
+	kind := probe.KindForPath(local)
+	rename := ""
+	policy := spec.ResultPolicy
+	var move server.MoveDirective
+	if spec.MoveTo != "" {
+		move = server.MoveDirective{
+			Destination: spec.MoveTo,
+			KeepTree:    spec.MoveKeepTree,
+			RelDir:      spec.MoveRelDir,
+		}
+	}
+
+	// The plan walk: media steps log their skip; the kind-agnostic steps
+	// apply. Plugin steps run on the working copy in this job's scratch
+	// directory, at their chain position, exactly like a media job.
+	working := local
+	pluginRan := false
+	if spec.Flow != nil {
+		plan, err := flow.Compile(*spec.Flow)
+		if err != nil {
+			return fail("invalid flow: %v", err)
+		}
+		eff := flow.Effective{Reason: flow.NotMediaReason}
+		for i, step := range plan.Steps {
+			if flow.StepNeedsMedia(step.Type) {
+				sink.sysf("step %s: skipped, this file is %s and not media", step.Type, kind)
+				continue
+			}
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			ran, err := flow.ApplyStep(&eff, step, probe.MediaInfo{}, kind)
+			if err != nil {
+				return fail("resolve flow: %v", err)
+			}
+			if !ran || step.Type != flow.StepPlugin {
+				continue
+			}
+			ps, ok := pluginStepFor(spec.Plugins, i)
+			if !ok {
+				return fail("plugin %s has no resolved step in the job spec at chain position %d",
+					pluginNameOf(step), i)
+			}
+			next, err := r.execPluginStep(ctx, spec, ps, working, dir, sink)
+			if err != nil {
+				if cancelled.Load() || ctx.Err() != nil {
+					return nil
+				}
+				return fail("%v", err)
+			}
+			working = next
+			pluginRan = true
+		}
+		rename = eff.Rename
+		if eff.SkipIfSmaller {
+			policy = store.ResultPolicyReplaceIfSmaller
+		}
+	}
+
+	// The result policy: an untouched working copy (no plugin changed it)
+	// is the file itself, so replace_if_smaller must not swallow the
+	// flow's rename and move because nothing got smaller — a same-size
+	// replacement is a rename, not a lossy encode. A plugin's output keeps
+	// the library's size rule.
+	st, err := os.Stat(working)
+	if err != nil {
+		return fail("stat working file: %v", err)
+	}
+	if !pluginRan && policy == store.ResultPolicyReplaceIfSmaller && st.Size() >= spec.BytesBefore {
+		policy = store.ResultPolicyReplace
+	}
+
+	hasWork := pluginRan || rename != "" || move.Destination != ""
+	if !hasWork {
+		// The flow holds only media steps and they all skipped: the job is
+		// a skip with the not-media reason, never a failure (task 34).
+		in := CompleteInput{
+			SkippedReason: flow.NotMediaReason,
+			BytesAfter:    spec.BytesBefore,
+			LogTail:       tail.Tail(),
+			AccessMode:    mode,
+		}
+		sink.sysf("not media (%s): nothing to encode, original kept", kind)
+		sink.finish()
+		if err := r.client.Complete(ctx, spec.ID, in); err != nil && !isAPIStatus(err, 409) {
+			r.log.Error("worker: complete report", "job", spec.ID, "err", err)
+			return err
+		}
+		return nil
+	}
+
+	if mode == store.NodeAccessTransfer {
+		// Transfer mode: the server applies the result policy from the
+		// verified upload (task 09), the same code the shared path uses.
+		in := CompleteInput{
+			BytesAfter:      st.Size(),
+			FallbackReasons: []string{},
+			LogTail:         tail.Tail(),
+			AccessMode:      store.NodeAccessTransfer,
+		}
+		if policy == store.ResultPolicyReplaceIfSmaller && st.Size() >= spec.BytesBefore && pluginRan {
+			in.SkippedReason = fmt.Sprintf(
+				"output (%s) is not smaller than the original (%s); original kept",
+				server.HumanBytes(st.Size()), server.HumanBytes(spec.BytesBefore))
+			in.BytesAfter = spec.BytesBefore
+			sink.sysf("result policy: skipped, original kept (%s)", in.SkippedReason)
+		} else {
+			sink.sysf("uploading result (%s) to the server", server.HumanBytes(st.Size()))
+			if err := r.client.UploadResult(ctx, spec.ID, working, spec.ThroughputLimitMBs, r.log); err != nil {
+				if cancelled.Load() || ctx.Err() != nil {
+					return nil
+				}
+				return fail("upload result: %v", err)
+			}
+			sink.sysf("result uploaded; the server verifies and applies the policy")
+		}
+		sink.finish()
+		if err := r.client.Complete(ctx, spec.ID, in); err != nil {
+			if isAPIStatus(err, 409) {
+				r.log.Warn("worker: complete rejected", "job", spec.ID, "err", err)
+				return nil
+			}
+			r.log.Error("worker: complete report", "job", spec.ID, "err", err)
+			return err
+		}
+		return nil
+	}
+
+	applied, err := server.ApplyResultPolicy(ctx, policy, working, spec.SourcePath,
+		st.Size(), spec.BytesBefore, nil, rename, move)
+	if err != nil {
+		if cancelled.Load() || ctx.Err() != nil {
+			return nil
+		}
+		return fail("apply result policy: %v", err)
+	}
+
+	in := CompleteInput{
+		BytesAfter: st.Size(),
+		LogTail:    tail.Tail(),
+		AccessMode: mode,
+	}
+	if applied.SkipReason != "" {
+		in.SkippedReason = applied.SkipReason
+		in.BytesAfter = spec.BytesBefore
+		sink.sysf("result policy: skipped, original kept (%s)", applied.SkipReason)
+	} else {
+		in.OutputPath = applied.FinalPath
+		sink.sysf("result policy: applied, output at %s", applied.FinalPath)
+	}
+	sink.sysf("bytes before: %s; after: %s", server.HumanBytes(spec.BytesBefore),
+		server.HumanBytes(st.Size()))
+	sink.finish()
+	if err := r.client.Complete(ctx, spec.ID, in); err != nil {
+		if isAPIStatus(err, 409) {
+			r.log.Warn("worker: complete rejected", "job", spec.ID, "err", err)
+			return nil
+		}
+		r.log.Error("worker: complete report", "job", spec.ID, "err", err)
+		return err
+	}
+	r.log.Info("job complete (not media)", "job", spec.ID, "output", applied.FinalPath,
+		"bytes_after", st.Size())
 	return nil
 }
 

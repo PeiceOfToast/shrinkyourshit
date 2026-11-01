@@ -23,6 +23,8 @@ import (
 // generated from the compiled Target here; a hand-edited flow is stored
 // through UpdateFlow instead. On update an unchanged Target keeps the
 // stored flow, so a name/watch-only save cannot destroy manual steps.
+// FileKinds is what the library holds (task 34): a non-empty list of valid
+// probe.Kinds with no duplicates.
 type LibraryParams struct {
 	Name         string
 	Path         string
@@ -31,6 +33,7 @@ type LibraryParams struct {
 	Watch        bool
 	Schedule     string
 	ResultPolicy string
+	FileKinds    []string
 }
 
 // LibraryManager owns library CRUD and the target-driven re-evaluation of a
@@ -183,6 +186,35 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		return nil, fmt.Errorf("invalid result_policy %q: want one of %v", policy, store.ResultPolicyValues())
 	}
 
+	// FileKinds (task 34): a missing list defaults to ["video"] so
+	// programmatic callers (the tests, the manager itself) keep working
+	// and a default library still reports ["video"]; an explicitly empty
+	// list is rejected. Every value must be a valid Kind and duplicates
+	// are rejected. Every error names the field and the bad value.
+	if p.FileKinds == nil {
+		p.FileKinds = []string{string(probe.KindVideo)}
+	}
+	if len(p.FileKinds) == 0 {
+		return nil, fmt.Errorf("file_kinds %v must not be empty: want at least one of %v", p.FileKinds, probe.KindValues())
+	}
+	seen := map[string]bool{}
+	for _, k := range p.FileKinds {
+		valid := false
+		for _, v := range probe.KindValues() {
+			if string(v) == k {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("file_kinds: invalid file kind %q: want one of %v", k, probe.KindValues())
+		}
+		if seen[k] {
+			return nil, fmt.Errorf("file_kinds: duplicate file kind %q", k)
+		}
+		seen[k] = true
+	}
+
 	target := flow.Default()
 	if p.TargetJSON != nil {
 		var err error
@@ -204,6 +236,7 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		Watch:        p.Watch,
 		Schedule:     p.Schedule,
 		ResultPolicy: policy,
+		FileKinds:    p.FileKinds,
 	}
 	if old != nil {
 		lib.ID = old.ID
@@ -267,26 +300,44 @@ func (m *LibraryManager) reevaluate(ctx context.Context, lib *store.Library) {
 	}
 
 	for _, f := range files {
-		// Missing rows are dormant until the file reappears; files without
-		// a probe wait for the next scan; active work is left alone.
-		if f.Status == store.FileStatusMissing || f.ProbeJSON == "" {
+		// Missing rows are dormant until the file reappears; active work is
+		// left alone. A file whose kind the library does not look for is
+		// not part of this library's rules (task 34): the scan records it
+		// as skipped, re-evaluation leaves it alone.
+		if f.Status == store.FileStatusMissing || f.Status == store.FileStatusProcessing {
 			continue
 		}
-		if f.Status == store.FileStatusProcessing {
+		kind := probe.KindForPath(f.Path)
+		if !libraryWantsKind(lib, kind) {
+			continue
+		}
+		var info probe.MediaInfo
+		if f.ProbeJSON != "" {
+			if err := json.Unmarshal([]byte(f.ProbeJSON), &info); err != nil {
+				m.log.Error("library: re-evaluate probe", "file", f.Path, "err", err)
+				continue
+			}
+		} else if probe.IsMedia(kind) {
+			// Media without a probe waits for the next scan; a file that is
+			// not media (task 34) re-evaluates from its identity alone.
 			continue
 		}
 
-		var info probe.MediaInfo
-		if err := json.Unmarshal([]byte(f.ProbeJSON), &info); err != nil {
-			m.log.Error("library: re-evaluate probe", "file", f.Path, "err", err)
-			continue
-		}
-		eff, err := flow.ResolvePlan(plan, info)
+		eff, err := flow.ResolvePlan(plan, info, kind)
 		if err != nil {
 			m.log.Error("library: re-evaluate resolve", "file", f.Path, "err", err)
 			continue
 		}
-		decision := flow.Evaluate(info, eff.Target)
+
+		var decision flow.Decision
+		if probe.IsMedia(kind) {
+			decision = flow.Evaluate(info, eff.Target)
+		} else if plan.HasKindAgnosticWork() {
+			// A file that is not media is queued only when the flow carries
+			// kind-agnostic steps (rename, move, plugin) — task 34.
+			decision.Needs = true
+			decision.Reasons = plan.KindAgnosticReasons()
+		}
 
 		if decision.Needs {
 			if _, queued, err := m.queue.QueueJob(ctx, lib, f, decision.Reasons); err != nil {
@@ -301,7 +352,7 @@ func (m *LibraryManager) reevaluate(ctx context.Context, lib *store.Library) {
 		// claimed/running job is left to finish.
 		if job := m.queuedJobFor(ctx, f.ID); job != nil {
 			f.Status = store.FileStatusSatisfied
-			f.SatisfiedReason = ""
+			f.SatisfiedReason = eff.Reason
 			if err := m.st.UpdateFile(ctx, f); err != nil {
 				m.log.Error("library: re-evaluate file", "file", f.Path, "err", err)
 				continue
@@ -316,7 +367,7 @@ func (m *LibraryManager) reevaluate(ctx context.Context, lib *store.Library) {
 			continue // nothing changed
 		}
 		f.Status = store.FileStatusSatisfied
-		f.SatisfiedReason = ""
+		f.SatisfiedReason = eff.Reason
 		if err := m.st.UpdateFile(ctx, f); err != nil {
 			m.log.Error("library: re-evaluate file", "file", f.Path, "err", err)
 			continue
@@ -337,6 +388,22 @@ func (m *LibraryManager) queuedJobFor(ctx context.Context, fileID string) *store
 		}
 	}
 	return nil
+}
+
+// libraryWantsKind reports whether the library's file kinds include kind
+// (task 34). An empty list reads as video-only, the same default the
+// manager applies on create.
+func libraryWantsKind(lib *store.Library, kind probe.Kind) bool {
+	kinds := lib.FileKinds
+	if len(kinds) == 0 {
+		kinds = []string{string(probe.KindVideo)}
+	}
+	for _, k := range kinds {
+		if k == string(kind) {
+			return true
+		}
+	}
+	return false
 }
 
 // publish is a nil-safe event publish.

@@ -23,6 +23,7 @@ function lib(id: string, name: string) {
     watch: true,
     schedule: '',
     result_policy: 'replace_if_smaller',
+    file_kinds: ['video'],
     created_at: '',
     updated_at: '',
   }
@@ -327,6 +328,31 @@ describe('LibrariesPage', () => {
     )
     expect(screen.getByTestId('libraries-empty')).toHaveTextContent(
       'Add your first folder',
+    )
+  })
+})
+
+describe('LibrariesPage file kinds (task 34)', () => {
+  it('shows what each library looks for, in plain language', async () => {
+    const photos = lib('lib-1', 'Movies')
+    photos.file_kinds = ['image']
+    const series = lib('lib-2', 'Series')
+    series.file_kinds = ['video', 'audio']
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [photos, series], total: 2 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+    ])
+    renderPage()
+    await screen.findByTestId('library-kinds-lib-1')
+    expect(screen.getByTestId('library-kinds-lib-1')).toHaveTextContent(
+      'Photos',
+    )
+    expect(screen.getByTestId('library-kinds-lib-2')).toHaveTextContent(
+      'Video, Audio',
     )
   })
 })

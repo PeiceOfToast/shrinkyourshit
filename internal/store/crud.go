@@ -5,36 +5,45 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, watch, schedule, result_policy, created_at, updated_at, last_scan_at`
+const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
 	var (
-		l        Library
-		watch    string
-		created  string
-		updated  string
-		lastScan string
+		l         Library
+		watch     string
+		created   string
+		updated   string
+		lastScan  string
+		lastScanS string
+		fileKinds string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
 	l.CreatedAt = parseTime(created)
 	l.UpdatedAt = parseTime(updated)
 	l.LastScanAt = parseTime(lastScan)
+	l.LastScanJSON = lastScanS
+	if err := json.Unmarshal([]byte(fileKinds), &l.FileKinds); err != nil {
+		return nil, fmt.Errorf("store: library %s: file_kinds: %w", l.ID, err)
+	}
 	return &l, nil
 }
 
 // libraryDest builds the scan destination for a single library row.
 // lastScan receives the raw last_scan_at text; the caller parses it.
-func libraryDest(l *Library, watch *string, created, updated, lastScan *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan}
+// lastScanSummary receives the raw last_scan summary text.
+// fileKinds receives the raw file_kinds text; the caller parses it.
+func libraryDest(l *Library, watch *string, created, updated, lastScan, lastScanSummary, fileKinds *string) []any {
+	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled
@@ -51,8 +60,8 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 		l.CreatedAt = now
 	}
 	l.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds))
 	if err != nil {
 		return fmt.Errorf("store: create library: %w", err)
 	}
@@ -62,9 +71,9 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 // GetLibrary returns one library or ErrNotFound.
 func (s *SQLite) GetLibrary(ctx context.Context, id string) (*Library, error) {
 	var l Library
-	var watch, created, updated, lastScan string
+	var watch, created, updated, lastScan, lastScanSummary, fileKinds string
 	err := scanOne(ctx, s.db, `SELECT `+libraryColumns+` FROM libraries WHERE id = ?`,
-		libraryDest(&l, &watch, &created, &updated, &lastScan), id)
+		libraryDest(&l, &watch, &created, &updated, &lastScan, &lastScanSummary, &fileKinds), id)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +81,10 @@ func (s *SQLite) GetLibrary(ctx context.Context, id string) (*Library, error) {
 	l.CreatedAt = parseTime(created)
 	l.UpdatedAt = parseTime(updated)
 	l.LastScanAt = parseTime(lastScan)
+	l.LastScanJSON = lastScanSummary
+	if err := json.Unmarshal([]byte(fileKinds), &l.FileKinds); err != nil {
+		return nil, fmt.Errorf("store: library %s: file_kinds: %w", id, err)
+	}
 	return &l, nil
 }
 
@@ -86,8 +99,8 @@ func (s *SQLite) UpdateLibrary(ctx context.Context, l *Library) error {
 		return err
 	}
 	l.UpdatedAt = nowUTC()
-	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, easy = ?, flow_json = ?, flow_source = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ? WHERE id = ?`,
-		l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, easy = ?, flow_json = ?, flow_source = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ?, last_scan = ?, file_kinds = ? WHERE id = ?`,
+		l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), l.ID)
 	if err != nil {
 		return fmt.Errorf("store: update library: %w", err)
 	}
@@ -110,14 +123,15 @@ func (s *SQLite) DeleteLibrary(ctx context.Context, id string) error {
 	return nil
 }
 
-// SetLibraryScanTime stamps the library's last successful scan (task 19).
-// A dedicated update rather than UpdateLibrary so the scanner never
-// rewrites the whole row — and clobbers a concurrent settings change —
-// from a copy it read when the scan started.
-func (s *SQLite) SetLibraryScanTime(ctx context.Context, id string, at time.Time) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET last_scan_at = ? WHERE id = ?`, fmtTime(at), id)
+// SetLibraryScanResult stamps the library's last successful scan (task 19)
+// with the summary JSON of that scan (task 34). A dedicated update rather
+// than UpdateLibrary so the scanner never rewrites the whole row — and
+// clobbers a concurrent settings change — from a copy it read when the scan
+// started.
+func (s *SQLite) SetLibraryScanResult(ctx context.Context, id string, at time.Time, summary string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET last_scan_at = ?, last_scan = ? WHERE id = ?`, fmtTime(at), summary, id)
 	if err != nil {
-		return fmt.Errorf("store: set library scan time: %w", err)
+		return fmt.Errorf("store: set library scan result: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound

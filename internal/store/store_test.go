@@ -150,7 +150,7 @@ func TestLibraryEasyRoundTrip(t *testing.T) {
 }
 
 // TestLibraryLastScanTime covers the last_scan_at column (task 19): a fresh
-// library has never been scanned (zero time), SetLibraryScanTime stamps it
+// library has never been scanned (zero time), SetLibraryScanResult stamps it
 // without touching the rest of the row, and an unknown id is ErrNotFound.
 func TestLibraryLastScanTime(t *testing.T) {
 	s := openTemp(t)
@@ -163,7 +163,7 @@ func TestLibraryLastScanTime(t *testing.T) {
 	assert.True(t, got.LastScanAt.IsZero(), "a fresh library has never been scanned")
 
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, s.SetLibraryScanTime(ctx, lib.ID, at))
+	require.NoError(t, s.SetLibraryScanResult(ctx, lib.ID, at, "{}"))
 	stamped, err := s.GetLibrary(ctx, lib.ID)
 	require.NoError(t, err)
 	assert.True(t, stamped.LastScanAt.Equal(at), "the stamp round trips")
@@ -171,7 +171,7 @@ func TestLibraryLastScanTime(t *testing.T) {
 	assert.Equal(t, lib.Name, stamped.Name)
 	assert.True(t, stamped.UpdatedAt.Equal(got.UpdatedAt), "the stamp leaves updated_at alone")
 
-	err = s.SetLibraryScanTime(ctx, "does-not-exist", at)
+	err = s.SetLibraryScanResult(ctx, "does-not-exist", at, "{}")
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 

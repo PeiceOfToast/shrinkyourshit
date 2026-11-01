@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -153,6 +154,15 @@ func fmtBool(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+// mustMarshalKinds serializes file kinds as a JSON array string.
+func mustMarshalKinds(kinds []string) string {
+	raw, err := json.Marshal(kinds)
+	if err != nil {
+		return "[]"
+	}
+	return string(raw)
 }
 
 // parseBool reads a stored 0/1.

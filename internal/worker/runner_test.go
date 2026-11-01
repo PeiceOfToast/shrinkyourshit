@@ -1062,3 +1062,113 @@ func TestWorkerReportsBytesSoFar(t *testing.T) {
 	require.Equal(t, int64(len(payload)), saw,
 		"the tick after the output was written must report its size")
 }
+
+// nonMediaImageSpec builds a spec over a real image file: the file kind is
+// decided by the .jpg extension, so no probe fixture is needed and no
+// encoder may ever run (task 34).
+func nonMediaImageSpec(t *testing.T, dir, jobID string) (sourceFixture, *server.JobSpec) {
+	t.Helper()
+	src := writeSource(t, dir, "photo.jpg", "IMAGE-CONTENT")
+	return src, &server.JobSpec{
+		ID: jobID, FileID: "file-1", LibraryID: "lib-1",
+		Target:       flow.Default(),
+		SourcePath:   src.Path,
+		SourceSize:   src.Size,
+		SourceMtime:  src.Mtime,
+		Fingerprint:  src.Fingerprint,
+		AccessMode:   store.NodeAccessShared,
+		ResultPolicy: store.ResultPolicyKeepBoth,
+		BytesBefore:  src.Size,
+	}
+}
+
+// encoderMustNotRun is a RunFn that fails the test when called: proof that
+// a non-media job never starts an encode (task 34).
+func encoderMustNotRun(t *testing.T) encoders.RunFn {
+	t.Helper()
+	return func(_ context.Context, args []string) error {
+		t.Errorf("an encoder process was started for a non-media file: %v", args)
+		return nil
+	}
+}
+
+// TestRunnerNonMediaRenameAndMove (task 34): rename plus move on an image
+// produces the renamed, moved file and a done job with no encoder invoked.
+func TestRunnerNonMediaRenameAndMove(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	src, spec := nonMediaImageSpec(t, dir, "job1")
+	dest := filepath.Join(t.TempDir(), "shrunk")
+	spec.MoveTo = dest
+	spec.MoveRelDir = ""
+	g := flow.Graph{Schema: flow.FlowSchema, Nodes: []flow.Step{
+		{ID: "probe", Type: flow.StepProbe},
+		{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		{ID: "rename", Type: flow.StepRename, Params: json.RawMessage(`{"template":"{name}.moved"}`)},
+		{ID: "move", Type: flow.StepMove, Params: json.RawMessage(`{"destination":"` + dest + `"}`)},
+	}, Edges: []flow.Edge{
+		{From: "probe", To: "remux"}, {From: "remux", To: "rename"}, {From: "rename", To: "move"},
+	}}
+	spec.Flow = &g
+	api.enqueue("job1", spec)
+
+	// The fake prober errors on any file it is handed: if the runner
+	// probed the image, the job would fail — so a done job proves no
+	// ffprobe ran either.
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run: encoderMustNotRun(t),
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	in := api.completeOf("job1")
+	require.Equal(t, filepath.Join(dest, "photo.moved.jpg"), in.OutputPath, "renamed and moved")
+	require.Empty(t, in.Encoder, "no encoder was invoked")
+	require.Empty(t, in.SkippedReason)
+
+	out, err := os.ReadFile(in.OutputPath)
+	require.NoError(t, err)
+	require.Equal(t, "IMAGE-CONTENT", string(out), "the file is the working copy, untouched")
+	_, err = os.Stat(src.Path)
+	require.NoError(t, err, "keep-both keeps the original")
+}
+
+// TestRunnerNonMediaMediaOnlyFlowSkips (task 34): a media-only flow on an
+// image skips every media step with a reason naming the step and the kind,
+// and the job completes done, never failed.
+func TestRunnerNonMediaMediaOnlyFlowSkips(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	src, spec := nonMediaImageSpec(t, dir, "job2")
+	g := flow.Graph{Schema: flow.FlowSchema, Nodes: []flow.Step{
+		{ID: "probe", Type: flow.StepProbe},
+		{ID: "transcode", Type: flow.StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3}`)},
+		{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+	}, Edges: []flow.Edge{
+		{From: "probe", To: "transcode"}, {From: "transcode", To: "remux"},
+	}}
+	spec.Flow = &g
+	api.enqueue("job2", spec)
+
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run: encoderMustNotRun(t),
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	in := api.completeOf("job2")
+	require.Equal(t, flow.NotMediaReason, in.SkippedReason, "the job is a skip, not a failure")
+	require.Empty(t, in.Encoder)
+	require.Equal(t, spec.BytesBefore, in.BytesAfter, "the original is kept")
+
+	// The job log names the skipped steps and the file kind: never silent.
+	msgs := ""
+	for _, batch := range api.logs["job2"] {
+		for _, line := range batch.Lines {
+			msgs += line.Message + "\n"
+		}
+	}
+	require.Contains(t, msgs, "transcode_video", "the log names the step")
+	require.Contains(t, msgs, "image", "the log names the file kind")
+	require.Contains(t, msgs, "remux_container")
+	_, err := os.Stat(src.Path)
+	require.NoError(t, err, "the original is untouched")
+}

@@ -175,6 +175,11 @@ func joinErrors(errs []FieldError) string {
 	return strings.Join(msgs, "; ")
 }
 
+// NotMediaReason is the plan reason for a file that is not media (task
+// 34): nothing encodes, only the kind-agnostic steps (rename, move,
+// skip_if_smaller, plugin) run. The UI shows it as the skip reason.
+const NotMediaReason = "not media: nothing to encode"
+
 // Effective is what a plan resolves to for one probed file: the Target the
 // encode runs with (the satisfied rule and command builder speak this
 // shape), plus the two flow-only outcomes.
@@ -182,7 +187,8 @@ type Effective struct {
 	// Target is the effective end state after the conditions passed or
 	// failed for this file. A skipped transcode leaves the video at copy
 	// (quality 3: meaningless for a copy, any valid value keeps the
-	// resolved target valid).
+	// resolved target valid). For a file that is not media the Target
+	// stays empty: no codec, no quality, no audio or subtitle policy.
 	Target Target
 	// SkipIfSmaller is set when the plan holds a skip_if_smaller step that
 	// ran (it always does — it has no conditions that matter here): the
@@ -199,6 +205,10 @@ type Effective struct {
 	// MoveKeepTree rebuilds the file's folder layout under it.
 	MoveTo       string
 	MoveKeepTree bool
+	// Reason is the plan's skip reason for a file that is not media (task
+	// 34, NotMediaReason); empty for media files, which report through the
+	// satisfied rule instead.
+	Reason string
 }
 
 // FreshEffective is the Effective a resolution starts from (task 32):
@@ -218,7 +228,15 @@ func FreshEffective() Effective {
 // step plugin's re-probe may have replaced — and runs the plugin itself
 // when the step is a plugin step (a plugin step changes nothing here).
 // ResolvePlan is this loop with one probe for the whole plan.
-func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo) (bool, error) {
+//
+// kind is what the file is (task 34): a step that needs media never runs
+// on a file that is not media — the caller logs that skip — and the
+// kind-agnostic steps (rename, move, skip_if_smaller, plugin) apply
+// regardless.
+func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo, kind probe.Kind) (bool, error) {
+	if !probe.IsMedia(kind) && StepNeedsMedia(s.Type) {
+		return false, nil
+	}
 	if len(s.When) > 0 {
 		for _, c := range s.When {
 			if !c.pass(info) {
@@ -313,15 +331,29 @@ func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo) (bool, error) {
 //   - skip_if_smaller and rename surface outside the Target;
 //   - a plugin step (task 32) is carried in the plan and run by the
 //     worker at its position; it changes nothing here.
-func ResolvePlan(p Plan, info probe.MediaInfo) (Effective, error) {
-	eff := FreshEffective()
+//
+// kind is what the file is, decided by extension (task 34). For a file
+// that is not media the plan resolves without error even though the probe
+// holds no streams: the media steps do not apply, the Target stays empty
+// (no codec, no quality, no audio or subtitle policy), and the plan
+// carries the skip reason NotMediaReason so the UI shows a skip with a
+// reason rather than a failure.
+func ResolvePlan(p Plan, info probe.MediaInfo, kind probe.Kind) (Effective, error) {
+	eff := Effective{}
+	if probe.IsMedia(kind) {
+		eff = FreshEffective()
+	} else {
+		eff.Reason = NotMediaReason
+	}
 	for _, s := range p.Steps {
-		if _, err := ApplyStep(&eff, s, info); err != nil {
+		if _, err := ApplyStep(&eff, s, info, kind); err != nil {
 			return eff, err
 		}
 	}
-	if err := eff.Target.Validate(); err != nil {
-		return eff, fmt.Errorf("flow: resolved target: %w", err)
+	if probe.IsMedia(kind) {
+		if err := eff.Target.Validate(); err != nil {
+			return eff, fmt.Errorf("flow: resolved target: %w", err)
+		}
 	}
 	return eff, nil
 }
@@ -405,6 +437,38 @@ func (p Plan) HasSkipIfSmaller() bool {
 		}
 	}
 	return false
+}
+
+// HasKindAgnosticWork reports whether the plan holds a step that acts on a
+// file of any kind (task 34): rename, move or plugin. A non-media file
+// only needs a job when the flow carries one of these — skip_if_smaller
+// alone changes no file, it only modulates the result policy of an encode.
+func (p Plan) HasKindAgnosticWork() bool {
+	for _, s := range p.Steps {
+		switch s.Type {
+		case StepRename, StepMove, StepPlugin:
+			return true
+		}
+	}
+	return false
+}
+
+// KindAgnosticReasons renders one plain-language reason per kind-agnostic
+// step of the plan (task 34): why a non-media file is queued even though
+// nothing encodes.
+func (p Plan) KindAgnosticReasons() []string {
+	var out []string
+	for _, s := range p.Steps {
+		switch s.Type {
+		case StepRename:
+			out = append(out, "the flow renames the result")
+		case StepMove:
+			out = append(out, "the flow moves the file")
+		case StepPlugin:
+			out = append(out, "the flow runs a plugin on this file")
+		}
+	}
+	return out
 }
 
 // RenameTemplate returns the plan's rename template, empty when none.

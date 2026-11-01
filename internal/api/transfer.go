@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
@@ -230,6 +231,13 @@ func (a *API) transferComplete(w http.ResponseWriter, r *http.Request, node *sto
 	if err != nil {
 		a.internal(w, err)
 		return transferCompleteResult{}, false
+	}
+	// A file that is not media (task 34): the uploaded output is the file
+	// itself unless a step plugin produced it, so an equal-size result is
+	// a rename or a move, not a failed shrink. replace_if_smaller must not
+	// swallow the flow's rename and move because nothing got smaller.
+	if !probe.IsMedia(probe.KindForPath(f.Path)) && policy == store.ResultPolicyReplaceIfSmaller && size == f.Size {
+		policy = store.ResultPolicyReplace
 	}
 	// The flow's move step (task 24) redirects the final placement; the
 	// folder layout to rebuild comes from the file's path under the library.

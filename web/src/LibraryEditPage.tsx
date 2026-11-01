@@ -20,6 +20,7 @@ import {
 import { parseEasy } from './easyModel'
 import ErrorBox from './ErrorBox'
 import FolderPickerModal from './FolderPickerModal'
+import KindPicker from './KindPicker'
 import PageContainer from './PageContainer'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
@@ -70,6 +71,7 @@ export default function LibraryEditPage() {
   const [watch, setWatch] = useState<boolean | null>(null)
   const [easy, setEasy] = useState<ReturnType<typeof parseEasy> | null>(null)
   const [target, setTarget] = useState<Target | null>(null)
+  const [kinds, setKinds] = useState<string[] | null>(null)
   const [picking, setPicking] = useState(false)
   const [path, setPath] = useState<string | null>(null)
 
@@ -110,12 +112,15 @@ export default function LibraryEditPage() {
   const nameState = name ?? lib.name
   const watchState = watch ?? lib.watch
   const pathState = path ?? lib.path
+  const kindsState =
+    kinds ?? (lib.file_kinds?.length ? lib.file_kinds : ['video'])
 
   const submit = () => {
     const body: LibraryBody = {
       name: nameState,
       path: pathState,
       watch: watchState,
+      file_kinds: kindsState,
     }
     if (advancedInUse) {
       body.target = targetState
@@ -184,6 +189,15 @@ export default function LibraryEditPage() {
             Watch this folder for new files
           </span>
         </label>
+        <KindPicker
+          value={kindsState}
+          onChange={setKinds}
+          testIdPrefix="library-edit-kind"
+        />
+        <p className="text-xs text-slate-500">
+          Files of other types stay untouched: this library skips them before
+          looking inside.
+        </p>
       </section>
 
       {hasEasy && !advancedShown && (

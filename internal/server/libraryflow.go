@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
-	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
@@ -65,23 +64,6 @@ func LibraryPlan(lib *store.Library) (flow.Plan, string, error) {
 		return flow.Plan{}, "", fmt.Errorf("library flow: %w", err)
 	}
 	return plan, source, nil
-}
-
-// EffectiveTarget resolves the library's flow for one probed file and
-// returns the Target the satisfied rule and the command builder must use:
-// a guard that skips the encode leaves the video at copy (satisfying the
-// video clause), a running transcode becomes the effective video, and the
-// container, audio and subtitle steps define the rest.
-func EffectiveTarget(lib *store.Library, info probe.MediaInfo) (flow.Target, error) {
-	plan, _, err := LibraryPlan(lib)
-	if err != nil {
-		return flow.Target{}, err
-	}
-	eff, err := flow.ResolvePlan(plan, info)
-	if err != nil {
-		return flow.Target{}, err
-	}
-	return eff.Target, nil
 }
 
 // EffectivePolicy returns the result policy and rename template the

@@ -339,6 +339,21 @@ func byIDOrMinusOne(byID map[string]int, id string) int {
 
 func isGuard(t string) bool { return t == StepIfCodecNot || t == StepIfBitrateAbove }
 
+// StepNeedsMedia reports whether a step type only makes sense on a probed
+// media file (task 34): it reads streams, encodes or verifies the encode.
+// On a file that is not media every one of these steps is skipped with a
+// reason, never a failure. The steps that work on any kind — rename, move,
+// skip_if_smaller and plugin (and the script step, task 33, when it
+// arrives) — are media-agnostic.
+func StepNeedsMedia(t string) bool {
+	switch t {
+	case StepProbe, StepIfCodecNot, StepIfBitrateAbove, StepTranscodeVideo,
+		StepRemuxContainer, StepConvertAudio, StepSubtitles, StepHealthCheck:
+		return true
+	}
+	return false
+}
+
 // isShaping reports whether the step type must appear at most once (and,
 // for remux_container, exactly once) in a graph.
 func isShaping(t string) bool {

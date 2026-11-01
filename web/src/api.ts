@@ -207,10 +207,31 @@ export interface Library {
   watch: boolean
   schedule: string
   result_policy: string
+  /** What the library holds (task 34): video, audio, subtitle, image or
+   * other. The scanner skips files of other kinds before looking inside. */
+  file_kinds: string[]
   created_at: string
   updated_at: string
   /** When a scan last finished without error (task 19); absent when none. */
   last_scan_at?: string
+  /** The summary of that scan (task 34): counts, including the distinct
+   * count of files skipped because their kind is not what the library
+   * looks for. Absent when the library has never been scanned. */
+  last_scan?: ScanSummary
+}
+
+/** GET /libraries scan summary (task 34). */
+export interface ScanSummary {
+  seen: number
+  probed: number
+  reused: number
+  skipped: number
+  /** Files whose kind this library does not look for. */
+  skipped_kinds: number
+  queued: number
+  satisfied: number
+  missing: number
+  errors: number
 }
 
 export interface FileItem {
@@ -320,6 +341,8 @@ export interface LibraryBody {
   watch: boolean
   schedule?: string
   result_policy?: string
+  /** What the library holds (task 34); omitted defaults to ["video"]. */
+  file_kinds?: string[]
 }
 
 export function getLibraries(): Promise<ListResponse<Library>> {

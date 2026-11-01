@@ -207,3 +207,105 @@ func TestScannerConcurrencyLimit(t *testing.T) {
 	assert.Equal(t, 6, res.Seen)
 	assert.Equal(t, 6, res.Probed)
 }
+
+// TestScannerImageLibrarySkipsOtherKinds (task 34): a library that looks
+// for images scans a folder of images without probing anything, satisfies
+// them with the not-media reason, and counts files of other kinds as
+// skipped — not queued, not failed, and no row for a never-seen file.
+func TestScannerImageLibrarySkipsOtherKinds(t *testing.T) {
+	h := newHarness(t)
+	target, err := json.Marshal(flow.Default())
+	require.NoError(t, err)
+	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
+		Name: "Photos", Path: h.root, TargetJSON: target, FileKinds: []string{"image"},
+	})
+	require.NoError(t, err)
+
+	writeFixture(t, h.root, "photo.jpg", 512)
+	writeFixture(t, h.root, "pic.png", 512)
+	writeFixture(t, h.root, "movie.mkv", 512) // not wanted by this library
+	writeFixture(t, h.root, "notes.txt", 64)  // not wanted either
+
+	res := h.scan(lib.ID)
+	assert.Equal(t, 2, res.Seen, "only the images the library looks for")
+	assert.Equal(t, 2, res.SkippedKinds, "the video and the text file are counted separately")
+	assert.Equal(t, 0, res.Probed, "nothing probes a non-media file")
+	assert.Equal(t, 0, res.Queued, "a default video flow queues nothing on images")
+	assert.Equal(t, 2, res.Satisfied)
+	assert.Equal(t, 0, res.Errors, "a not-wanted kind is never a failure")
+
+	fs := h.files(lib.ID)
+	require.Len(t, fs, 2)
+	for _, name := range []string{"photo.jpg", "pic.png"} {
+		assert.Equal(t, store.FileStatusSatisfied, fs[name].Status)
+		assert.Equal(t, flow.NotMediaReason, fs[name].SatisfiedReason)
+	}
+}
+
+// TestScannerKindSkippedRowRecorded (task 34): a file that was scanned
+// while the library wanted its kind keeps an honest row when the library's
+// kinds change — satisfied with the reason instead of marked missing, since
+// the file is still on disk.
+func TestScannerKindSkippedRowRecorded(t *testing.T) {
+	h := newHarness(t)
+	lib := h.createLibrary(false)
+	path := writeFixture(t, h.root, "movie.mkv", 2048)
+	h.scan(lib.ID)
+	require.Equal(t, store.FileStatusSatisfied, h.files(lib.ID)["movie.mkv"].Status)
+
+	// The library stops looking for video files.
+	updated, err := h.svc.Libraries().Update(context.Background(), lib.ID, LibraryParams{
+		Name: lib.Name, Path: lib.Path, TargetJSON: []byte(lib.TargetJSON),
+		ResultPolicy: lib.ResultPolicy, FileKinds: []string{"image"},
+	})
+	require.NoError(t, err)
+	h.scan(updated.ID)
+
+	f := h.files(lib.ID)["movie.mkv"]
+	assert.Equal(t, store.FileStatusSatisfied, f.Status, "the file is on disk, not missing")
+	assert.Equal(t, kindSkippedReason, f.SatisfiedReason)
+	_ = path
+}
+
+// TestScannerNonMediaKindQueuesKindAgnosticWork (task 34): a rename+move
+// flow queues images; a media-only flow does not. The flow change arrives
+// through UpdateFlow, the path that re-evaluates every file.
+func TestScannerNonMediaKindQueuesKindAgnosticWork(t *testing.T) {
+	h := newHarness(t)
+	target, err := json.Marshal(flow.Default())
+	require.NoError(t, err)
+	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
+		Name: "Photos", Path: h.root, TargetJSON: target, FileKinds: []string{"image"},
+	})
+	require.NoError(t, err)
+	writeFixture(t, h.root, "photo.jpg", 512)
+
+	res := h.scan(lib.ID)
+	assert.Equal(t, 0, res.Queued, "a media-only flow queues nothing on images")
+
+	// Attach rename + move; the image now has kind-agnostic work to do.
+	dest := filepath.Join(t.TempDir(), "out")
+	g := flow.Graph{Schema: flow.FlowSchema, Nodes: []flow.Step{
+		{ID: "probe", Type: flow.StepProbe},
+		{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		{ID: "rename", Type: flow.StepRename, Params: json.RawMessage(`{"template":"{name}.moved"}`)},
+		{ID: "move", Type: flow.StepMove, Params: json.RawMessage(`{"destination":"` + dest + `"}`)},
+	}, Edges: []flow.Edge{
+		{From: "probe", To: "remux"}, {From: "remux", To: "rename"}, {From: "rename", To: "move"},
+	}}
+	raw, err := json.Marshal(g)
+	require.NoError(t, err)
+	graph, err := flow.ParseGraph(raw)
+	require.NoError(t, err)
+	_, err = h.svc.Libraries().UpdateFlow(context.Background(), lib.ID, flow.FlowSourceAdvanced, graph)
+	require.NoError(t, err)
+
+	fs := h.files(lib.ID)
+	assert.Equal(t, store.FileStatusQueued, fs["photo.jpg"].Status)
+	assert.Contains(t, fs["photo.jpg"].SatisfiedReason, "the flow renames the result")
+
+	// A rescan sees an unchanged fingerprint and leaves the queued job be.
+	res = h.scan(lib.ID)
+	assert.Equal(t, 0, res.Queued)
+	assert.Equal(t, 0, res.Satisfied)
+}
