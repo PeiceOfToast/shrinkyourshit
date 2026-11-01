@@ -106,6 +106,9 @@ func (e *qsvEncoder) setPrefs(p QSVPrefs, machine string, log *slog.Logger) {
 		if !want || supported[feature] || e.warned[feature] {
 			continue
 		}
+		if e.warned == nil {
+			e.warned = map[string]bool{}
+		}
 		e.warned[feature] = true
 		log.Warn("qsv: requested feature is not supported on this machine; continuing without it",
 			"feature", feature, "node", machine)
