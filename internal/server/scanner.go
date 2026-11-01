@@ -281,13 +281,12 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	// distinct kind-skip count is how a photos library explains why it is
 	// doing nothing. Best effort — a stamping failure must not turn a
 	// finished scan into an error.
-	if raw, err := json.Marshal(res); err == nil {
-		err = s.st.SetLibraryScanResult(ctx, libraryID, time.Now().UTC(), string(raw))
-	} else {
-		err = fmt.Errorf("marshal scan summary: %w", err)
+	summary, stampErr := json.Marshal(res)
+	if stampErr == nil {
+		stampErr = s.st.SetLibraryScanResult(ctx, libraryID, time.Now().UTC(), string(summary))
 	}
-	if err != nil {
-		s.log.Error("scanner: stamp last scan", "library", libraryID, "err", err)
+	if stampErr != nil {
+		s.log.Error("scanner: stamp last scan", "library", libraryID, "err", stampErr)
 	}
 
 	// The webhooks learn about the finished scan (task 25). Fire and

@@ -707,3 +707,82 @@ describe('LibraryDetailPage skipped kinds (task 34)', () => {
     expect(screen.queryByTestId('library-skipped-kinds')).toBeNull()
   })
 })
+
+describe('LibraryDetailPage non-media hint (task 34)', () => {
+  it('says so when a photos library carries a video-only flow', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc({
+          file_kinds: ['image'],
+          flow: {
+            schema: 1,
+            nodes: [
+              { id: 'probe', type: 'probe' },
+              {
+                id: 'transcode',
+                type: 'transcode_video',
+                params: { codec: 'hevc', quality: 3 },
+              },
+            ],
+            edges: [{ from: 'probe', to: 'transcode' }],
+          },
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files/,
+        body: { items: [], total: 0 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+    ])
+    renderPage()
+    const hint = await screen.findByTestId('library-kind-hint')
+    expect(hint).toHaveTextContent('looks for Photos')
+    expect(hint).toHaveTextContent('skipped untouched')
+  })
+
+  it('stays quiet when the flow carries work any kind can do', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc({
+          file_kinds: ['image'],
+          flow: {
+            schema: 1,
+            nodes: [
+              { id: 'probe', type: 'probe' },
+              {
+                id: 'move',
+                type: 'move',
+                params: { destination: '/media/out' },
+              },
+            ],
+            edges: [{ from: 'probe', to: 'move' }],
+          },
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files/,
+        body: { items: [], total: 0 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-last-scan')
+    expect(screen.queryByTestId('library-kind-hint')).toBeNull()
+  })
+})

@@ -6,7 +6,8 @@
  */
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import KindPicker, { kindLabel } from './KindPicker'
+import KindPicker from './KindPicker'
+import { kindLabel } from './kinds'
 
 function renderPicker(value: string[], onChange = vi.fn()) {
   render(<KindPicker value={value} onChange={onChange} />)
@@ -25,12 +26,12 @@ describe('KindPicker', () => {
 
   it('marks the selected kinds and toggles a kind on', () => {
     const onChange = renderPicker(['video'])
-    expect(
-      (screen.getByTestId('kind-video') as HTMLInputElement).checked,
-    ).toBe(true)
-    expect(
-      (screen.getByTestId('kind-image') as HTMLInputElement).checked,
-    ).toBe(false)
+    expect((screen.getByTestId('kind-video') as HTMLInputElement).checked).toBe(
+      true,
+    )
+    expect((screen.getByTestId('kind-image') as HTMLInputElement).checked).toBe(
+      false,
+    )
     fireEvent.click(screen.getByTestId('kind-image'))
     expect(onChange).toHaveBeenCalledWith(['video', 'image'])
   })

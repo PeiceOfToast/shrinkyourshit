@@ -112,7 +112,8 @@ export default function LibraryEditPage() {
   const nameState = name ?? lib.name
   const watchState = watch ?? lib.watch
   const pathState = path ?? lib.path
-  const kindsState = kinds ?? (lib.file_kinds?.length ? lib.file_kinds : ['video'])
+  const kindsState =
+    kinds ?? (lib.file_kinds?.length ? lib.file_kinds : ['video'])
 
   const submit = () => {
     const body: LibraryBody = {

@@ -2,27 +2,10 @@
 
 /**
  * The file-kind picker (task 34): what a library looks for, in plain
- * language. Multi-select checkboxes at the 44px touch minimum; no codec or
- * engine terms on the label (AGENTS.md rule 14). The kind values travel as
- * the API's file_kinds strings.
+ * language. Multi-select checkboxes at the 44px touch minimum. The kind
+ * values travel as the API's file_kinds strings.
  */
-
-/** The kinds the API knows, with their plain-language labels. */
-export const KIND_CHOICES = [
-  { value: 'video', label: 'Video' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'image', label: 'Photos' },
-  { value: 'subtitle', label: 'Subtitles' },
-  { value: 'other', label: 'Anything else' },
-] as const
-
-/** The plain-language label of a kind; unknown kinds show as-is. */
-export function kindLabel(kind: string): string {
-  for (const c of KIND_CHOICES) {
-    if (c.value === kind) return c.label
-  }
-  return kind
-}
+import { KIND_CHOICES } from './kinds'
 
 interface KindPickerProps {
   /** The selected kinds, in the library's stored order. */

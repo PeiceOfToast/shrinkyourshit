@@ -21,12 +21,14 @@ import {
   previewFlow,
   retryJob,
   type FileItem,
+  type Library,
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
 import { formatBytes, statusLabel, truncateMiddle } from './easyModel'
 import ErrorBox from './ErrorBox'
 import FileHistory from './FileHistory'
+import { kindLabel, KIND_AGNOSTIC_STEPS } from './kinds'
 import PageContainer from './PageContainer'
 import StatusChip from './StatusChip'
 import { SkeletonRows } from './skeleton'
@@ -90,6 +92,32 @@ function formatScanTime(iso: string | undefined): string {
 function formatRatio(before: number, after: number): string {
   if (after <= 0 || before <= 0) return '—'
   return `${(before / after).toFixed(1)}×`
+}
+
+/**
+ * The plain-language hint (task 34): a library that looks for photos,
+ * subtitles or anything else while its flow only does video and audio work
+ * says so, so a photos library that is doing nothing looks deliberate.
+ */
+function NonMediaHint({ lib }: { lib: Library }) {
+  const kinds = lib.file_kinds?.length ? lib.file_kinds : ['video']
+  const nonMedia = kinds.filter((k) => k !== 'video' && k !== 'audio')
+  if (nonMedia.length === 0) return null
+  const flowWorks =
+    (lib.flow?.nodes ?? []).some((n) => KIND_AGNOSTIC_STEPS.includes(n.type)) ||
+    !!lib.last_scan?.skipped_kinds
+  if (flowWorks) return null
+  const labels = nonMedia.map(kindLabel).join(', ')
+  return (
+    <span
+      className="text-sm text-amber-300"
+      data-testid="library-kind-hint"
+      title="Add a rename, move or plugin step to the flow for these files to be processed."
+    >
+      This library looks for {labels}, but its flow only handles video and audio
+      — those files are skipped untouched.
+    </span>
+  )
 }
 
 export default function LibraryDetailPage() {
@@ -495,6 +523,7 @@ export default function LibraryDetailPage() {
               what this library looks for.
             </span>
           )}
+          <NonMediaHint lib={lib} />
         </div>
         {plain.data && plain.data.steps.length > 0 && (
           <div

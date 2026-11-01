@@ -23,6 +23,7 @@ function lib(id: string, name: string) {
     watch: true,
     schedule: '',
     result_policy: 'replace_if_smaller',
+    file_kinds: ['video'],
     created_at: '',
     updated_at: '',
   }

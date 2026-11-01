@@ -37,6 +37,7 @@ function library(easy: unknown) {
     watch: true,
     schedule: '',
     result_policy: 'replace_if_smaller',
+    file_kinds: ['video'],
     created_at: '',
     updated_at: '',
   }

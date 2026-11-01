@@ -232,3 +232,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-01T05:37:59Z task 33: PR #36 merged with squash f582a01, all ten CI checks green (go, web, docker, docker-arm64, e2e, cross, installer, installer-powershell, report), branch task/33-script-escape-hatch deleted on the remote
 - 2026-11-01T05:37:59Z task 33: PM verification passed on the merged tree - acceptance boxes all ticked, make test 219 web tests green plus go tests, make lint 0 issues, DECISIONS.md unchanged versus origin/main; main pulled on the VM to f582a01
 2026-11-01T05:46:13Z start task 34 (non-media file types), session ses_e6a5b2c68ffe2fghRu6iXIIry9
+2026-11-01T07:33:11Z | task 34: interrupted hung shell call (tsc/make lint, 11m, no child process); re-prompted to re-verify with timeouts, commit pending web files, tick checklist
