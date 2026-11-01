@@ -362,4 +362,25 @@ type JobSpec struct {
 	// (view-agnostic; empty for a file at the root), computed server-side
 	// so the worker never needs the library root.
 	MoveRelDir string `json:"move_rel_dir,omitempty"`
+	// Plugins is one entry per plugin step of the flow (task 32), in
+	// chain order: the manifest facts the node needs, the merged settings
+	// and where the step sits in the executed chain. Empty when the flow
+	// has no plugin step.
+	Plugins []PluginStep `json:"plugins,omitempty"`
+}
+
+// PluginStep is a resolved step plugin (task 32): the manifest facts the
+// node needs — the command, the declared env names and the timeout — the
+// merged settings (per-step overrides over the plugin's stored values),
+// and where it sits in the chain. The node runs the command from its own
+// `<data dir>/plugins/<name>/` directory; the server never ships plugin
+// files in v1.
+type PluginStep struct {
+	Name            string            `json:"name"`
+	Command         []string          `json:"command"`
+	EnvNames        []string          `json:"env_names"`
+	TimeoutSec      int               `json:"timeout_seconds"`
+	Settings        map[string]string `json:"settings"`
+	StepIndex       int               `json:"step_index"`
+	ContinueOnError bool              `json:"continue_on_error,omitempty"`
 }

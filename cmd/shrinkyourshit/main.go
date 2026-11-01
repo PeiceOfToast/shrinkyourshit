@@ -244,6 +244,8 @@ func serve(args []string, info buildInfo) error {
 			wcfg := workerpkg.Config{
 				ServerURL:   fmt.Sprintf("http://127.0.0.1:%d", cfg.Port),
 				Key:         nodeKey,
+				NodeName:    cfg.NodeName,
+				DataDir:     cfg.DataDir,
 				ScratchDir:  cfg.ScratchDir,
 				FFmpegPath:  cfg.FFmpegPath,
 				FFprobePath: cfg.FFprobePath(),
@@ -318,6 +320,8 @@ func runWorkerFlow(ctx context.Context, cfg config.Config, logger *slog.Logger, 
 	return workerpkg.Run(ctx, workerpkg.Config{
 		ServerURL:   serverURL,
 		Key:         key,
+		NodeName:    cfg.NodeName,
+		DataDir:     cfg.DataDir,
 		ScratchDir:  cfg.ScratchDir,
 		FFmpegPath:  cfg.FFmpegPath,
 		FFprobePath: cfg.FFprobePath(),

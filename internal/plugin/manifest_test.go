@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -166,4 +167,33 @@ func TestLoadMissingManifest(t *testing.T) {
 	_, err := Load(t.TempDir())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "plugin.yaml")
+}
+
+// TestStepTypeIsKnown (task 32): the fourth manifest type installs, and
+// the store's own value list (which the store package validates columns
+// against, to avoid an import cycle) stays in sync with this one.
+func TestStepTypeIsKnown(t *testing.T) {
+	m, err := Parse([]byte(strings.ReplaceAll(validYAML, "type: postprocess", "type: step")))
+	require.NoError(t, err)
+	assert.Equal(t, TypeStep, m.Type)
+	assert.Equal(t, store.PluginTypeValues(), TypeValues(),
+		"the store mirrors these strings; the two lists must not drift")
+	assert.Contains(t, TypeValues(), TypeStep)
+}
+
+// TestValidNameAndEnvName (task 32): the checks the flow layer reuses for
+// a plugin step's parameters. A flow can never name a plugin the
+// installer would refuse, and a settings key must be exportable to the
+// environment its value becomes.
+func TestValidNameAndEnvName(t *testing.T) {
+	assert.True(t, ValidName("remove-chapters"))
+	assert.True(t, ValidName("a2"))
+	assert.False(t, ValidName("Remove Chapters"))
+	assert.False(t, ValidName("remove_chapters"))
+	assert.False(t, ValidName("x"))
+	assert.False(t, ValidName(""))
+	assert.True(t, ValidEnvName("TINY_MKV"))
+	assert.True(t, ValidEnvName("chat_id"))
+	assert.False(t, ValidEnvName("not a name"))
+	assert.False(t, ValidEnvName("1bad"))
 }

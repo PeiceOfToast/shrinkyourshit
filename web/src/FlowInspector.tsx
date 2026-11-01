@@ -9,7 +9,7 @@
  * decides validity: it edits the graph and the server re-validates.
  */
 import { useEffect, useState } from 'react'
-import type { FlowGraph, StepTypeInfo } from './api'
+import type { FlowGraph, Plugin, StepTypeInfo } from './api'
 import { chipsFor, conditionText, paletteFor } from './flowModel'
 import {
   applyConnect,
@@ -22,6 +22,8 @@ import ParamField from './flowParams'
 export interface FlowInspectorProps {
   graph: FlowGraph
   palette: StepTypeInfo[]
+  /** The installed, enabled step plugins — the plugin kind's select. */
+  plugins?: Plugin[]
   selection: CanvasSelection
   editing: boolean
   onChange: (graph: FlowGraph) => void
@@ -30,6 +32,7 @@ export interface FlowInspectorProps {
 export default function FlowInspector({
   graph,
   palette,
+  plugins,
   selection,
   editing,
   onChange,
@@ -90,6 +93,7 @@ export default function FlowInspector({
                   key={f.name}
                   field={f}
                   step={node}
+                  plugins={plugins}
                   testId={`flow-param-${f.name}`}
                   onChange={updateParams}
                 />

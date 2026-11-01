@@ -13,6 +13,7 @@
  * with a copy button.
  */
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createIntegration,
@@ -123,7 +124,13 @@ function eventLabel(id: string): string {
 type Tab = 'servers' | 'webhooks' | 'plugins'
 
 export default function IntegrationsPage() {
-  const [tab, setTab] = useState<Tab>('servers')
+  // The tab also answers a ?tab= deep link (the flow palette's
+  // "install a plugin" hint links to the plugins tab).
+  const [search] = useSearchParams()
+  const asked = search.get('tab') as Tab | null
+  const [tab, setTab] = useState<Tab>(
+    asked === 'webhooks' || asked === 'plugins' ? asked : 'servers',
+  )
 
   return (
     <PageContainer className="space-y-6" data-testid="integrations-page">

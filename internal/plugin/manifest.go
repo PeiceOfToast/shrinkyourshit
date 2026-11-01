@@ -19,17 +19,19 @@ import (
 )
 
 // Plugin types (task 31; the manifest's type field is the moment the
-// plugin runs). Do not add values without updating docs/plugins.md and
-// ARCHITECTURE.md.
+// plugin runs). TypeStep (task 32) is not a moment: a step plugin runs
+// only where a flow places it, in the middle of the chain. Do not add
+// values without updating docs/plugins.md and ARCHITECTURE.md.
 const (
 	TypePreflight   = "preflight"
 	TypePostprocess = "postprocess"
 	TypeNotify      = "notify"
+	TypeStep        = "step"
 )
 
 // TypeValues lists the valid manifest types.
 func TypeValues() []string {
-	return []string{TypePreflight, TypePostprocess, TypeNotify}
+	return []string{TypePreflight, TypePostprocess, TypeNotify, TypeStep}
 }
 
 // Timeout bounds (task 31): the manifest's timeout_seconds defaults to 30
@@ -48,6 +50,17 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,40}$`)
 // environment (manifest env entries and, by the same rule, the setting
 // keys a plugin's env list can be fed from).
 var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ValidName reports whether name satisfies the manifest name rule
+// (task 32: the flow's plugin step reuses this check instead of a second
+// regex, so a flow can never name a plugin the installer would refuse).
+func ValidName(name string) bool { return nameRe.MatchString(name) }
+
+// ValidEnvName reports whether name is exportable to a process
+// environment. Manifest env entries must satisfy it; the setting keys a
+// plugin step overrides with must look the same (task 32), because every
+// setting value becomes the environment variable its key names.
+func ValidEnvName(name string) bool { return envNameRe.MatchString(name) }
 
 // metachars are the characters a command element must not contain (task
 // 31): the command is exec'd directly, never through a shell, so anything

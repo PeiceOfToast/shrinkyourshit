@@ -91,12 +91,12 @@ type PluginStep struct {
 A wasm or otherwise sandboxed runtime (task 33), a plugin marketplace or index, shipping plugins from server to node, plugin-to-plugin dependencies, plugin output as a flow condition, any change to `DECISIONS.md`.
 
 ## Acceptance
-- [ ] A manifest with `type: step` installs and is listed as a step plugin; a `preflight` plugin is not offered in the flow editor. Proven by tests in `internal/plugin` and `internal/api`.
-- [ ] `plugin` steps validate: a missing name, an unknown setting key and a plugin step ahead of `probe` each produce a `FieldError` with the parameter path; a valid step round trips through `PUT /api/v1/libraries/{id}/flow`. Proven by `internal/flow/graph_test.go` and an API test.
-- [ ] Saving a flow that names a disabled or missing plugin returns 422 naming the plugin and the reason, and dispatching that flow fails the job instead of skipping the step. Proven by an API test and a worker test.
-- [ ] A step plugin that rewrites the file in place is visible to a later guard: a job whose `skip_if_smaller` decision changes because of the plugin takes the new branch. Proven by an integration test.
-- [ ] A step plugin that exits non-zero fails the job with its name and exit code, and the source file is byte identical afterwards. Proven by a worker test.
-- [ ] A step plugin that prints `{"file": "/etc/passwd"}` fails with a message naming the path, and a step plugin that sleeps past its timeout is killed and fails the job. Proven by tests.
-- [ ] A plugin step naming a file that is not on the node fails with a message naming the plugin and the node.
-- [ ] The palette, step stack and parameter editor handle a plugin step, including the mobile layout rules from task 22. Proven by `web` tests.
-- [ ] `docs/plugins.md` documents step plugins, and `make test`, `make test-integration` and `make lint` are green.
+- [x] A manifest with `type: step` installs and is listed as a step plugin; a `preflight` plugin is not offered in the flow editor. Proven by tests in `internal/plugin` and `internal/api`.
+- [x] `plugin` steps validate: a missing name, an unknown setting key and a plugin step ahead of `probe` each produce a `FieldError` with the parameter path; a valid step round trips through `PUT /api/v1/libraries/{id}/flow`. Proven by `internal/flow/graph_test.go` and an API test.
+- [x] Saving a flow that names a disabled or missing plugin returns 422 naming the plugin and the reason, and dispatching that flow fails the job instead of skipping the step. Proven by an API test and a worker test.
+- [x] A step plugin that rewrites the file in place is visible to a later guard: a job whose `skip_if_smaller` decision changes because of the plugin takes the new branch. Proven by an integration test.
+- [x] A step plugin that exits non-zero fails the job with its name and exit code, and the source file is byte identical afterwards. Proven by a worker test.
+- [x] A step plugin that prints `{"file": "/etc/passwd"}` fails with a message naming the path, and a step plugin that sleeps past its timeout is killed and fails the job. Proven by tests.
+- [x] A plugin step naming a file that is not on the node fails with a message naming the plugin and the node.
+- [x] The palette, step stack and parameter editor handle a plugin step, including the mobile layout rules from task 22. Proven by `web` tests.
+- [x] `docs/plugins.md` documents step plugins, and `make test`, `make test-integration` and `make lint` are green.

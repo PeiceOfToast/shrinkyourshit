@@ -16,6 +16,7 @@ import (
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/encoders"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
@@ -31,14 +32,18 @@ type Prober func(ctx context.Context, ffprobePath, path string) (probe.MediaInfo
 // library, and report complete or fail. The original is only touched after
 // the output verified. Transfer mode (task 09) swaps the copy for a
 // resumable download and the policy apply for a checksum-verified upload;
-// the server then does the verify-and-replace.
+// the server then does the verify-and-replace. Since task 32 the job's
+// flow is executed as a step walk: plugin steps run at their chain
+// position on the working copy, and every guard after one evaluates
+// against the re-probed result.
 type runner struct {
 	cfg     Config
 	client  *Client
 	caps    encoders.Capability
 	encs    []encoders.Encoder // test override; nil → Registry(target, caps)
 	prober  Prober
-	runFn   encoders.RunFn // test override; nil → ffmpeg subprocess
+	runFn   encoders.RunFn   // test override; nil → ffmpeg subprocess
+	plugs   *plugin.Runner   // step plugins (task 32); nil → none
 	sc      *scratch
 	access  *accessCache
 	log     *slog.Logger
@@ -118,22 +123,76 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		len(srcInfo.Video), len(srcInfo.Audio), len(srcInfo.Subtitle))
 
 	// The flow is the rule (task 14): compile the graph the spec carries
-	// and resolve it against the probed source. The resolved Target drives
-	// the encode; the resolved policy and rename override the spec's
-	// library-level values. A spec without a flow (pre-task-14 server)
-	// falls back to the spec's Target.
+	// and walk it step by step. The resolved Target drives the encode; the
+	// resolved policy and rename override the spec's library-level values.
+	// A spec without a flow (pre-task-14 server) falls back to the spec's
+	// Target.
+	//
+	// The walk (task 32) evaluates each step's conditions against the
+	// *current* probe of the working file. A plugin step runs there and
+	// then, on the working copy inside this job's scratch directory, and
+	// the file is re-probed before the next step — so a guard after a
+	// plugin (if_codec_not, if_bitrate_above, skip_if_smaller) sees what
+	// the plugin actually produced. Plugin steps run before the encode:
+	// the v1 encode is one combined command built from the resolved
+	// Target, so a plugin that must act on the finished output stays a
+	// postprocess/notify plugin in v1.
 	target := spec.Target
 	policy := spec.ResultPolicy
 	rename := ""
 	var hc *flow.HealthCheckSpec
-	if spec.Flow != nil {
+	working := local // the working file the chain operates on
+	cur := srcInfo   // the current probe of the working file
+	if spec.Flow == nil {
+		// Pre-task-14 fallback (task 32): a spec without a flow graph
+		// still runs its resolved plugin steps, in chain order, against
+		// the working file.
+		if err := r.walkPluginFallback(ctx, spec, &working, &cur, dir, sink); err != nil {
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			return fail("%v", err)
+		}
+	} else {
 		plan, err := flow.Compile(*spec.Flow)
 		if err != nil {
 			return fail("invalid flow: %v", err)
 		}
-		eff, err := flow.ResolvePlan(plan, srcInfo)
-		if err != nil {
-			return fail("resolve flow: %v", err)
+		eff := flow.FreshEffective()
+		for i, step := range plan.Steps {
+			ran, err := flow.ApplyStep(&eff, step, cur)
+			if err != nil {
+				return fail("resolve flow: %v", err)
+			}
+			if !ran || step.Type != flow.StepPlugin {
+				continue
+			}
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			ps, ok := pluginStepFor(spec.Plugins, i)
+			if !ok {
+				return fail("plugin %s has no resolved step in the job spec at chain position %d",
+					pluginNameOf(step), i)
+			}
+			next, err := r.execPluginStep(ctx, spec, ps, working, dir, sink)
+			if err != nil {
+				if cancelled.Load() || ctx.Err() != nil {
+					return nil
+				}
+				return fail("%v", err)
+			}
+			// Re-probe the working file so the next step — guards and the
+			// encode alike — sees what the plugin produced. A plugin that
+			// leaves an unreadable file fails the step with the probe
+			// error.
+			info, perr := r.prober(ctx, r.cfg.FFprobePath, next)
+			if perr != nil {
+				return fail("plugin %s: probe the working file after the step: %v",
+					pluginNameOf(step), perr)
+			}
+			working = next
+			cur = info
 		}
 		target = eff.Target
 		if eff.SkipIfSmaller {
@@ -147,8 +206,10 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	sink.sysf("result policy: %s", policy)
 
 	// Encode with fallback while a ticker reports -progress every interval.
+	// The encode consumes the working file as the chain left it (a plugin
+	// step may have replaced it, task 32) with the re-probed view.
 	output := filepath.Join(dir, "output."+containerExt(target.Container))
-	sp := encoders.NewSpec(local, output, srcInfo, target)
+	sp := encoders.NewSpec(working, output, cur, target)
 	state := newProgressState()
 
 	runCtx, cancelRun := context.WithCancel(ctx)
@@ -157,7 +218,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	stopReport := make(chan struct{})
 	go func() {
 		defer close(reportDone)
-		r.reportLoop(stopReport, runCtx, spec, state, srcInfo.DurationSeconds, cancelled, cancelRun, mode, output)
+		r.reportLoop(stopReport, runCtx, spec, state, cur.DurationSeconds, cancelled, cancelRun, mode, output)
 	}()
 
 	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(target), sp,
@@ -206,7 +267,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	if err != nil {
 		return fail("stat output: %v", err)
 	}
-	if err := encoders.VerifyOutput(sp, srcInfo.DurationSeconds, outInfo, st.Size()); err != nil {
+	if err := encoders.VerifyOutput(sp, cur.DurationSeconds, outInfo, st.Size()); err != nil {
 		return fail("output verification failed: %v", err)
 	}
 
@@ -215,7 +276,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	// policy — the source stays untouched and the job ends failed, exactly
 	// like an encode failure.
 	if hc != nil {
-		if err := r.runHealthCheck(runCtx, hc, output, srcInfo, outInfo, tail, sink); err != nil {
+		if err := r.runHealthCheck(runCtx, hc, output, cur, outInfo, tail, sink); err != nil {
 			if cancelled.Load() || ctx.Err() != nil {
 				return nil
 			}

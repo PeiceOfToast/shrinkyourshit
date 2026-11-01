@@ -10,20 +10,21 @@ import (
 	"time"
 )
 
-// Plugin types (task 31). The store stores the manifest's type verbatim;
-// the canonical value list lives in internal/plugin, which imports this
-// package (the reverse would be a cycle), so the columns are validated
-// against this list and internal/plugin asserts its own values against
-// the same strings.
+// Plugin types (task 31; step added by task 32). The store stores the
+// manifest's type verbatim; the canonical value list lives in
+// internal/plugin (which this list must mirror — the reverse import would
+// be a cycle), so the columns are validated against this list and
+// internal/plugin asserts its own values against the same strings.
 const (
 	PluginTypePreflight   = "preflight"
 	PluginTypePostprocess = "postprocess"
 	PluginTypeNotify      = "notify"
+	PluginTypeStep        = "step"
 )
 
 // PluginTypeValues lists the valid plugin types.
 func PluginTypeValues() []string {
-	return []string{PluginTypePreflight, PluginTypePostprocess, PluginTypeNotify}
+	return []string{PluginTypePreflight, PluginTypePostprocess, PluginTypeNotify, PluginTypeStep}
 }
 
 // Plugin is one installed plugin row (task 31). The manifest lives on

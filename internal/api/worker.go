@@ -136,6 +136,21 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		a.internal(w, err) // stored flows are validated on write
 		return
 	}
+	// The plugin steps are resolved at dispatch (task 32): the spec
+	// carries the manifest facts and merged settings. A flow that names a
+	// plugin that meanwhile disappeared, was disabled or is not a step
+	// plugin fails the job here instead of silently skipping the step;
+	// the node answers the worker with the same 422, which drops the job.
+	plugins, err := a.svc.Plugins().ResolveSteps(r.Context(), plan)
+	if err != nil {
+		msg := err.Error()
+		if _, ferr := a.svc.Queue().Fail(workerCtx(r), job.ID, node.ID, server.FailParams{Error: msg}); ferr != nil {
+			a.internal(w, ferr)
+			return
+		}
+		writeError(w, http.StatusUnprocessableEntity, "plugin_unavailable", msg)
+		return
+	}
 	// The move destination (task 24) is given to the worker in its own path
 	// view, mapped like the source; the folder layout it should rebuild
 	// under it is computed here, where both the file and the library root
@@ -163,6 +178,7 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		MoveTo:             moveTo,
 		MoveKeepTree:       plan.MoveKeepTree,
 		MoveRelDir:         server.RelDirUnder(lib.Path, f.Path),
+		Plugins:            plugins,
 	})
 }
 

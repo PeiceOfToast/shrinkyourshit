@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import {
   getFlowStepTypes,
+  getPlugins,
   getLibrary,
   getLibraryFlow,
   putLibraryFlow,
@@ -65,6 +66,11 @@ export default function RulesPage() {
   const palette = useQuery({
     queryKey: ['flow-step-types'],
     queryFn: getFlowStepTypes,
+    staleTime: Infinity,
+  })
+  const plugins = useQuery({
+    queryKey: ['plugins'],
+    queryFn: getPlugins,
     staleTime: Infinity,
   })
 
@@ -162,6 +168,9 @@ export default function RulesPage() {
 
   const lib = library.data
   const paletteItems = palette.data.items
+  const enabledStepPlugins = (plugins.data?.items ?? []).filter(
+    (p) => p.type === 'step' && p.enabled,
+  )
   const manualFlow = lib.flow_source !== 'easy'
   const editedEasy = easy ?? parseEasy(lib.easy)
 
@@ -292,6 +301,7 @@ export default function RulesPage() {
           <StepStackEditor
             graph={graph ?? flow.data.graph}
             palette={paletteItems}
+            plugins={enabledStepPlugins}
             errors={errors}
             onChange={setGraph}
           />

@@ -25,6 +25,7 @@ import (
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/encoders"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
@@ -582,6 +583,11 @@ type runnerOpts struct {
 	run      encoders.RunFn
 	encs     []encoders.Encoder
 	progress time.Duration
+	// DataDir and NodeName (task 32): where step plugins live on this
+	// node and the name error messages use. Empty dataDir = no plugin
+	// support (plugs nil).
+	dataDir  string
+	nodeName string
 }
 
 func newRunner(t *testing.T, api *fakeAPI, scratchDir string, opts runnerOpts) *runner {
@@ -594,10 +600,16 @@ func newRunner(t *testing.T, api *fakeAPI, scratchDir string, opts runnerOpts) *
 		ClaimPollInterval: time.Millisecond,
 		HeartbeatInterval: time.Hour,
 		Log:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		NodeName:          opts.nodeName,
+		DataDir:           opts.dataDir,
 	}
 	prober := opts.byBase
 	if prober == nil {
 		prober = map[string]probe.MediaInfo{"source.mp4": srcInfoF(), "output.mkv": outInfoF()}
+	}
+	var plugs *plugin.Runner
+	if opts.dataDir != "" {
+		plugs = plugin.NewRunner(opts.dataDir)
 	}
 	return &runner{
 		cfg:     cfg,
@@ -606,6 +618,7 @@ func newRunner(t *testing.T, api *fakeAPI, scratchDir string, opts runnerOpts) *
 		encs:    opts.encs,
 		prober:  proberByBase(prober),
 		runFn:   opts.run,
+		plugs:   plugs,
 		sc:      newScratch(scratchDir),
 		access:  newAccessCache(),
 		log:     cfg.Log,

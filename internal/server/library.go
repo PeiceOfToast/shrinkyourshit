@@ -46,6 +46,10 @@ type LibraryManager struct {
 	// scan kicks off an initial scan of a newly created library; set by
 	// the server wiring, nil-safe elsewhere.
 	scan func(libraryID string)
+	// pluginCheck gates a saved flow's plugin steps (task 32): the
+	// plugin service's CheckGraph, set by the server wiring; nil-safe
+	// (tests without a plugin service).
+	pluginCheck func(ctx context.Context, g flow.Graph) error
 }
 
 // NewLibraryManager builds the manager. watcher may be nil (watch state is
@@ -67,6 +71,13 @@ func NewLibraryManager(st store.Store, queue *Queue, events *EventBus, watcher *
 // SetScanHook wires the initial-scan trigger for newly created libraries.
 // The server wiring installs Scanner.ScanAsync; tests may install a no-op.
 func (m *LibraryManager) SetScanHook(scan func(libraryID string)) { m.scan = scan }
+
+// SetPluginCheck wires the plugin-step gate (task 32): the plugin
+// service's CheckGraph. A saved flow that names a missing, disabled or
+// non-step plugin is refused with ErrPluginStep (the API answers 422).
+func (m *LibraryManager) SetPluginCheck(check func(ctx context.Context, g flow.Graph) error) {
+	m.pluginCheck = check
+}
 
 // Create validates and stores a new library.
 func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Library, error) {

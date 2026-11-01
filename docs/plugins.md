@@ -57,13 +57,18 @@ settings:
 | --- | --- | --- |
 | `name` | yes | Lowercase letters, digits and dashes. A directory name and the identity in the UI. |
 | `version` | yes | Shown next to the name. |
-| `type` | yes | `preflight`, `postprocess` or `notify`. |
+| `type` | yes | `preflight`, `postprocess`, `notify` or `step`. The first three are hooks that run around a job; `step` is a plugin the flow editor places in a job's chain (see [Step plugins](#step-plugins)). |
 | `description` | no | Shown under the name. |
 | `author` | no | Shown in the UI. |
 | `command` | yes | The program's argv elements. Each element must be free of shell metacharacters — `| & ; < > ( ) $ \` \ " ' * ? [ ] # ~` and line breaks (newline or carriage return) — since the command is `exec`'d directly, never through a shell. |
 | `timeout_seconds` | no | 1–300. The default is 30 seconds. |
 | `env` | no | The names of extra environment variables to pass through (the app's other settings are not read). |
 | `settings` | no | The collected values the UI asks for. |
+
+A plugin's `type` fixes when it runs. A `preflight`, `postprocess` or
+`notify` plugin never runs inside a job's chain; a `step` plugin never runs
+at those three moments and only runs where a flow places it. The type is
+part of the manifest: changing it means reinstalling the plugin.
 
 ## The stdin JSON
 
@@ -83,8 +88,8 @@ The plugin receives a JSON object on stdin:
 }
 ```
 
-- `phase` is the phase the plugin is running in (`preflight`, `postprocess`
-  or `notify`).
+- `phase` is the phase the plugin is running in (`preflight`, `postprocess`,
+  `notify` or `step`).
 - `source_path` is the file's path before the result policy applied the
   output, and `output_path` is the final path of an output that was applied
   (or `""` when none was).
@@ -92,6 +97,8 @@ The plugin receives a JSON object on stdin:
   `claimed` for preflight (the job has not run yet).
 - `bytes_before` / `bytes_after` are the sizes the worker reported. A
   preflight plugin sees them at 0.
+
+Step plugins receive more fields — see [Step plugins](#step-plugins).
 
 ## The environment
 
@@ -114,6 +121,140 @@ and the server stores them (never logged, never echoed). Each becomes an
 environment variable named by its key when the plugin runs. A required
 setting with no value stops the plugin from running (skipped, with the
 reason recorded in the job log).
+
+## Step plugins
+
+A `step` plugin is a plugin the flow editor places in a job's chain. It runs
+on the file the job is working on, inside that job's scratch directory, in
+the middle of the chain — so a later guard (`if_codec_not`,
+`if_bitrate_above`, `skip_if_smaller`) sees what the plugin actually did.
+It is on the critical path: if it fails, the job fails and the original file
+is untouched.
+
+**Where it runs.** A step plugin runs on the **node** that runs the job, as
+the node user, inside the job's scratch directory. A single install with
+role `both` (or the node the job runs on) already has it; the node must
+have the plugin installed under its own `<data dir>/plugins/<name>/`. If
+the node does not have it, the job fails with a message naming the plugin
+and the node, for example `plugin remove-chapters is not installed on node
+nas-01`. The app does not ship plugins from server to node in v1.
+
+**The stdin JSON a step plugin receives** adds to the shared shape:
+
+```json
+{
+  "job_id": "…",
+  "phase": "step",
+  "library": "Movies",
+  "source_path": "/media/movies/Movie.mkv",
+  "file_path": "/scratch/job-abc123/Movie.mkv",
+  "step_index": 1,
+  "settings": {"level": "2"}
+}
+```
+
+- `file_path` is the absolute path of the working file inside the job's
+  scratch directory. This is what the plugin operates on.
+- `source_path` is the original library file. It is never handed over as a
+  writable target: the result policy is the only thing that moves an output
+  onto it.
+- `step_index` is the step's zero-based position in the executed chain.
+- `settings` is the merged settings for this step: the per-step values from
+  the flow editor override the plugin's stored settings.
+
+The environment is the same as the hooks' plus `SYS_PHASE=step` and
+`SYS_STEP_INDEX=<n>`.
+
+**The working file is also the plugin's last command-line argument**, after
+the manifest's `command` argv, so a plugin can be a one-liner.
+
+**The result protocol.** A step plugin changes the file in one of two ways:
+
+- **In place** — modify `file_path` and exit 0. The chain continues with the
+  file as it is. Print nothing on stdout, or anything that is not a JSON
+  object with a `file` key: the last line is only read as a result when it
+  parses as one.
+- **Hand over** — print one final JSON object on stdout,
+  `{"file": "<absolute path>"}`. The chain continues with the file that
+  path names.
+
+Rules for a handed-over path:
+
+- It must resolve inside the job's scratch directory. Anything else is a
+  failure naming both paths. No exceptions, no following symlinks out of
+  scratch.
+- A named file that does not exist is a failure with the path in the
+  message.
+- With no result line, the existing `file_path` continues down the chain.
+
+**After a successful step the job re-probes the working file**, so the next
+step — guards and the encode alike — evaluates against what the plugin
+actually produced. A plugin that leaves an unreadable file fails the step
+with the probe error.
+
+**Failure and timeout.** A non-zero exit fails the job, with the plugin
+name, the exit code and the last 20 lines of stderr in the job's error
+message. Exceeding `timeout_seconds` kills the process group and fails the
+job. The result policy never runs on a failed job, so the original stays
+byte identical. All the plugin's stdout and stderr land in the job log with
+`source: "plugin"`.
+
+**`continue_on_error`.** The flow editor can set a step plugin to continue
+on error: a failing step then logs a warning and the chain continues with
+the file as it was. This exists for logging and sidecar style steps that
+must not change the file — **not** for anything that changes the file, since
+a half-finished rewrite would continue down the chain. A plugin that could
+not even be started fails the job regardless of the switch.
+
+**Worked example.** A plugin that writes a sidecar `.nfo` metadata file
+next to the working copy (its own directory, inside scratch) and a plugin
+that strips chapters in place:
+
+```yaml
+# plugin.yaml — sidecar .nfo
+name: nfo-sidecar
+version: 1.0.0
+type: step
+description: Writes a .nfo next to the working file
+command: ["python3", "nfo.py"]
+```
+
+```python
+import json, os, sys
+
+job = json.load(sys.stdin)
+work = job["file_path"]
+base = os.path.splitext(work)[0]
+with open(base + ".nfo", "w") as f:
+    f.write("<movie><file>%s</file></movie>\n" % os.path.basename(work))
+# in place: modify the working file, exit 0, print nothing (or anything
+# that is not a {"file": ...} JSON object).
+```
+
+```yaml
+# plugin.yaml — strip chapters in place
+name: strip-chapters
+version: 1.0.0
+type: step
+description: Removes the chapter track from the working file
+command: ["python3", "strip.py"]
+```
+
+```python
+import json, os, subprocess, sys
+
+job = json.load(sys.stdin)
+work = job["file_path"]
+tmp = work + ".nochapters"
+subprocess.run(["ffmpeg", "-y", "-i", work, "-map_chapters", "-1", "-c", "copy", tmp],
+               check=True)
+os.replace(tmp, work)
+# in place again: the file_path continues down the chain.
+```
+
+Both run as the server or node user with the same access to the media
+folders as the app itself — the security statement applies to step plugins
+exactly as it does to the hooks.
 
 ## Output and exit codes
 

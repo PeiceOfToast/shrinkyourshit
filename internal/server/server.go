@@ -178,6 +178,7 @@ func New(cfg Config) *Server {
 	integrations := NewRefresher(cfg.Store, cfg.Log)
 	webhooks := NewWebhookDispatcher(cfg.Store, cfg.Log, cfg.Update.Current.Version)
 	plugins := NewPluginService(cfg.Store, cfg.Log, cfg.DataDir)
+	libs.SetPluginCheck(plugins.CheckGraph)
 	queue.SetPlugins(plugins)
 	queue.SetNotifier(&notifierRouter{integrations: integrations, webhooks: webhooks, plugins: plugins})
 	scanner.SetNotifier(webhooks)
