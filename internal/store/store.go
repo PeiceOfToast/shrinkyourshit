@@ -185,9 +185,9 @@ type Node struct {
 	Concurrency int
 	// StateError records the reason a lifecycle transition failed to
 	// apply; the UI shows it and the next successful transition clears it.
-	StateError string
-	Status     string // pending | approved | revoked
-	Enabled    bool
+	StateError      string
+	Status          string // pending | approved | revoked
+	Enabled         bool
 	LastHeartbeatAt time.Time
 	CreatedAt       time.Time
 }
@@ -219,6 +219,11 @@ const (
 	SettingUpdateCheck        = "update_check"
 	SettingUpdateChannel      = "update_channel"
 	SettingBackupBeforeUpdate = "backup_before_update"
+	// Task 35 additions: Intel QSV opt-ins. Each node applies them only
+	// where its capability probe found the features; both default off, and
+	// with both off the QSV argument vector is unchanged.
+	SettingQSVExtraQuality = "qsv_extra_quality"
+	SettingQSVLowPower     = "qsv_low_power"
 )
 
 // Result policies (ARCHITECTURE.md; do not add values without updating it).

@@ -135,11 +135,17 @@ type HeartbeatInput struct {
 }
 
 // HeartbeatState is the heartbeat response (API.md, task 11): the
-// instruction the worker honours until the next beat.
+// instruction the worker honours until the next beat. The QSV opt-ins
+// (task 35) are the server's encoder settings; the worker forwards them to
+// its QSV backend, which uses each one only where its capability probe
+// found the feature. A pre-task-35 server omits them (false, today's
+// behaviour).
 type HeartbeatState struct {
-	Concurrency    int    `json:"concurrency"`
-	DesiredState   string `json:"desired_state"`
-	EffectiveState string `json:"effective_state"`
+	Concurrency     int    `json:"concurrency"`
+	DesiredState    string `json:"desired_state"`
+	EffectiveState  string `json:"effective_state"`
+	QSVExtraQuality bool   `json:"qsv_extra_quality"`
+	QSVLowPower     bool   `json:"qsv_low_power"`
 }
 
 // Heartbeat sends the node heartbeat and returns the instruction: the

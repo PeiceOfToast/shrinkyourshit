@@ -43,10 +43,39 @@ type Capability struct {
 }
 
 // EncoderInfo is one detected backend: its name and the target codecs
-// (hevc, av1, h264) that passed detection on this machine.
+// (hevc, av1, h264) that passed detection on this machine. The qsv backend
+// additionally fills QSVFeatures with the optional features it probed
+// (task 35); every other backend leaves it nil.
 type EncoderInfo struct {
 	Name   string   `json:"name"`
 	Codecs []string `json:"codecs"`
+	// QSVFeatures is the probed Intel QSV feature set of this machine;
+	// omitted for non-qsv backends and when the backend detected nothing
+	// probed. A probe that cannot run (no device, no ffmpeg) reports all
+	// four features off rather than guessing.
+	QSVFeatures *QSVFeatures `json:"qsv_features,omitempty"`
+}
+
+// QSVFeatures is what the qsv backend's capability probe found on this
+// machine (task 35). The flags are optional in the driver, so detection
+// tries each one with the standard one-second testsrc self-test and
+// records the exit code; a feature is reported only when its self-test
+// passed. Look-ahead is an H.264-only ffmpeg option, so it can only probe
+// true for the h264 target; the node page and docs/intel-qsv.md say so in
+// plain language.
+type QSVFeatures struct {
+	// LookAhead: -look_ahead 1 with extbrc — better quality at the same
+	// size, slower.
+	LookAhead bool `json:"look_ahead"`
+	// ExtBRC: -extbrc 1 — external bitrate control, required by
+	// look-ahead.
+	ExtBRC bool `json:"extbrc"`
+	// AsyncDepth: -async_depth N — more frames in flight, throughput
+	// versus latency.
+	AsyncDepth bool `json:"async_depth"`
+	// LowPower: -low_power 1 — faster, slightly lower quality; works on
+	// Ice Lake and newer.
+	LowPower bool `json:"low_power"`
 }
 
 // find returns the detected entry for a backend name, or nil.

@@ -318,6 +318,16 @@ func (w *Worker) applyHeartbeat(n *HeartbeatState) {
 		w.log.Info("worker: node state", "desired_state", n.DesiredState,
 			"concurrency", n.Concurrency)
 	}
+
+	// QSV opt-ins (task 35): forward the server's encoder settings to the
+	// qsv backend. Both false — the default — leaves the argument vector
+	// unchanged; a requested feature this machine cannot do is carried on
+	// without (one warn, never an error).
+	encoders.SetQSVPrefs(encoders.QSVPrefs{
+		ExtraQuality: n.QSVExtraQuality,
+		LowPower:     n.QSVLowPower,
+	}, w.cfg.NodeName, w.log)
+
 	if n.DesiredState == NodeStateStopped && len(ids) > 0 {
 		w.log.Info("worker: node stopped, abandoning in-flight jobs (they return to the queue)",
 			"jobs", ids)

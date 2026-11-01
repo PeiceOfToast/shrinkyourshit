@@ -25,7 +25,18 @@ type qualityValues struct {
 //
 // Columns the table in ARCHITECTURE.md does not define are derived here:
 //   - NVENC h264 and av1 reuse the NVENC HEVC CQ column.
-//   - QSV h264 and av1 reuse the QSV HEVC global_quality column.
+//   - QSV: the QSV column is ICQ (task 35). The builder passes the value
+//     as -global_quality, which ffmpeg maps to Intel's intelligent
+//     constant-quality rate control (ICQ) whenever no bitrate cap is set:
+//     the encoder holds a constant quality and the file size follows the
+//     content. ICQQuality runs 1 (best quality, largest files) to 51
+//     (worst, smallest); the slider's 1..5 maps onto 30..22, so step 1
+//     saves the most space (ICQ 30, lowest quality ceiling) and step 5
+//     keeps the most quality (ICQ 22, least saving). hevc_qsv and av1_qsv
+//     take this ICQ mapping. h264_qsv keeps the same values as its
+//     fallback path — ICQ support for h264 varies by Intel generation, and
+//     switching h264 to a different mapping would change encodes the user
+//     never asked to change, so the builder never does.
 //   - VAAPI (the vaapi backend and the qsv backend's fallback variant)
 //     reuses the QSV global_quality column: -global_quality for hevc and
 //     av1, and -qp for h264 (h264_vaapi has no global_quality mode).
