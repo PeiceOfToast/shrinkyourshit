@@ -143,6 +143,14 @@ func Compile(g Graph) (Plan, error) {
 	return plan, nil
 }
 
+// DecodePluginStep decodes a plugin step's parameters (task 32). Unknown
+// fields are rejected, the same as validation.
+func DecodePluginStep(s PlanStep) (PluginStepParams, error) {
+	var p PluginStepParams
+	err := decodeParams(s.Params, &p)
+	return p, err
+}
+
 // chainStart finds the entry step's index (the node without an incoming
 // edge). Validate guarantees exactly one for a valid graph; this returns -1
 // defensively for graphs that skipped validation.
@@ -193,6 +201,103 @@ type Effective struct {
 	MoveKeepTree bool
 }
 
+// FreshEffective is the Effective a resolution starts from (task 32):
+// video at copy, audio and subtitles at keep-all. ResolvePlan and the
+// worker's step walk both start here, so the defaults live in one place.
+func FreshEffective() Effective {
+	return Effective{Target: Target{
+		Video:     VideoTarget{Codec: CodecCopy, Quality: 3},
+		Audio:     AudioTarget{Mode: AudioKeepAll},
+		Subtitles: SubtitleTarget{Mode: SubsKeepAll},
+	}}
+}
+
+// ApplyStep applies one plan step to eff when its conditions pass for the
+// probed file info, and reports whether it ran (task 32). The worker's
+// step walk calls this per plan step — with the *current* probe, which a
+// step plugin's re-probe may have replaced — and runs the plugin itself
+// when the step is a plugin step (a plugin step changes nothing here).
+// ResolvePlan is this loop with one probe for the whole plan.
+func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo) (bool, error) {
+	if len(s.When) > 0 {
+		for _, c := range s.When {
+			if !c.pass(info) {
+				return false, nil
+			}
+		}
+	}
+	switch s.Type {
+	case StepTranscodeVideo:
+		var par transcodeVideoParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.Target.Video = VideoTarget{
+			Codec:   par.Codec,
+			Quality: par.Quality,
+			// Guarded only by if_codec_not means "encode unless
+			// already this codec" — exactly the default satisfied
+			// rule (DECISIONS.md B2), so the flag stays off.
+			ReencodeIfSameCodec: !allCodecNot(s.When),
+		}
+	case StepRemuxContainer:
+		var par remuxContainerParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.Target.Container = par.Container
+	case StepConvertAudio:
+		var par convertAudioParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.Target.Audio = AudioTarget{
+			Mode:               par.Mode,
+			PreferredLanguages: par.Languages,
+			CompactCodec:       par.CompactCodec,
+		}
+		if eff.Target.Audio.CompactCodec == "" {
+			eff.Target.Audio.CompactCodec = CompactCodecAAC
+		}
+	case StepSubtitles:
+		var par subtitlesParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.Target.Subtitles = SubtitleTarget{
+			Mode:               par.Mode,
+			PreferredLanguages: par.Languages,
+			ExtractRemoved:     par.ExtractRemoved,
+		}
+	case StepSkipIfSmaller:
+		eff.SkipIfSmaller = true
+	case StepRename:
+		var par renameParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.Rename = par.Template
+	case StepHealthCheck:
+		var par healthCheckParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		spec := normalizeHealthCheck(par)
+		eff.HealthCheck = &spec
+	case StepMove:
+		var par moveParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.MoveTo = TrimMoveDestination(par.Destination)
+		eff.MoveKeepTree = par.KeepTree
+	case StepProbe, StepPlugin:
+		// probe: the worker probes before resolving the plan.
+		// plugin: the worker runs it (task 32); resolution is unaffected.
+	}
+	return true, nil
+}
+
 // ResolvePlan evaluates the plan for one probed file and returns the
 // effective Target. This is the single place flow semantics meet the
 // Target shape:
@@ -205,93 +310,14 @@ type Effective struct {
 //   - remux_container, convert_audio and subtitles always define their
 //     Target section (they are guarded like any step, but present in
 //     every valid graph for the container);
-//   - skip_if_smaller and rename surface outside the Target.
+//   - skip_if_smaller and rename surface outside the Target;
+//   - a plugin step (task 32) is carried in the plan and run by the
+//     worker at its position; it changes nothing here.
 func ResolvePlan(p Plan, info probe.MediaInfo) (Effective, error) {
-	eff := Effective{Target: Target{
-		Video:     VideoTarget{Codec: CodecCopy, Quality: 3},
-		Audio:     AudioTarget{Mode: AudioKeepAll},
-		Subtitles: SubtitleTarget{Mode: SubsKeepAll},
-	}}
+	eff := FreshEffective()
 	for _, s := range p.Steps {
-		if len(s.When) > 0 {
-			run := true
-			for _, c := range s.When {
-				if !c.pass(info) {
-					run = false
-					break
-				}
-			}
-			if !run {
-				continue
-			}
-		}
-		switch s.Type {
-		case StepTranscodeVideo:
-			var par transcodeVideoParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			eff.Target.Video = VideoTarget{
-				Codec:   par.Codec,
-				Quality: par.Quality,
-				// Guarded only by if_codec_not means "encode unless
-				// already this codec" — exactly the default satisfied
-				// rule (DECISIONS.md B2), so the flag stays off.
-				ReencodeIfSameCodec: !allCodecNot(s.When),
-			}
-		case StepRemuxContainer:
-			var par remuxContainerParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			eff.Target.Container = par.Container
-		case StepConvertAudio:
-			var par convertAudioParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			eff.Target.Audio = AudioTarget{
-				Mode:               par.Mode,
-				PreferredLanguages: par.Languages,
-				CompactCodec:       par.CompactCodec,
-			}
-			if eff.Target.Audio.CompactCodec == "" {
-				eff.Target.Audio.CompactCodec = CompactCodecAAC
-			}
-		case StepSubtitles:
-			var par subtitlesParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			eff.Target.Subtitles = SubtitleTarget{
-				Mode:               par.Mode,
-				PreferredLanguages: par.Languages,
-				ExtractRemoved:     par.ExtractRemoved,
-			}
-		case StepSkipIfSmaller:
-			eff.SkipIfSmaller = true
-		case StepRename:
-			var par renameParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			eff.Rename = par.Template
-		case StepHealthCheck:
-			var par healthCheckParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			spec := normalizeHealthCheck(par)
-			eff.HealthCheck = &spec
-		case StepMove:
-			var par moveParams
-			if err := decodeParams(s.Params, &par); err != nil {
-				return eff, fmt.Errorf("flow: step %s: %w", s.ID, err)
-			}
-			eff.MoveTo = TrimMoveDestination(par.Destination)
-			eff.MoveKeepTree = par.KeepTree
-		case StepProbe:
-			// The worker probes before resolving the plan; nothing to do.
+		if _, err := ApplyStep(&eff, s, info); err != nil {
+			return eff, err
 		}
 	}
 	if err := eff.Target.Validate(); err != nil {
@@ -440,6 +466,9 @@ func ParseParams(s Step) (any, error) {
 	case StepMove:
 		var p moveParams
 		return p, decodeParams(s.Params, &p)
+	case StepPlugin:
+		var p pluginParams
+		return p, decodeParams(s.Params, &p)
 	}
 	return nil, fmt.Errorf("flow: unknown step type %q", s.Type)
 }
@@ -528,6 +557,14 @@ func describeStep(s PlanStep) string {
 			return guard + fmt.Sprintf("Move the finished file into %s, keeping its folder layout.", p.Destination)
 		}
 		return guard + fmt.Sprintf("Move the finished file into %s.", p.Destination)
+	case StepPlugin:
+		var p pluginParams
+		_ = decodeParams(s.Params, &p)
+		line := fmt.Sprintf("Run plugin %s.", p.Plugin)
+		if p.ContinueOnError {
+			line += " If it fails, the job carries on anyway."
+		}
+		return guard + line
 	}
 	return guard + "(unknown step)"
 }
@@ -600,11 +637,12 @@ func trimFloat(f float64) string {
 // renders the palette and the step forms from, so the step list is never
 // hardcoded twice (API.md task 14). Bounds are floats so fractional ranges
 // (the health check's duration tolerance, task 24) reach the editor; whole
-// numbers marshal unchanged.
+// numbers marshal unchanged. Kind "plugin" (task 32) is a select whose
+// options the API fills with the installed, enabled step plugins.
 type ParamField struct {
 	Name     string   `json:"name"`
 	Label    string   `json:"label"`
-	Kind     string   `json:"kind"` // select | number | text | languages | toggle
+	Kind     string   `json:"kind"` // select | number | text | languages | toggle | plugin
 	Options  []string `json:"options,omitempty"`
 	Min      *float64 `json:"min,omitempty"`
 	Max      *float64 `json:"max,omitempty"`
@@ -727,6 +765,17 @@ func StepTypes() []StepTypeInfo {
 			Params: []ParamField{
 				{Name: "destination", Label: "destination folder", Kind: "text", Required: true, Help: "Absolute path outside the library, e.g. /media/shrunk."},
 				{Name: "keep_tree", Label: "keep the folder layout", Kind: "toggle", Help: "Rebuild the file's folder structure under the destination."},
+			},
+		},
+		{
+			Type:        StepPlugin,
+			Label:       "Run a plugin",
+			Description: "Run an installed step plugin on the working copy, at this position in the chain. A later condition sees what it did.",
+			Params: []ParamField{
+				{Name: "plugin", Label: "plugin", Kind: "plugin", Required: true,
+					Help: "An installed, enabled step plugin."},
+				{Name: "continue_on_error", Label: "continue on error", Kind: "toggle",
+					Help: "For logging and sidecar style plugins only: a failing step is a warning and the chain continues."},
 			},
 		},
 	}

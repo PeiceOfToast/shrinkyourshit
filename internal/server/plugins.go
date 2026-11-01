@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
@@ -469,6 +470,113 @@ func SamplePluginJob(phase string) plugin.JobContext {
 		Status:      store.JobStatusDone,
 		Phase:       phase,
 	}
+}
+
+/* ------------------------------------------------------------------ */
+/* Plugin steps (task 32)                                              */
+/* ------------------------------------------------------------------ */
+
+// ErrPluginStep marks a flow whose plugin step names a plugin that is not
+// installed, not enabled or not a step plugin (task 32). The message
+// names the plugin and which of the three failed; the API maps it to
+// 422 plugin_unavailable, both on save (PUT /libraries/{id}/flow) and at
+// job dispatch (the job fails with the same message).
+type ErrPluginStep struct {
+	Plugin string
+	Reason string
+}
+
+func (e *ErrPluginStep) Error() string {
+	return fmt.Sprintf("plugin %s cannot run as a step: %s", e.Plugin, e.Reason)
+}
+
+// CheckGraph validates a saved flow's plugin steps against the installed
+// plugins (task 32): every `plugin` step must name an installed, enabled
+// plugin whose type is `step`. The first offending step wins; the error
+// names the plugin and which of the three failed. The API maps the
+// failure to 422 on save, and the job spec builder fails the job with the
+// same message at dispatch — a flow that names a plugin somebody later
+// disabled must not silently skip the step.
+func (s *PluginService) CheckGraph(ctx context.Context, g flow.Graph) error {
+	plan, err := flow.Compile(g)
+	if err != nil {
+		return err
+	}
+	return s.checkPlanSteps(ctx, plan)
+}
+
+// ResolveSteps resolves a compiled plan's plugin steps into the job
+// spec's PluginStep entries (task 32), in chain order. The same three
+// checks as CheckGraph run here — a flow that named a plugin that was
+// later disabled, uninstalled or turned into a hook must fail the job,
+// never silently skip the step. Settings are merged per step: the step's
+// own overrides first, then the plugin's stored values; a declared env
+// name without a setting value still resolves from the running process's
+// environment at run time (plugin.Runner).
+func (s *PluginService) ResolveSteps(ctx context.Context, plan flow.Plan) ([]PluginStep, error) {
+	if err := s.checkPlanSteps(ctx, plan); err != nil {
+		return nil, err
+	}
+	var out []PluginStep
+	for i, step := range plan.Steps {
+		if step.Type != flow.StepPlugin {
+			continue
+		}
+		params, err := flow.DecodePluginStep(step)
+		if err != nil {
+			return nil, fmt.Errorf("plugins: step %s: %w", step.ID, err)
+		}
+		row, err := s.st.GetPluginByName(ctx, params.Plugin)
+		if err != nil {
+			return nil, &ErrPluginStep{Plugin: params.Plugin, Reason: "not installed"}
+		}
+		in := InstalledFromRow(row, s.dataDir)
+		if in.ManifestError != "" {
+			return nil, &ErrPluginStep{Plugin: params.Plugin,
+				Reason: "its manifest cannot be read (" + in.ManifestError + ")"}
+		}
+		settings := row.SettingValues()
+		for k, v := range params.Settings {
+			settings[k] = v
+		}
+		out = append(out, PluginStep{
+			Name:            params.Plugin,
+			Command:         in.Manifest.Command,
+			EnvNames:        in.Manifest.Env,
+			TimeoutSec:      in.Manifest.Timeout(),
+			Settings:        settings,
+			StepIndex:       i,
+			ContinueOnError: params.ContinueOnError,
+		})
+	}
+	return out, nil
+}
+
+// checkPlanSteps runs the installed/enabled/type-step check over a
+// compiled plan's plugin steps.
+func (s *PluginService) checkPlanSteps(ctx context.Context, plan flow.Plan) error {
+	for _, step := range plan.Steps {
+		if step.Type != flow.StepPlugin {
+			continue
+		}
+		params, err := flow.DecodePluginStep(step)
+		if err != nil {
+			return &ErrPluginStep{Plugin: step.ID, Reason: "its parameters cannot be read (" + err.Error() + ")"}
+		}
+		row, err := s.st.GetPluginByName(ctx, params.Plugin)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			return &ErrPluginStep{Plugin: params.Plugin, Reason: "not installed"}
+		case err != nil:
+			return fmt.Errorf("plugins: look up %q: %w", params.Plugin, err)
+		case row.Type != store.PluginTypeStep:
+			return &ErrPluginStep{Plugin: params.Plugin,
+				Reason: fmt.Sprintf("it is a %s plugin, not a step plugin", row.Type)}
+		case !row.Enabled:
+			return &ErrPluginStep{Plugin: params.Plugin, Reason: "it is disabled"}
+		}
+	}
+	return nil
 }
 
 // libNameOf returns a library's name, tolerating a nil row.

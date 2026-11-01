@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 )
 
 // FlowSchema is the graph schema version. A graph carries it so older
@@ -29,6 +32,7 @@ const (
 	StepSkipIfSmaller  = "skip_if_smaller"
 	StepHealthCheck    = "health_check"
 	StepMove           = "move"
+	StepPlugin         = "plugin"
 )
 
 // Flow sources: who owns the graph on a library.
@@ -159,6 +163,22 @@ type (
 		Destination string `json:"destination"`
 		KeepTree    bool   `json:"keep_tree"`
 	}
+
+	// plugin: run an installed step plugin against the working file
+	// (task 32). The plugin is named by its manifest name; settings
+	// overrides the plugin's stored settings for this step only;
+	// continue_on_error (default false) keeps the chain going when the
+	// step fails — for logging and sidecar style steps only, never for
+	// anything that changes the file.
+	pluginParams struct {
+		Plugin          string            `json:"plugin"`
+		Settings        map[string]string `json:"settings"`
+		ContinueOnError bool              `json:"continue_on_error"`
+	}
+
+	// PluginStepParams is the exported view of a plugin step's parameters
+	// (task 32): the server decodes them to check and resolve the step.
+	PluginStepParams = pluginParams
 )
 
 // decodeParams strictly decodes a step's params into out, rejecting unknown
@@ -261,6 +281,19 @@ func Validate(g Graph) []FieldError {
 		if entry >= 0 && len(g.Nodes) > 0 {
 			if g.Nodes[entry].Type != StepProbe {
 				add(fmt.Sprintf("nodes[%d].type", entry), "the flow must start with a %s step", StepProbe)
+			}
+			// A plugin step runs on the probed working file (task 32): a
+			// probe step must come before it in the chain.
+			sawProbe := false
+			for _, id := range chain.order {
+				n := g.Nodes[byID[id]]
+				switch {
+				case n.Type == StepProbe:
+					sawProbe = true
+				case n.Type == StepPlugin && !sawProbe:
+					add(fmt.Sprintf("nodes[%d].type", byID[id]),
+						"a %s step needs a %s step before it in the chain: it runs on the probed working file", StepPlugin, StepProbe)
+				}
 			}
 			// A trailing guard guards nothing.
 			if order := chain.order; len(order) > 0 {
@@ -491,9 +524,43 @@ func validateStepParams(n Step) *paramError {
 			return perr("params.destination", "the destination must be an absolute path, got %q", p.Destination)
 		}
 		return nil
+	case StepPlugin:
+		var p pluginParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		// The name is required and must satisfy the manifest's name rule
+		// (task 32: plugin's own check is reused, so a flow can never
+		// name a plugin the installer would refuse).
+		if !plugin.ValidName(p.Plugin) {
+			return perr("params.plugin", "the name of an installed step plugin is required (lowercase letters, digits and dashes)")
+		}
+		// Settings keys must be non-empty and look like manifest setting
+		// keys: every value becomes the environment variable its key
+		// names, so the key must be exportable. Values may be empty.
+		for _, key := range sortedKeys(p.Settings) {
+			switch {
+			case strings.TrimSpace(key) == "":
+				return perr("params.settings", "a settings entry needs a key")
+			case !plugin.ValidEnvName(key):
+				return perr("params.settings."+key, "%q is not a valid setting key: settings keys name the environment variable the value becomes", key)
+			}
+		}
+		return nil
 	default:
 		return perr("type", "unknown step type %q", n.Type)
 	}
+}
+
+// sortedKeys returns a map's keys in a stable order so validation errors
+// are reproducible.
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // hasContent reports whether raw holds anything other than an empty object.

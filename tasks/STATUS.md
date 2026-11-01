@@ -44,7 +44,7 @@ Same rules as the table above.
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 32 | 32-plugins-as-flow-steps.md | todo | v1.8 |
+| 32 | 32-plugins-as-flow-steps.md | in_progress | v1.8 |
 | 33 | 33-script-escape-hatch.md | todo | v1.8 |
 | 34 | 34-non-media-file-types.md | todo | v1.8 |
 | 35 | 35-intel-qsv-tuning.md | todo | v1.8 |

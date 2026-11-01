@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/encoders"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 )
 
@@ -45,6 +46,12 @@ type Config struct {
 	ServerURL string
 	// Key is this node's key (built-in: <data-dir>/node.key).
 	Key string
+	// NodeName is this node's display name, used in error messages that
+	// name the node (task 32: a plugin step whose directory is missing).
+	NodeName string
+	// DataDir is this node's data directory: step plugins (task 32) run
+	// from <data dir>/plugins/<name>/.
+	DataDir string
 	// ScratchDir is the local temp space for encodes.
 	ScratchDir string
 	// FFmpegPath is the ffmpeg binary; empty means "on PATH". ffprobe is
@@ -166,6 +173,7 @@ func New(cfg Config) (*Worker, error) {
 		encs:    cfg.Encoders,
 		prober:  prober,
 		runFn:   cfg.Run,
+		plugs:   plugin.NewRunner(cfg.DataDir),
 		sc:      w.sc,
 		access:  newAccessCache(),
 		log:     cfg.Log,

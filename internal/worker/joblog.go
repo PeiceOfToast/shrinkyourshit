@@ -161,6 +161,19 @@ func (s *jobLogSink) ffline(line string) {
 	s.append(store.JobLogInfo, store.JobLogSourceFFmpeg, line)
 }
 
+// pluginf appends one plugin output line (task 32, step plugins run on the
+// node too): the plugin's name leads the message, stdout at info.
+func (s *jobLogSink) pluginInfof(name, format string, args ...any) {
+	s.append(store.JobLogInfo, store.JobLogSourcePlugin,
+		fmt.Sprintf("%s: %s", name, fmt.Sprintf(format, args...)))
+}
+
+// pluginWarnf appends one plugin output line at warn level (stderr).
+func (s *jobLogSink) pluginWarnf(name, format string, args ...any) {
+	s.append(store.JobLogWarn, store.JobLogSourcePlugin,
+		fmt.Sprintf("%s: %s", name, fmt.Sprintf(format, args...)))
+}
+
 // loop uploads batches as they arrive and flushes pending lines on the
 // interval. On stop it drains everything still queued or pending.
 func (s *jobLogSink) loop() {

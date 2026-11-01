@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -71,6 +72,14 @@ func (a *API) putLibraryFlow(w http.ResponseWriter, r *http.Request) {
 		_ = errors.As(err, &flowErr)
 		writeFlowErrors(w, flowErr.Errors)
 		return
+	case server.IsPluginStepError(err):
+		// A plugin step names a plugin that is not installed, is disabled
+		// or is not a step plugin (task 32): 422 naming the plugin and the
+		// reason, distinct from a structural flow error (400 invalid_flow).
+		pe := &server.ErrPluginStep{}
+		_ = errors.As(err, &pe)
+		writeError(w, http.StatusUnprocessableEntity, "plugin_unavailable", pe.Error())
+		return
 	case err != nil:
 		if strings.Contains(err.Error(), "invalid flow source") {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -113,12 +122,42 @@ func (a *API) validateFlow(w http.ResponseWriter, r *http.Request) {
 
 // stepTypes answers GET /api/v1/flows/step-types: the palette with
 // parameter schemas, so the UI never hardcodes the step list twice.
-func (a *API) stepTypes(w http.ResponseWriter, _ *http.Request) {
-	types := flow.StepTypes()
+func (a *API) stepTypes(w http.ResponseWriter, r *http.Request) {
+	types := a.stepTypesFor(r.Context())
 	writeJSON(w, http.StatusOK, server.ListResponse[flow.StepTypeInfo]{
 		Items: types,
 		Total: len(types),
 	})
+}
+
+// stepTypesFor builds the palette and fills the plugin step's select with
+// the installed, enabled step plugins (task 32). The flow package stays
+// pure — the store lives here. An install-store failure degrades to an
+// empty option list: the editor then explains how to install a plugin
+// instead of listing one.
+func (a *API) stepTypesFor(ctx context.Context) []flow.StepTypeInfo {
+	types := flow.StepTypes()
+	rows, err := a.svc.Plugins().List(ctx)
+	if err != nil {
+		return types
+	}
+	var names []string
+	for _, row := range rows {
+		if row.Enabled && row.Type == store.PluginTypeStep {
+			names = append(names, row.Name)
+		}
+	}
+	for i := range types {
+		if types[i].Type != flow.StepPlugin {
+			continue
+		}
+		for j := range types[i].Params {
+			if types[i].Params[j].Kind == "plugin" {
+				types[i].Params[j].Options = names
+			}
+		}
+	}
+	return types
 }
 
 // previewBody is the POST /api/v1/flows/preview request: either the easy

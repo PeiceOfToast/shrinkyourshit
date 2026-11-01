@@ -190,6 +190,13 @@ func IsInvalidFlow(err error) bool {
 	return errors.As(err, &e)
 }
 
+// IsPluginStepError reports whether err is a plugin-step availability
+// failure (task 32: the API maps it to 422 plugin_unavailable).
+func IsPluginStepError(err error) bool {
+	var e *ErrPluginStep
+	return errors.As(err, &e)
+}
+
 // backfillFlows compiles and persists the flow of every library that
 // predates the flow columns, so the flow API and the step stack work with
 // no manual migration (TestLegacyTargetStillRuns). Failures are logged per
@@ -240,6 +247,16 @@ func (m *LibraryManager) UpdateFlow(ctx context.Context, id, source string, g fl
 	lib, err := m.st.GetLibrary(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	// The plugin steps are checked against the installed plugins (task
+	// 32): the named plugin must be installed, enabled and of type step,
+	// or the save is refused (the API answers 422). A flow that names a
+	// plugin somebody later disabled fails at dispatch instead of
+	// silently skipping the step.
+	if m.pluginCheck != nil {
+		if err := m.pluginCheck(ctx, g); err != nil {
+			return nil, err
+		}
 	}
 	// The move destinations are checked against the library they will run
 	// on (task 24): files must land outside it, or the next scan would pick
