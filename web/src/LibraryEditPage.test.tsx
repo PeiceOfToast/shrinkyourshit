@@ -187,3 +187,64 @@ describe('LibraryEditPage', () => {
     expect(screen.getByTestId('advanced-fields')).toBeVisible()
   })
 })
+
+describe('LibraryEditPage file kinds (task 34)', () => {
+  it('shows the plain-language kind picker and sends the kinds on save', async () => {
+    const fixture = library({ quality: 3, remove_subtitles: false, audio: 1 })
+    fixture.file_kinds = ['image']
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: fixture,
+      },
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: fixture,
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-edit-kind-picker')
+    // Plain-language labels, no codec or engine words on the picker.
+    expect(screen.getByText('Photos')).toBeInTheDocument()
+    expect(screen.getByText('Anything else')).toBeInTheDocument()
+    const image = screen.getByTestId(
+      'library-edit-kind-image',
+    ) as HTMLInputElement
+    expect(image.checked).toBe(true)
+    expect(
+      (screen.getByTestId('library-edit-kind-video') as HTMLInputElement)
+        .checked,
+    ).toBe(false)
+
+    // Add Video and save: both kinds travel as file_kinds.
+    fireEvent.click(screen.getByTestId('library-edit-kind-video'))
+    fireEvent.click(screen.getByTestId('library-edit-save'))
+    await waitFor(() =>
+      expect(mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)).toHaveLength(1),
+    )
+    const put = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)[0]
+    expect(put.body).toMatchObject({ file_kinds: ['image', 'video'] })
+  })
+
+  it('keeps the last kind when the picker would go empty', async () => {
+    const fixture = library(null)
+    fixture.file_kinds = ['video']
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: fixture,
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-edit-kind-picker')
+    fireEvent.click(screen.getByTestId('library-edit-kind-video'))
+    // The library must look for at least one kind: the checkbox stays on.
+    expect(
+      (screen.getByTestId('library-edit-kind-video') as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+  })
+})

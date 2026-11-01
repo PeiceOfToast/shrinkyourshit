@@ -24,6 +24,7 @@ import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
 import { formatBytes } from './easyModel'
 import ErrorBox from './ErrorBox'
+import { kindLabel } from './KindPicker'
 import PageContainer from './PageContainer'
 import StatusChip from './StatusChip'
 import { SkeletonCard } from './skeleton'
@@ -137,6 +138,24 @@ export default function LibrariesPage() {
         <span className="break-words text-xs text-slate-500">{lib.path}</span>
       ),
       cardLabel: 'Path',
+    },
+    {
+      key: 'kinds',
+      header: 'Looking for',
+      cell: (lib) => (
+        <span
+          className="text-slate-400"
+          data-testid={`library-kinds-${lib.id}`}
+        >
+          {(lib.file_kinds ?? ['video']).map(kindLabel).join(', ')}
+        </span>
+      ),
+      cardCell: (lib) => (
+        <span className="text-slate-400" data-testid={`library-kinds-${lib.id}-card`}>
+          {(lib.file_kinds ?? ['video']).map(kindLabel).join(', ')}
+        </span>
+      ),
+      cardLabel: 'Looking for',
     },
     {
       key: 'files',

@@ -626,3 +626,84 @@ describe('LibraryDetailPage', () => {
     expect(toast).toHaveTextContent('Job cancelled')
   })
 })
+
+describe('LibraryDetailPage skipped kinds (task 34)', () => {
+  it('shows the skipped count from the last scan with its reason', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc({
+          file_kinds: ['image'],
+          last_scan_at: '2026-10-31T12:00:00Z',
+          last_scan: {
+            seen: 2,
+            probed: 0,
+            reused: 0,
+            skipped: 0,
+            skipped_kinds: 7,
+            queued: 0,
+            satisfied: 2,
+            missing: 0,
+            errors: 0,
+          },
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files/,
+        body: { items: [], total: 0 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+    ])
+    renderPage()
+    const skips = await screen.findByTestId('library-skipped-kinds')
+    expect(skips).toHaveTextContent('7 skipped')
+    expect(skips).toHaveTextContent(
+      'their file type is not what this library looks for',
+    )
+  })
+
+  it('says nothing when the last scan skipped nothing', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc({
+          file_kinds: ['video'],
+          last_scan_at: '2026-10-31T12:00:00Z',
+          last_scan: {
+            seen: 2,
+            probed: 2,
+            reused: 0,
+            skipped: 0,
+            skipped_kinds: 0,
+            queued: 0,
+            satisfied: 2,
+            missing: 0,
+            errors: 0,
+          },
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files/,
+        body: { items: [], total: 0 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-last-scan')
+    expect(screen.queryByTestId('library-skipped-kinds')).toBeNull()
+  })
+})

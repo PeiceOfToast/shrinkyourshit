@@ -644,3 +644,29 @@ Details:
   and notify as detached runs off the same outbound hook the webhooks and
   the refresher use, with every captured line in the job log under
   `source: "plugin"`. The contract for plugin authors is docs/plugins.md.
+
+### Task 34
+
+No new endpoints. The library endpoints gain `file_kinds`:
+
+- `POST /api/v1/libraries` and `PUT /api/v1/libraries/{id}` accept
+  `file_kinds`, a JSON array of Kind strings (`video | audio | subtitle |
+  image | other`, task 34). A request that omits the field defaults to
+  `["video"]`. Validation, applied on create and update: at least one
+  value, every value a valid Kind, no duplicates. An invalid kind, an empty
+  list and a duplicate are each `400 {"code":"invalid_request"}` whose
+  message names the field and the bad value — for example
+  `file_kinds: invalid file kind "document": want one of [video audio
+  subtitle image other]`, `file_kinds [] must not be empty: …`,
+  `file_kinds: duplicate file kind "video"`.
+- `LibraryDTO` gains `file_kinds` (always present, `["video"]` by default)
+  and `last_scan` — the persisted summary of the library's last successful
+  scan, `{seen, probed, reused, skipped, skipped_kinds, queued, satisfied,
+  missing, errors}` (omitted when the library has never been scanned).
+  `skipped_kinds` is the distinct count of files the scanner skipped
+  because their kind is not in the library's list: they stay on disk
+  untouched, are never queued and are never a failure. The library detail
+  page shows the count with its reason, so a photos library that is doing
+  nothing looks deliberate.
+- The scan summary shape in the `library.scanned` webhook body gains
+  `skipped_kinds` under the same rule.

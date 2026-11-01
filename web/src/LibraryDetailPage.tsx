@@ -485,6 +485,16 @@ export default function LibraryDetailPage() {
               ? `Last scan: ${formatScanTime(lib.last_scan_at)}`
               : 'Not scanned yet.'}
           </span>
+          {!!lib.last_scan?.skipped_kinds && (
+            <span
+              className="text-sm text-slate-400"
+              data-testid="library-skipped-kinds"
+              title="Files whose type this library does not look for: they stay on disk untouched."
+            >
+              {lib.last_scan.skipped_kinds} skipped — their file type is not
+              what this library looks for.
+            </span>
+          )}
         </div>
         {plain.data && plain.data.steps.length > 0 && (
           <div

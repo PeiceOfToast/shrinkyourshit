@@ -57,11 +57,13 @@ Workers, local or remote            (internal/worker)
 
 Status enums are fixed strings; do not add values without updating this file.
 
-**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), watch bool, schedule (cron string or empty), result_policy, created_at, updated_at, last_scan_at` (last_scan_at: when a scan of the library last finished without error, empty when never scanned; task 19)
+**Kind (task 34):** what a file is, decided by extension, never by probing: `video | audio | subtitle | image | other`. The extension table lives in `internal/probe/kind.go` (`KindForPath`); unknown extensions are `other`, never an error. Only `internal/probe`, `internal/encoders` and `internal/flow` know what a Kind means for encoding — `store`, `queue` and `job` carry Kinds as opaque strings and hold no media assumptions of their own (AGENTS.md rule 9). A file whose kind is `image` or `other` (and subtitles standing alone) is never probed: its fingerprint is its identity and size.
+
+**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), watch bool, schedule (cron string or empty), result_policy, file_kinds (JSON array of Kind, default ["video"], at least one value, no duplicates), created_at, updated_at, last_scan_at, last_scan (JSON summary of the last successful scan, empty when never scanned; task 34)`. The scanner skips files whose kind is not in `file_kinds` before probing, counts them under `skipped_kinds`, and records a row that had them as satisfied with the reason `not the file type this library looks for`. A last_scan summary carries `{seen, probed, reused, skipped, skipped_kinds, queued, satisfied, missing, errors}` so the library detail page can show why a photos library is doing nothing.
 
 **File:** `id, library_id, path (absolute), size, mtime, fingerprint, probe (JSON), status, satisfied_reason, last_job_id, bytes_saved, created_at, updated_at`
 - `status`: `new | satisfied | queued | processing | done | failed | missing`
-- `fingerprint`: `size:mtime_unix:sha256(first 1MiB + last 1MiB)` as a string. Re-probe only when it changes.
+- `fingerprint`: `size:mtime_unix:sha256(first 1MiB + last 1MiB)` as a string. Re-probe only when it changes. For a file that is not media the fingerprint alone is the identity; `probe` stays empty and `satisfied_reason` carries `not media: nothing to encode` when the flow holds nothing the file can act on.
 
 **Job:** `id, file_id, library_id, node_id, status, priority, attempt, encoder_used, fallback_reasons (JSON), percent, speed, eta_seconds, bytes_before, bytes_after, bytes_so_far (the live output size, task 18), log (text, capped at 64KiB tail), error, access_mode, claimed_at, started_at, finished_at, heartbeat_at, created_at`
 - `status`: `queued | claimed | running | done | failed | cancelled`
@@ -102,7 +104,7 @@ Status enums are fixed strings; do not add values without updating this file.
   "job":    { "…JobDTO": "" },
   "file":   { "…FileDTO": "" },
   "library":{ "…LibraryDTO": "" },
-  "scan":   { "seen": 0, "probed": 0, "reused": 0, "skipped": 0, "queued": 0, "satisfied": 0, "missing": 0, "errors": 0 },
+  "scan":   { "seen": 0, "probed": 0, "reused": 0, "skipped": 0, "skipped_kinds": 0, "queued": 0, "satisfied": 0, "missing": 0, "errors": 0 },
   "at":     "2026-10-31T12:00:00Z"
 }
 ```
@@ -292,9 +294,22 @@ Edge{ from, to, when }
   name the path so the UI can attach them to a row.
 - `flow.Compile(Graph) (Plan, error)` flattens the chain into ordered plan
   steps, each carrying the conditions gathered from the guards before it.
-- `flow.ResolvePlan(plan, probe)` evaluates the conditions per file and
-  yields the effective `Target` (the shape the satisfied rule and the
-  command builder already speak) plus the flow-only outcomes:
+- `flow.ResolvePlan(plan, probe, kind)` evaluates the conditions per file
+  and yields the effective `Target` (the shape the satisfied rule and the
+  command builder already speak) plus the flow-only outcomes. For a file
+  that is not media (task 34) the plan resolves without error even though
+  the probe holds no streams: the media steps do not apply, the `Target`
+  stays empty (no codec, no quality, no audio or subtitle policy), and the
+  plan carries the reason `not media: nothing to encode`. Steps split by
+  kind (`flow.StepNeedsMedia`): `rename`, `move`, `skip_if_smaller` and
+  `plugin` work on any kind; `probe`, `transcode_video`, `remux_container`,
+  `convert_audio`, `subtitles`, `health_check` and the `if_*` guards need
+  media — on a non-media file each of them is skipped with a reason in the
+  job log naming the step and the file kind, never a failure. A media-only
+  flow on a photos library therefore completes as a skip with a reason
+  instead of queueing failures. The guards (`if_codec_not`,
+  `if_bitrate_above`) evaluate false on a non-media file: there is no codec
+  and no bitrate. The resolution details:
   - a guarded transcode that passes becomes the effective video with
     `reencode_if_same_codec=false` when the only guards are
     `if_codec_not` (the guard already excludes the same codec — this is

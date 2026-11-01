@@ -14,7 +14,7 @@ ShrinkYourShit is AGPL-3.0. Anyone can use, modify and host it, but nobody can c
 
 ## What it does (v1 goal)
 
-- Watch folders and probe every file. If it already matches your target, skip it (never reprocess).
+- Watch folders and probe every file. If it already matches your target, skip it (never reprocess). A library declares what it looks for — video, audio, photos, subtitles or anything else — and files of other kinds are skipped untouched, so a folder of photos can sit next to your movies (task 34).
 - Transcode video (HEVC, AV1, H.264), remux containers, convert audio, strip or extract subtitles, strip or pick audio tracks, run health checks, rename/move after processing.
 - Auto-detect hardware per machine. GPU encoder first, CPU fallback when no GPU exists or a GPU encode fails.
 - Distributed: every install is the same binary and can be a server, a worker, or both. First launch auto-discovers a server on the network, or becomes the server.
