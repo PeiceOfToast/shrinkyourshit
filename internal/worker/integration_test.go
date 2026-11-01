@@ -24,6 +24,7 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/api"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/encoders"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
@@ -68,6 +69,7 @@ func newStack(t *testing.T, cfg stackConfig) *stack {
 	svcCfg := server.Config{
 		Store:             st,
 		Log:               slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DataDir:           dataDir,
 		StableWindow:      200 * time.Millisecond,
 		Debounce:          200 * time.Millisecond,
 		WatchPollInterval: time.Hour,
@@ -147,6 +149,8 @@ func (s *stack) workerConfig(tweak func(*Config)) Config {
 	cfg := Config{
 		ServerURL:         s.apiSrv.URL,
 		Key:               s.key,
+		NodeName:          "testhost", // the builtin node's name (task 32 error messages)
+		DataDir:           s.dataDir,
 		ScratchDir:        s.scratch,
 		FFmpegPath:        s.ffmpeg,
 		HeartbeatInterval: 200 * time.Millisecond,
@@ -228,6 +232,21 @@ func (s *stack) jobFor(libID string) *store.Job {
 		return nil
 	}
 	return jobs[0]
+}
+
+// jobLog returns the job's log text (all lines joined) — the plugin's
+// stdout lines land here (task 27's viewer, task 32's plugin source).
+func (s *stack) jobLog(libID string) string {
+	s.t.Helper()
+	job := s.jobFor(libID)
+	require.NotNil(s.t, job)
+	lines, err := s.st.ListJobLog(context.Background(), job.ID, 0, "", 200)
+	require.NoError(s.t, err)
+	out := ""
+	for _, l := range lines {
+		out += l.Message + "\n"
+	}
+	return out
 }
 
 // fileRow returns the (single) file of the library.
@@ -677,10 +696,223 @@ func TestIntegrationKeepBoth(t *testing.T) {
 	s.waitForNoScratch()
 }
 
+/* --- task 32: step plugins --- */
+
+// installStepPluginDir writes a step plugin into a temp dir and installs it
+// into the stack's data dir through the plugin service (enabled), the way
+// the Plugins page does.
+func (s *stack) installStepPluginDir(name, script string, timeoutSec int) {
+	s.t.Helper()
+	src := filepath.Join(s.t.TempDir(), name)
+	require.NoError(s.t, os.MkdirAll(src, 0o755))
+	scriptPath := filepath.Join(src, "run.sh")
+	require.NoError(s.t, os.WriteFile(scriptPath, []byte(script+"\n"), 0o755))
+	timeoutLine := ""
+	if timeoutSec > 0 {
+		timeoutLine = fmt.Sprintf("timeout_seconds: %d\n", timeoutSec)
+	}
+	manifest := "name: " + name + `
+version: 1.0.0
+type: step
+description: test plugin
+command: ["sh", "` + scriptPath + `"]
+` + timeoutLine
+	require.NoError(s.t, os.WriteFile(filepath.Join(src, plugin.FileName), []byte(manifest), 0o644))
+	inst, err := s.svc.Plugins().Install(context.Background(), server.InstallRequest{Path: src})
+	require.NoError(s.t, err)
+	yes := true
+	_, err = s.svc.Plugins().Update(context.Background(), inst.ID, server.UpdateRequest{Enabled: &yes})
+	require.NoError(s.t, err)
+}
+
+// pluginStepGraph is probe → plugin → if_codec_not <codec> → transcode →
+// remux (guard empty: probe → plugin → remux): the plugin runs before the
+// guard, so a plugin that rewrites the file changes the guard's decision.
+func pluginStepGraph(pluginName, guardCodec string) flow.Graph {
+	nodes := []flow.Step{
+		{ID: "probe", Type: flow.StepProbe},
+		{ID: "plug", Type: flow.StepPlugin, Params: json.RawMessage(`{"plugin":"` + pluginName + `"}`)},
+	}
+	edges := []flow.Edge{{From: "probe", To: "plug"}}
+	if guardCodec != "" {
+		nodes = append(nodes,
+			flow.Step{ID: "guard", Type: flow.StepIfCodecNot, Params: json.RawMessage(`{"codec":"` + guardCodec + `"}`)},
+			flow.Step{ID: "transcode", Type: flow.StepTranscodeVideo, Params: json.RawMessage(`{"codec":"h264","quality":3}`)})
+		edges = append(edges, flow.Edge{From: "plug", To: "guard"}, flow.Edge{From: "guard", To: "transcode"})
+	} else {
+		nodes = append(nodes, flow.Step{ID: "transcode", Type: flow.StepTranscodeVideo, Params: json.RawMessage(`{"codec":"h264","quality":3}`)})
+		edges = append(edges, flow.Edge{From: "plug", To: "transcode"})
+	}
+	nodes = append(nodes, flow.Step{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)})
+	edges = append(edges, flow.Edge{From: "transcode", To: "remux"})
+	return flow.Graph{Schema: flow.FlowSchema, Nodes: nodes, Edges: edges}
+}
+
+// TestIntegrationPluginStepRewritesForLaterGuard is acceptance item 4: an
+// in-place rewrite step plugin is visible to a later guard. The plugin
+// replaces the working file with a big hevc copy; the if_codec_not hevc
+// guard then FAILS (the file is hevc), so no transcode runs — where the
+// original h264 file would have passed the guard and been re-encoded. The
+// output is the plugin's file streaming through with video copy, and the
+// replace policy puts it in place of the original.
+func TestIntegrationPluginStepRewritesForLaterGuard(t *testing.T) {
+	s := newStack(t, stackConfig{})
+
+	// The plugin copies a big hevc file over the working file in place
+	// (its last argument is the working file).
+	big := makeLargeHEVC(t, s.ffmpeg)
+	s.installStepPluginDir("bignifier",
+		"cp "+strconv.Quote(big)+" \"$1\"\nprintf 'bignifier ran\n'", 0)
+
+	lib := s.createLibraryFlow(pluginStepGraph("bignifier", "hevc"), store.ResultPolicyReplace)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+	s.scanSync(lib.ID) // the create hook fired before the fixture landed
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job done", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status != store.FileStatusProcessing && row.Status != store.FileStatusQueued
+	})
+
+	// The guard saw the plugin's hevc rewrite and failed: no transcode,
+	// and the plugin's file became the output. It is far bigger than the
+	// original, and the replace policy put it in the original's place.
+	job := s.jobFor(lib.ID)
+	require.Greater(t, job.BytesAfter, job.BytesBefore, "the plugin's big file became the output")
+	row := s.fileRow(lib.ID)
+	require.Equal(t, strings.TrimSuffix(origPath, ".mp4")+".mkv", row.Path,
+		"the flow's remux step renames the output container")
+	require.Contains(t, s.jobLog(lib.ID), "bignifier ran")
+
+	// The file on disk is the plugin's hevc rewrite (the guard's skip of
+	// the transcode left video copy, so the plugin's file streamed
+	// through untouched).
+	info, err := probe.Probe(context.Background(), "", row.Path)
+	require.NoError(t, err)
+	require.Equal(t, flow.CodecHEVC, info.Video[0].Codec)
+	require.Greater(t, info.SizeBytes, int64(300000), "the padding attachment survived the copy")
+	s.waitForNoScratch()
+}
+
+// TestIntegrationPluginStepNotSmallerSkips is acceptance item 4's flip
+// side: a plugin's rewrite is what the skip_if_smaller policy evaluates.
+// The plugin replaces the working file with a stripped, much smaller file;
+// the guard passes (it is h264, not hevc), the transcode consumes the
+// plugin's file, and the output — built from the plugin's rewrite — is
+// smaller than the original and replaces it.
+func TestIntegrationPluginStepNotSmallerSkips(t *testing.T) {
+	s := newStack(t, stackConfig{})
+
+	// The plugin strips the working file down to video only (much smaller
+	// than the 2-audio original) by rewriting it in place.
+	small := makeTinyFixture(t, s.ffmpeg)
+	s.installStepPluginDir("stripper",
+		"cp "+strconv.Quote(small)+" \"$1\"\nprintf 'stripper ran\n'", 0)
+
+	lib := s.createLibraryFlow(pluginStepGraph("stripper", "hevc"), store.ResultPolicyReplaceIfSmaller)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+	s.scanSync(lib.ID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job done", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusDone
+	})
+	s.waitFor("file settled", func() bool {
+		row := s.fileRow(lib.ID)
+		return row.Status != store.FileStatusProcessing && row.Status != store.FileStatusQueued
+	})
+
+	// The encode consumed the plugin's stripped rewrite: the output is
+	// smaller than the original (which the policy replaced the original
+	// with) and carries the plugin's track layout (video only, no audio).
+	job := s.jobFor(lib.ID)
+	require.Less(t, job.BytesAfter, job.BytesBefore, "the plugin's rewrite made the output smaller")
+	row := s.fileRow(lib.ID)
+	require.Equal(t, strings.TrimSuffix(origPath, ".mp4")+".mkv", row.Path,
+		"the flow's remux step renames the output container")
+	require.Contains(t, s.jobLog(lib.ID), "stripper ran")
+
+	// The file on disk is the encode of the plugin's stripped file: one
+	// video, zero audio (the original had two).
+	info, err := probe.Probe(context.Background(), "", row.Path)
+	require.NoError(t, err)
+	require.Len(t, info.Video, 1)
+	require.Empty(t, info.Audio, "the plugin's stripped file was the encode's input")
+	_, statErr := os.Stat(origPath)
+	require.True(s.t, os.IsNotExist(statErr), "the replace policy removed the original (renamed container)")
+	s.waitForNoScratch()
+}
+
+// TestIntegrationPluginStepFailsJob is acceptance item 5: a step plugin
+// that exits non-zero fails the job and the original file is byte
+// identical (the result policy never runs).
+func TestIntegrationPluginStepFailsJob(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	s.installStepPluginDir("breakit", "exit 3\n", 0)
+
+	lib := s.createLibraryFlow(pluginStepGraph("breakit", "hevc"), store.ResultPolicyReplaceIfSmaller)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+	origData := s.fileHash(origPath)
+	s.scanSync(lib.ID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job failed", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusFailed
+	})
+	job := s.jobFor(lib.ID)
+	require.Contains(t, job.Error, "plugin breakit")
+	require.Contains(t, job.Error, "exit status 3")
+
+	// The original is byte identical (the result policy never ran).
+	require.Equal(t, origData, s.fileHash(origPath))
+	row := s.fileRow(lib.ID)
+	require.Equal(t, origPath, row.Path)
+}
+
+// TestIntegrationPluginStepTimeout is acceptance item 6: a step plugin
+// that sleeps past its timeout is killed and the job fails naming the
+// plugin.
+func TestIntegrationPluginStepTimeout(t *testing.T) {
+	s := newStack(t, stackConfig{})
+	s.installStepPluginDir("sleepy", "sleep 30\n", 1)
+
+	lib := s.createLibraryFlow(pluginStepGraph("sleepy", "hevc"), store.ResultPolicyReplaceIfSmaller)
+	origPath := s.copyFixtureIn(s.fixtures.H264AudioMP4, "movie.mp4")
+	origData := s.fileHash(origPath)
+	s.scanSync(lib.ID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.runWorker(ctx, s.workerConfig(nil))
+
+	s.waitFor("job failed", func() bool {
+		job := s.jobFor(lib.ID)
+		return job != nil && job.Status == store.JobStatusFailed
+	})
+	job := s.jobFor(lib.ID)
+	require.Contains(t, job.Error, "plugin sleepy")
+	require.Contains(t, job.Error, "timed out")
+	require.Equal(t, origData, s.fileHash(origPath))
+}
+
 // TestIntegrationCancelStopsFFmpeg is acceptance item 6: cancel via API
 // stops ffmpeg within 5s and the scratch dir is gone.
-func TestIntegrationCancelStopsFFmpeg(t *testing.T) {
-	s := newStack(t, stackConfig{})
+func TestIntegrationCancelStopsFFmpeg(t *testing.T) {	s := newStack(t, stackConfig{})
 	lib := s.createLibrary(store.ResultPolicyReplaceIfSmaller)
 	s.copyFixtureIn(makeLongFixture(t, s.ffmpeg), "long.mkv")
 	s.scanSync(lib.ID) // the create hook fired before the fixture landed
@@ -872,6 +1104,22 @@ func makeFatH264(t *testing.T, ffmpeg string) string {
 		"-c:a", "aac", "-b:a", "64k", "-c:s", "srt",
 		"-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=ger",
 		"-metadata:s:s:0", "language=eng",
+		out,
+	)
+	return out
+}
+
+// makeTinyFixture builds a tiny video-only fixture: one video stream, no
+// audio, no subtitles — much smaller than the shared 2-audio fixtures. The
+// plugin step tests use it as the file a rewrite plugin leaves behind.
+func makeTinyFixture(t *testing.T, ffmpeg string) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "tiny.mkv")
+	run(t, ffmpeg,
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=10",
+		"-map", "0:v",
+		"-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-pix_fmt", "yuv420p",
 		out,
 	)
 	return out
