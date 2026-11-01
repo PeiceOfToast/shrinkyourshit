@@ -237,3 +237,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-01T09:20:00Z task 34: pushed branch, opened PR #37, all nine CI checks green (go 4m1s, web, docker, docker-arm64 9m8s, cross, e2e, installer, installer-powershell, report)
 - 2026-11-01T09:19:08Z task 34: PR #37 merged with squash d058034, branch task/34-non-media-file-types deleted on the remote; main pulled on the VM to d058034
 2026-11-01T14:00:00Z task 34 merge confirmed on main (d058034), STATUS.md note updated to PR #37; starting task 35 (intel qsv tuning)
+- 2026-11-01T10:15:04Z task 35: PR #38 merged with squash db5cf76, branch task/35-intel-qsv-tuning deleted on the remote; verified CI green on all nine checks, make lint and make test exit 0 rerun on the VM, DECISIONS.md unchanged, 8/8 acceptance boxes ticked
+- 2026-11-01T09:40:00Z task 35: session stalled mid-turn with an unpushed branch and no open PR; interrupted and re-instructed to commit, run checks once, tick the checklist, push and open the PR
+- 2026-11-01T10:00:00Z task 35: make test-integration failed on internal/server with go tests 10m default deadline on the slow dev box (package passes standalone in 384s, CI runs the same suite green in 4m); raised the deadline to 30m in the Makefile and the CI integration step, no test skipped
