@@ -51,11 +51,11 @@ The node detail page shows the probed QSV features for that node (`Look-ahead`, 
 Hyper Encode or any cross-GPU job splitting, Intel Deep Link's bitrate boost and auto bitrate, AV1 tuning beyond the ICQ mapping, NVIDIA or VAAPI changes, per-library encoder settings, hardware benchmark scoring, `DECISIONS.md` changes.
 
 ## Acceptance
-- [ ] Capability probing records look-ahead, extbrc, async depth and low power per machine, cached per process, and a machine where the probe cannot run reports all four off. Proven by tests with a fake ffmpeg.
-- [ ] With the new settings off, the QSV argument vector is byte-identical to the current behaviour, proven by the parity test.
-- [ ] With `qsv_extra_quality` on and both features supported, `-look_ahead 1 -extbrc 1` appear in the right position, proven by a build test.
-- [ ] With `qsv_low_power` on and support present, `-low_power 1` appears; with support absent the job still runs and one warn line names the feature.
-- [ ] The quality mapping handles both the ICQ and the fallback path with table tests at the quality range ends.
-- [ ] The node detail page shows the probed features in plain language, with a `web` test.
-- [ ] `docs/intel-qsv.md` exists, states the Deep Link non-goals explicitly, and is linked from the README.
-- [ ] `make test`, `make test-integration` and `make lint` are green.
+- [x] Capability probing records look-ahead, extbrc, async depth and low power per machine, cached per process, and a machine where the probe cannot run reports all four off. Proven by tests with a fake ffmpeg.
+- [x] With the new settings off, the QSV argument vector is byte-identical to the current behaviour, proven by the parity test.
+- [x] With `qsv_extra_quality` on and both features supported, `-look_ahead 1 -extbrc 1` appear in the right position, proven by a build test.
+- [x] With `qsv_low_power` on and support present, `-low_power 1` appears; with support absent the job still runs and one warn line names the feature.
+- [x] The quality mapping handles both the ICQ and the fallback path with table tests at the quality range ends.
+- [x] The node detail page shows the probed features in plain language, with a `web` test.
+- [x] `docs/intel-qsv.md` exists, states the Deep Link non-goals explicitly, and is linked from the README.
+- [x] `make test`, `make test-integration` and `make lint` are green.
