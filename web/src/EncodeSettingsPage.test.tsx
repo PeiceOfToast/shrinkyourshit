@@ -123,7 +123,11 @@ describe('EncodeSettingsPage', () => {
   it('saves the QSV opt-ins immediately and says what they do (task 35)', async () => {
     let extra = false
     mock = installFetchMock([
-      { method: 'GET', match: /\/api\/v1\/settings$/, bodyFn: () => ({ ...settings, qsv_extra_quality: extra }) },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/settings$/,
+        bodyFn: () => ({ ...settings, qsv_extra_quality: extra }),
+      },
       {
         method: 'PUT',
         match: /\/api\/v1\/settings$/,
@@ -151,8 +155,10 @@ describe('EncodeSettingsPage', () => {
     await waitFor(() =>
       expect(mock.calls('PUT', /\/api\/v1\/settings$/).length).toBe(1),
     )
-    const put = mock.calls('PUT', /\/api\/v1\/settings$/)[0]
-      .body as Record<string, unknown>
+    const put = mock.calls('PUT', /\/api\/v1\/settings$/)[0].body as Record<
+      string,
+      unknown
+    >
     expect(put).toEqual({ qsv_extra_quality: true })
   })
 })

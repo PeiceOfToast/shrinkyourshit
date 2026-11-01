@@ -128,8 +128,8 @@ export default function EncodeSettingsPage() {
           <span className="grid gap-0.5 text-sm text-slate-300">
             Low-power mode
             <span className="text-xs text-slate-500">
-              Faster and slightly worse, and it draws less power. Does
-              nothing on older hardware.
+              Faster and slightly worse, and it draws less power. Does nothing
+              on older hardware.
             </span>
           </span>
         </div>

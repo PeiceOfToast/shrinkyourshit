@@ -820,14 +820,16 @@ describe('NodesPage', () => {
           total: 1,
         }),
       },
-      { method: 'GET', match: /\/api\/v1\/jobs/, body: { items: [], total: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderNodes()
     const strip = await screen.findByTestId('node-qsv-node-1')
-    expect(strip).toHaveTextContent(
-      'This machine cannot do look-ahead.',
-    )
+    expect(strip).toHaveTextContent('This machine cannot do look-ahead.')
     expect(strip).toHaveTextContent(
       'This machine cannot do the faster low-power mode.',
     )
@@ -875,7 +877,11 @@ describe('NodesPage', () => {
           total: 2,
         }),
       },
-      { method: 'GET', match: /\/api\/v1\/jobs/, body: { items: [], total: 0 } },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
     ])
 
     renderNodes()
