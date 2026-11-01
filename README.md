@@ -33,6 +33,7 @@ ShrinkYourShit is AGPL-3.0. Anyone can use, modify and host it, but nobody can c
 | [API.md](API.md) | HTTP API conventions and endpoint list shared by all tasks. |
 | [docs/plugins.md](docs/plugins.md) | The plugin contract (task 31): the manifest, the phases, the stdin JSON, the env contract. |
 | [docs/scripts.md](docs/scripts.md) | The sandboxed script escape hatch (task 33): write a wasm plugin, the contract, the limits. |
+| [docs/intel-qsv.md](docs/intel-qsv.md) | What Intel Quick Sync does here, the probed extras and the two QSV settings — and what Intel's "Deep Link" covers that a single ffmpeg process cannot reach (task 35). |
 | [ROADMAP.md](ROADMAP.md) | MVP definition and what comes after. |
 | [AGENTS.md](AGENTS.md) | Rules and loop for coding agents. OpenCode reads this file automatically. |
 | [tasks/STATUS.md](tasks/STATUS.md) | Which task is next. Agents update it. |

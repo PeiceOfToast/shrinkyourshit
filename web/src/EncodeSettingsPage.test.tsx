@@ -21,6 +21,8 @@ const settings = {
   admin_username: '',
   preferred_languages: ['eng'],
   default_video_codec: 'hevc',
+  qsv_extra_quality: false,
+  qsv_low_power: false,
 }
 
 function renderPage() {
@@ -116,5 +118,41 @@ describe('EncodeSettingsPage', () => {
     expect(box).toHaveTextContent('Cannot load the settings.')
     expect(screen.getByTestId('error-status')).toHaveTextContent('503')
     expect(screen.getByTestId('error-code')).toHaveTextContent('unavailable')
+  })
+
+  it('saves the QSV opt-ins immediately and says what they do (task 35)', async () => {
+    let extra = false
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/settings$/, bodyFn: () => ({ ...settings, qsv_extra_quality: extra }) },
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/settings$/,
+        bodyFn: () => {
+          extra = true
+          return { ...settings, qsv_extra_quality: extra }
+        },
+      },
+    ])
+    renderPage()
+
+    // The switches read off and explain themselves in plain language.
+    const extraSwitch = await screen.findByTestId('qsv-extra-quality')
+    expect(extraSwitch).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByTestId('qsv-extra-quality')).toBeEnabled()
+    expect(
+      screen.getByText(/Does nothing on machines without the feature\./),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Does nothing on older hardware\./),
+    ).toBeInTheDocument()
+
+    // Toggling saves immediately with just that field.
+    fireEvent.click(extraSwitch)
+    await waitFor(() =>
+      expect(mock.calls('PUT', /\/api\/v1\/settings$/).length).toBe(1),
+    )
+    const put = mock.calls('PUT', /\/api\/v1\/settings$/)[0]
+      .body as Record<string, unknown>
+    expect(put).toEqual({ qsv_extra_quality: true })
   })
 })

@@ -13,6 +13,7 @@ import ErrorBox from './ErrorBox'
 import PageContainer from './PageContainer'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
 import { SkeletonRows } from './skeleton'
+import Switch from './Switch'
 import { useToast } from './toastContext'
 import { btnPrimary, input } from './uiControls'
 
@@ -92,6 +93,47 @@ export default function EncodeSettingsPage() {
           testId="settings-error"
         />
       )}
+
+      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
+        <h2 className="font-semibold">Hardware extras (Intel Quick Sync)</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Each machine uses an extra only when its check found the hardware
+          supports it. Off is the default and changes nothing.
+        </p>
+        <div className="mt-4 flex items-start gap-3">
+          <Switch
+            checked={query.data.qsv_extra_quality}
+            onChange={(on) => save.mutate({ qsv_extra_quality: on })}
+            label="Extra quality on Intel Quick Sync"
+            testId="qsv-extra-quality"
+            disabled={save.isPending}
+          />
+          <span className="grid gap-0.5 text-sm text-slate-300">
+            Extra quality
+            <span className="text-xs text-slate-500">
+              Uses look-ahead and extended bitrate control where the machine
+              supports both. A little slower, slightly better files. Does
+              nothing on machines without the feature.
+            </span>
+          </span>
+        </div>
+        <div className="mt-3 flex items-start gap-3">
+          <Switch
+            checked={query.data.qsv_low_power}
+            onChange={(on) => save.mutate({ qsv_low_power: on })}
+            label="Low-power mode on Intel Quick Sync"
+            testId="qsv-low-power"
+            disabled={save.isPending}
+          />
+          <span className="grid gap-0.5 text-sm text-slate-300">
+            Low-power mode
+            <span className="text-xs text-slate-500">
+              Faster and slightly worse, and it draws less power. Does
+              nothing on older hardware.
+            </span>
+          </span>
+        </div>
+      </section>
 
       <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
         <h2 className="font-semibold">Library defaults</h2>

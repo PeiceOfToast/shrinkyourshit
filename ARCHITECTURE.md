@@ -83,7 +83,7 @@ Status enums are fixed strings; do not add values without updating this file.
 - `state_error`: the reason a lifecycle transition failed to apply; `effective_state` is `error` while set, otherwise it mirrors `desired_state`. Cleared by the next successful transition.
 - `access_mode`: `auto | shared | transfer`
 - `throughput_limit_mbps`: cap on this node's transfer speed (MB/s, 0 = unlimited; task 09)
-- `capabilities`: `{encoders: [{name, codecs: []}], cpu_cores, ffmpeg_version}`
+- `capabilities`: `{encoders: [{name, codecs: [], qsv_features?: {look_ahead, extbrc, async_depth, low_power}}], cpu_cores, ffmpeg_version}`. The qsv backend's entry additionally carries `qsv_features` (task 35): what its per-codec probe of the optional QSV features found on that machine, folded into one record per feature — all four `false` when the probe cannot run. Every other backend, and a qsv backend whose probe never ran, omits the object.
 - `key_once`: the raw key between admin approval and the node's first retrieval; wiped on retrieval, revoke and delete (only the hash remains afterwards).
 - Heartbeats write only their own columns (`capabilities`, `last_heartbeat_at`, plus the conditional drain completion): a heartbeat loads the node before the lifecycle endpoints may have moved `desired_state`, and a whole-row write would resurrect the state it loaded — a stop or start silently lost under a running heartbeat. The same guard the job side already had (`UpdateJobIfActive`).
 
@@ -91,7 +91,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Session:** `token_hash (PK), created_at, expires_at`. Admin login sessions (task 06): random 32-byte token, only the SHA-256 hex hash is stored, 30-day expiry checked on lookup. Stored in the `sessions` table (migration 0002).
 
-**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default).
+**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default), `qsv_extra_quality, qsv_low_power` (task 35: the Intel QSV opt-ins, both default off; each node applies them only where its capability probe found the feature, and the heartbeat response carries both so remote workers stay in step).
 
 **Webhook:** `id, name, url, secret, events (comma separated: job.done | job.failed | library.scanned), enabled, created_at, updated_at` (task 25, migration 0011). The secret is generated server side at create time (32 random bytes, hex) and returned exactly once; after that every response carries `secret_set` instead.
 
@@ -202,6 +202,8 @@ After a successful job, the output's fingerprint is stored, so the next scan or 
 ## Hardware and encoders
 
 Each worker detects on start: NVENC (NVIDIA), QSV and VAAPI (Intel), CPU (libx264, libx265, libsvtav1). The `Encoder` interface per backend builds FFmpeg arguments and runs a one-second self-test. Order: GPU encoders that support the target codec, then CPU. If a GPU encode fails, the job retries on the next encoder and the failure reason is recorded. Adding AMF or VideoToolbox later means adding one implementation.
+
+The qsv backend additionally probes the optional encoder features per codec (task 35): look-ahead with extbrc, the async pipeline depth and low-power mode, each a one-second self-test with the candidate flag set. A flag joins the argument vector only when the user opted in (`qsv_extra_quality`, `qsv_low_power`) and the probe accepted it; with the settings off the vector is byte-identical to the pre-task-35 behaviour, and a requested-but-unsupported feature is one warn, never a failed job. The QSV quality mapping is Intel's ICQ constant quality via `-global_quality` (`docs/intel-qsv.md` is the plain-language reference, including the Deep Link non-goals).
 
 ## File access modes (per node)
 
