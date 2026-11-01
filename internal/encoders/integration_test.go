@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,6 +199,85 @@ func TestEncodeVAAPI(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, VerifyOutput(spec, info.DurationSeconds, outInfo, st.Size()))
 	assert.Equal(t, "hevc", outInfo.Video[0].Codec)
+	assert.Len(t, outInfo.Audio, len(info.Audio))
+	assert.Len(t, outInfo.Subtitle, len(info.Subtitle))
+
+	// The original was never touched.
+	origInfo, err := probe.Probe(context.Background(), ffprobe, input)
+	require.NoError(t, err)
+	assert.Equal(t, "h264", origInfo.Video[0].Codec)
+}
+
+// TestEncodeQSVLookAhead runs the fixture encode against the qsv backend
+// with the extra-quality opt-in on (task 35): look-ahead and extbrc join
+// the argument vector when the machine probed them. It skips everywhere
+// else, each with a message naming exactly what is missing — the build box
+// has no Intel device and a stock ffmpeg build may not even list the qsv
+// encoders, and both are expected skips, not failures.
+func TestEncodeQSVLookAhead(t *testing.T) {
+	ffmpeg, ffprobe := requireFFmpeg(t)
+
+	env, err := processDetector.probeEnv(context.Background(), ffmpeg)
+	require.NoError(t, err)
+	qsv := QSV.(*qsvEncoder)
+	entry, err := qsv.detectWithEnv(context.Background(), env)
+	if err != nil {
+		t.Skipf("skipping QSV look-ahead encode: %v (needs an Intel graphics device and an ffmpeg build with the qsv encoders)", err)
+	}
+	require.NotEmpty(t, entry.Codecs)
+
+	if !qsv.featuresFor(flow.CodecH264).LookAhead {
+		t.Skip("skipping QSV look-ahead encode: this machine's driver does not support look-ahead " +
+			"(ffmpeg exposes the look_ahead option for the h264_qsv encoder only, and only some drivers accept it)")
+	}
+
+	// The opt-in under test (settings qsv_extra_quality); reset so later
+	// tests in the same run see the defaults.
+	SetQSVPrefs(QSVPrefs{ExtraQuality: true}, t.Name(), nil)
+	defer SetQSVPrefs(QSVPrefs{}, t.Name(), nil)
+
+	dir := t.TempDir()
+	input := generateH264Fixture(t, ffmpeg, dir)
+	info, err := probe.Probe(context.Background(), ffprobe, input)
+	require.NoError(t, err)
+
+	// The fixture is already h264, so the satisfied rule must be
+	// overridden for the re-encode to run at all.
+	target := flow.Default()
+	target.Video.Codec = flow.CodecH264
+	target.Video.ReencodeIfSameCodec = true
+
+	output := filepath.Join(dir, "output.mkv")
+	spec := NewSpec(input, output, info, target)
+
+	args := strings.Join(QSV.BuildArgs(spec), " ")
+	assert.Contains(t, args, "-look_ahead 1 -extbrc 1",
+		"the opt-in with both features probed must add the look-ahead pair")
+	assert.Contains(t, args, "-c:v h264_qsv")
+
+	// qsv only — no silent cpu fallback, so this really is the hardware
+	// path being proven.
+	run := func(ctx context.Context, args []string) error {
+		cmd := exec.CommandContext(ctx, ffmpeg, args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Logf("ffmpeg failed: %s", out)
+		}
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	res, err := RunWithFallback(ctx, []Encoder{QSV}, spec, run)
+	require.NoError(t, err)
+	assert.Equal(t, "qsv", res.EncoderUsed)
+	assert.Empty(t, res.Fallbacks)
+
+	outInfo, err := probe.Probe(context.Background(), ffprobe, output)
+	require.NoError(t, err)
+	st, err := os.Stat(output)
+	require.NoError(t, err)
+	require.NoError(t, VerifyOutput(spec, info.DurationSeconds, outInfo, st.Size()))
+	assert.Equal(t, "h264", outInfo.Video[0].Codec)
 	assert.Len(t, outInfo.Audio, len(info.Audio))
 	assert.Len(t, outInfo.Subtitle, len(info.Subtitle))
 
