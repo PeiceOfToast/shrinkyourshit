@@ -26,6 +26,30 @@ func TestSettingsDefaults(t *testing.T) {
 	assert.True(t, vals.UpdateCheck)
 	assert.Equal(t, update.ChannelStable, vals.UpdateChannel)
 	assert.True(t, vals.BackupBeforeUpdate)
+	// QSV opt-ins (task 35): off — the default must stay today's behaviour.
+	assert.False(t, vals.QSVExtraQuality)
+	assert.False(t, vals.QSVLowPower)
+}
+
+// TestSettingsQSVToggles (task 35): the two QSV opt-ins round-trip and can
+// be turned off again.
+func TestSettingsQSVToggles(t *testing.T) {
+	h := newAuthHarness(t)
+	ctx := context.Background()
+	s := NewSettings(h.st, nil)
+
+	on, off := true, false
+	require.NoError(t, s.Update(ctx, h.auth, Update{QSVExtraQuality: &on, QSVLowPower: &on}))
+	vals, err := s.Get(ctx)
+	require.NoError(t, err)
+	assert.True(t, vals.QSVExtraQuality)
+	assert.True(t, vals.QSVLowPower)
+
+	require.NoError(t, s.Update(ctx, h.auth, Update{QSVExtraQuality: &off}))
+	vals, err = s.Get(ctx)
+	require.NoError(t, err)
+	assert.False(t, vals.QSVExtraQuality)
+	assert.True(t, vals.QSVLowPower)
 }
 
 func TestSettingsUpdateValidation(t *testing.T) {

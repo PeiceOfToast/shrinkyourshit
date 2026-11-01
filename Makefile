@@ -58,9 +58,12 @@ test-web: web-deps
 	cd web && npm run test
 
 # Integration tests (build tag `integration`) need ffmpeg/ffprobe and skip
-# with a clear message when they are absent.
+# with a clear message when they are absent. The server package's suite
+# outgrew go test's default 10-minute per-package timeout (it passed at
+# ~5 minutes on the dev box and CI runners are slower), so the deadline is
+# explicit.
 test-integration: placeholder
-	go test -tags=integration ./...
+	go test -tags=integration -timeout 30m ./...
 
 # e2e (task 12): Playwright layout suite at phone/tablet/desktop widths
 # against the real Go binary serving the built web app. `make web` builds

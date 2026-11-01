@@ -670,3 +670,27 @@ No new endpoints. The library endpoints gain `file_kinds`:
   nothing looks deliberate.
 - The scan summary shape in the `library.scanned` webhook body gains
   `skipped_kinds` under the same rule.
+
+### Task 35
+
+No new endpoints. Settings and the heartbeat gain the Intel QSV opt-ins:
+
+- `GET /api/v1/settings` and `PUT /api/v1/settings` gain
+  `qsv_extra_quality` and `qsv_low_power` (booleans, both default
+  `false`). With both off the QSV argument vector is unchanged. Turning
+  one on asks the machines to use the feature; each node applies it only
+  where its capability probe found it, and a requested-but-unsupported
+  feature is one warn line on the node, never a failed job.
+- `POST /api/v1/worker/heartbeat` responses gain `qsv_extra_quality` and
+  `qsv_low_power` (the two settings, so remote workers learn them the way
+  they learn `desired_state`). A pre-task-35 server omits them; a worker
+  treats absent as off.
+- The node capabilities' qsv encoder entry gains an optional
+  `qsv_features` object `{look_ahead, extbrc, async_depth, low_power}`
+  (booleans): what that machine's capability probe found. All four are
+  `false` when the probe could not run. Every other encoder entry, and a
+  qsv entry without a probe, omits the object.
+- The node detail page shows the probed features in plain language, so a
+  setting that had no effect is explainable. `docs/intel-qsv.md` is the
+  plain-language reference, including the Intel Deep Link non-goals
+  (Hyper Encode is not implemented and is not planned).

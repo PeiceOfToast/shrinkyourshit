@@ -238,11 +238,15 @@ func (r *NodeRegistry) EnsureBuiltinNode(ctx context.Context, dataDir, name stri
 // HeartbeatState is the heartbeat response (API.md, task 11): the
 // instruction the worker honours. concurrency is the node's own cap;
 // desired_state is the operator intent; effective_state adds the error
-// state for observability.
+// state for observability. The QSV opt-ins (task 35) are the server's
+// encoder settings; the worker applies them to its QSV backend, which uses
+// each one only where its capability probe found the feature.
 type HeartbeatState struct {
-	Concurrency    int    `json:"concurrency"`
-	DesiredState   string `json:"desired_state"`
-	EffectiveState string `json:"effective_state"`
+	Concurrency     int    `json:"concurrency"`
+	DesiredState    string `json:"desired_state"`
+	EffectiveState  string `json:"effective_state"`
+	QSVExtraQuality bool   `json:"qsv_extra_quality"`
+	QSVLowPower     bool   `json:"qsv_low_power"`
 }
 
 // Heartbeat records a node heartbeat, refreshes the heartbeats of the
@@ -303,11 +307,39 @@ func (r *NodeRegistry) Heartbeat(ctx context.Context, node *store.Node, capabili
 	if concurrency < store.ConcurrencyMin {
 		concurrency = store.ConcurrencyMin
 	}
+	extra, low, err := r.qsvPrefs(ctx)
+	if err != nil {
+		return HeartbeatState{}, err
+	}
 	return HeartbeatState{
-		Concurrency:    concurrency,
-		DesiredState:   node.DesiredState,
-		EffectiveState: EffectiveState(node),
+		Concurrency:     concurrency,
+		DesiredState:    node.DesiredState,
+		EffectiveState:  EffectiveState(node),
+		QSVExtraQuality: extra,
+		QSVLowPower:     low,
 	}, nil
+}
+
+// qsvPrefs reads the two QSV opt-ins (task 35). A missing or unparsable
+// setting means off: the default must stay today's behaviour.
+func (r *NodeRegistry) qsvPrefs(ctx context.Context) (extra, low bool, err error) {
+	if extra, err = r.qsvSetting(ctx, store.SettingQSVExtraQuality); err != nil {
+		return false, false, err
+	}
+	if low, err = r.qsvSetting(ctx, store.SettingQSVLowPower); err != nil {
+		return false, false, err
+	}
+	return extra, low, nil
+}
+
+// qsvSetting reads one boolean opt-in; anything but the exact string "true"
+// is off.
+func (r *NodeRegistry) qsvSetting(ctx context.Context, key string) (bool, error) {
+	v, ok, err := r.st.GetSetting(ctx, key)
+	if err != nil {
+		return false, fmt.Errorf("node: read %s: %w", key, err)
+	}
+	return ok && strings.TrimSpace(v) == "true", nil
 }
 
 // Concurrency reads the worker_concurrency setting (default and minimum 1).

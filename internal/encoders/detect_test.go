@@ -3,8 +3,10 @@
 package encoders
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +23,13 @@ import (
 // exit 1 for the encoders listed in failEncoders). Every invocation is
 // logged to <dir>/calls.log so tests can assert how often the binary ran.
 func fakeFFmpeg(t *testing.T, encoders, hwaccels, failEncoders []string) string {
+	return fakeFFmpegFlags(t, encoders, hwaccels, failEncoders, nil)
+}
+
+// fakeFFmpegFlags is fakeFFmpeg with failFlags: the script exits 1 for any
+// invocation whose arguments contain one of those flag names (task 35's
+// feature probes), regardless of the encoder.
+func fakeFFmpegFlags(t *testing.T, encoders, hwaccels, failEncoders, failFlags []string) string {
 	t.Helper()
 
 	log := filepath.Join(t.TempDir(), "calls.log")
@@ -46,6 +55,9 @@ func fakeFFmpeg(t *testing.T, encoders, hwaccels, failEncoders []string) string 
 	b.WriteString("  printf 'Hardware acceleration methods:\\n")
 	b.WriteString(strings.Join(hwaccels, "\\n"))
 	b.WriteString("\\n'\n  exit 0\nfi\n")
+	for _, flag := range failFlags {
+		b.WriteString("for a in \"$@\"; do [ \"$a\" = " + shQuote(flag) + " ] && exit 1; done\n")
+	}
 	if len(failEncoders) > 0 {
 		b.WriteString("case \"$enc\" in\n  " + strings.Join(failEncoders, "|") + ") exit 1 ;;\n  *) exit 0 ;;\nesac\n")
 	}
@@ -329,11 +341,15 @@ func TestEncoderInterfaceDetect(t *testing.T) {
 
 // TestCapabilityJSONShape: the capability marshals into the encoders part
 // of the node capabilities shape from ARCHITECTURE.md:
-// {encoders: [{name, codecs: []}]}.
+// {encoders: [{name, codecs: []}]}. The qsv backend's entry carries its
+// probed features under qsv_features (task 35); every other backend omits
+// the field.
 func TestCapabilityJSONShape(t *testing.T) {
 	cap := Capability{
 		Encoders: []EncoderInfo{
 			{Name: "nvenc", Codecs: []string{"hevc", "av1"}},
+			{Name: "qsv", Codecs: []string{"hevc", "av1", "h264"},
+				QSVFeatures: &QSVFeatures{LookAhead: true, AsyncDepth: true}},
 			{Name: "cpu", Codecs: []string{"hevc", "av1", "h264"}},
 		},
 	}
@@ -342,6 +358,8 @@ func TestCapabilityJSONShape(t *testing.T) {
 	assert.JSONEq(t, `{
 		"encoders": [
 			{"name": "nvenc", "codecs": ["hevc", "av1"]},
+			{"name": "qsv", "codecs": ["hevc", "av1", "h264"],
+			 "qsv_features": {"look_ahead": true, "extbrc": false, "async_depth": true, "low_power": false}},
 			{"name": "cpu", "codecs": ["hevc", "av1", "h264"]}
 		]
 	}`, string(data))
@@ -364,4 +382,157 @@ func TestParseEncodersAndHwaccels(t *testing.T) {
 // qsvSpecFixture is a plain hevc spec for BuildArgs assertions.
 func qsvSpecFixture() Spec {
 	return withTarget(codecTarget(flow.CodecHEVC, 3))
+}
+
+// warnBuffer returns a logger writing text lines to a buffer the test can
+// assert on (task 35's requested-but-unsupported warns).
+func warnBuffer() (*slog.Logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	return slog.New(slog.NewTextHandler(&buf, nil)), &buf
+}
+
+// TestQSVFeatureProbeAllSupported: a driver that accepts every candidate
+// flag reports look-ahead, extbrc, async depth and low power on the qsv
+// backend's capability (task 35).
+func TestQSVFeatureProbeAllSupported(t *testing.T) {
+	resetQSVFeaturesAndPrefs()
+	defer resetQSVFeaturesAndPrefs()
+
+	d := fakeDevices(t, false, true)
+	script := fakeFFmpeg(t, append(append([]string{}, listCPUFull...), listQSV...), hwaccelsQSV, nil)
+
+	cap, err := d.detect(context.Background(), script)
+	require.NoError(t, err)
+	entry := cap.find("qsv")
+	require.NotNil(t, entry)
+	require.NotNil(t, entry.QSVFeatures, "the qsv backend always reports its probe")
+	assert.True(t, entry.QSVFeatures.LookAhead)
+	assert.True(t, entry.QSVFeatures.ExtBRC)
+	assert.True(t, entry.QSVFeatures.AsyncDepth)
+	assert.True(t, entry.QSVFeatures.LowPower)
+
+	qsv := QSV.(*qsvEncoder)
+	for _, codec := range qsv.Codecs() {
+		assert.True(t, qsv.featuresFor(codec).LookAhead, "fake ffmpeg accepts everything, also for %s", codec)
+	}
+}
+
+// TestQSVFeatureProbeLookAheadH264Only: a driver whose hevc and av1
+// encoders reject -look_ahead reports look-ahead only for h264; the other
+// features stay per codec. BuildArgs must then add the look-ahead pair to
+// the h264 encode only.
+func TestQSVFeatureProbeLookAheadH264Only(t *testing.T) {
+	resetQSVFeaturesAndPrefs()
+	defer resetQSVFeaturesAndPrefs()
+
+	// A custom fake: identical to fakeFFmpegFlags except -look_ahead fails
+	// only when the invocation targets hevc_qsv or av1_qsv.
+	log := filepath.Join(t.TempDir(), "calls.log")
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("echo \"$$ $@\" >> " + shQuote(log) + "\n")
+	b.WriteString("mode=other\nnextcv=0\nenc=\n")
+	b.WriteString("for a in \"$@\"; do\n")
+	b.WriteString("  if [ \"$nextcv\" = 1 ]; then enc=\"$a\"; nextcv=0; continue; fi\n")
+	b.WriteString("  case \"$a\" in\n")
+	b.WriteString("    -encoders) mode=encoders ;;\n")
+	b.WriteString("    -hwaccels) mode=hwaccels ;;\n")
+	b.WriteString("    -c:v) nextcv=1 ;;\n")
+	b.WriteString("  esac\n")
+	b.WriteString("done\n")
+	b.WriteString("if [ \"$mode\" = encoders ]; then\n  cat <<'EOL'\n")
+	for _, line := range append(append([]string{}, listCPUFull...), listQSV...) {
+		b.WriteString(" V....D " + line + "\n")
+	}
+	b.WriteString("EOL\n  exit 0\nfi\n")
+	b.WriteString("if [ \"$mode\" = hwaccels ]; then\n  printf 'Hardware acceleration methods:\\nqsv\\nvaapi\\n'\n  exit 0\nfi\n")
+	b.WriteString("case \"$enc\" in hevc_qsv|av1_qsv)\n  for a in \"$@\"; do [ \"$a\" = -look_ahead ] && exit 1; done\n;;\nesac\n")
+	b.WriteString("exit 0\n")
+	script := filepath.Join(t.TempDir(), "ffmpeg")
+	require.NoError(t, os.WriteFile(script, []byte(b.String()), 0o755))
+	fakeLogs[script] = log
+
+	d := fakeDevices(t, false, true)
+	cap, err := d.detect(context.Background(), script)
+	require.NoError(t, err)
+	entry := cap.find("qsv")
+	require.NotNil(t, entry)
+	require.NotNil(t, entry.QSVFeatures)
+	assert.True(t, entry.QSVFeatures.LookAhead, "h264 accepted the flag, so the machine reports it")
+	assert.True(t, entry.QSVFeatures.ExtBRC)
+
+	qsv := QSV.(*qsvEncoder)
+	assert.False(t, qsv.featuresFor(flow.CodecHEVC).LookAhead, "hevc_qsv rejected -look_ahead")
+	assert.False(t, qsv.featuresFor(flow.CodecAV1).LookAhead)
+	assert.True(t, qsv.featuresFor(flow.CodecH264).LookAhead)
+
+	// The opt-in only changes the h264 encode.
+	SetQSVPrefs(QSVPrefs{ExtraQuality: true}, "node", nil)
+	t.Cleanup(func() { resetQSVFeaturesAndPrefs() })
+	assert.NotContains(t, strings.Join(qsv.BuildArgs(qsvSpecFixture()), " "), "-look_ahead",
+		"hevc cannot carry the h264-only look-ahead flag")
+	spec := withTarget(codecTarget(flow.CodecH264, 3))
+	assert.Contains(t, strings.Join(qsv.BuildArgs(spec), " "), "-look_ahead 1 -extbrc 1")
+}
+
+// TestQSVFeatureProbeRejectsFlags: a driver (or ffmpeg build) that rejects
+// every candidate flag reports all four features off — the probe cannot
+// run to a positive result, so nothing is guessed (task 35). A setting
+// that asks for the features then produces one warn per feature naming the
+// feature and the machine, never an error, and the argument vector stays
+// the base one.
+func TestQSVFeatureProbeRejectsFlags(t *testing.T) {
+	resetQSVFeaturesAndPrefs()
+	defer resetQSVFeaturesAndPrefs()
+
+	d := fakeDevices(t, false, true)
+	script := fakeFFmpegFlags(t,
+		append(append([]string{}, listCPUFull...), listQSV...), hwaccelsQSV, nil,
+		[]string{"-look_ahead", "-extbrc", "-async_depth", "-low_power"})
+
+	cap, err := d.detect(context.Background(), script)
+	require.NoError(t, err, "the codecs still self-test: a rejected flag is not a failed detection")
+	entry := cap.find("qsv")
+	require.NotNil(t, entry)
+	require.NotNil(t, entry.QSVFeatures)
+	assert.False(t, entry.QSVFeatures.LookAhead)
+	assert.False(t, entry.QSVFeatures.ExtBRC)
+	assert.False(t, entry.QSVFeatures.AsyncDepth)
+	assert.False(t, entry.QSVFeatures.LowPower)
+
+	// Requesting the features: one warn per requested feature, no error,
+	// and the built args carry none of the flags.
+	log, buf := warnBuffer()
+	SetQSVPrefs(QSVPrefs{ExtraQuality: true, LowPower: true}, "node-1", log)
+	out := buf.String()
+	assert.Contains(t, out, "look-ahead")
+	assert.Contains(t, out, "extbrc")
+	assert.Contains(t, out, "low power")
+	assert.Contains(t, out, "node-1")
+	assert.Equal(t, 3, strings.Count(out, "not supported on this machine"),
+		"one warn line per requested feature: %s", out)
+
+	spec := withTarget(codecTarget(flow.CodecH264, 3))
+	assert.NotContains(t, strings.Join(QSV.BuildArgs(spec), " "), "-look_ahead")
+	assert.NotContains(t, strings.Join(QSV.BuildArgs(spec), " "), "-low_power")
+
+	// The warn fires once per feature per process; repeated heartbeats
+	// (repeated SetQSVPrefs) stay quiet.
+	SetQSVPrefs(QSVPrefs{ExtraQuality: true, LowPower: true}, "node-1", log)
+	assert.Equal(t, 3, strings.Count(buf.String(), "not supported on this machine"))
+}
+
+// TestQSVPrefsBeforeProbeStaysQuiet: prefs applied before any probe pass
+// (or on a machine where detection never ran) warn nothing and add
+// nothing.
+func TestQSVPrefsBeforeProbeStaysQuiet(t *testing.T) {
+	resetQSVFeaturesAndPrefs()
+	defer resetQSVFeaturesAndPrefs()
+
+	log, buf := warnBuffer()
+	SetQSVPrefs(QSVPrefs{ExtraQuality: true}, "node-1", log)
+	assert.Empty(t, buf.String())
+
+	spec := withTarget(codecTarget(flow.CodecHEVC, 3))
+	assert.NotContains(t, strings.Join(QSV.BuildArgs(spec), " "), "-look_ahead")
 }

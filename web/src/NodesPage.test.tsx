@@ -789,4 +789,108 @@ describe('NodesPage', () => {
       toasts.some((t) => t.textContent?.includes('Resumed 2 nodes.')),
     ).toBe(true)
   })
+
+  it('shows the probed QSV features in plain language (task 35)', async () => {
+    // Everything the machine cannot do is said in a sentence, not a flag
+    // name — so a setting that had no effect is explainable.
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        bodyFn: () => ({
+          items: [
+            nodeFixture({
+              capabilities: {
+                encoders: [
+                  { name: 'cpu', codecs: ['hevc'] },
+                  {
+                    name: 'qsv',
+                    codecs: ['hevc', 'h264'],
+                    qsv_features: {
+                      look_ahead: false,
+                      extbrc: false,
+                      async_depth: false,
+                      low_power: false,
+                    },
+                  },
+                ],
+              },
+            }),
+          ],
+          total: 1,
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderNodes()
+    const strip = await screen.findByTestId('node-qsv-node-1')
+    expect(strip).toHaveTextContent('This machine cannot do look-ahead.')
+    expect(strip).toHaveTextContent(
+      'This machine cannot do the faster low-power mode.',
+    )
+    expect(strip).toHaveTextContent(
+      'This machine cannot use the deeper multi-frame pipeline.',
+    )
+    expect(strip).toHaveTextContent('Intel Quick Sync on this machine')
+  })
+
+  it('reports supported QSV features and skips the strip without a probe', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        bodyFn: () => ({
+          items: [
+            nodeFixture({
+              id: 'node-qsv-ok',
+              name: 'qsv-box',
+              capabilities: {
+                encoders: [
+                  {
+                    name: 'qsv',
+                    codecs: ['hevc', 'h264'],
+                    qsv_features: {
+                      look_ahead: true,
+                      extbrc: true,
+                      async_depth: true,
+                      low_power: true,
+                    },
+                  },
+                ],
+              },
+            }),
+            // A qsv encoder entry without a probe (older node) shows
+            // nothing: reporting all four off would be a guess.
+            nodeFixture({
+              id: 'node-no-probe',
+              name: 'quiet-box',
+              capabilities: {
+                encoders: [{ name: 'qsv', codecs: ['hevc'] }],
+              },
+            }),
+          ],
+          total: 2,
+        }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+
+    renderNodes()
+    const strip = await screen.findByTestId('node-qsv-node-qsv-ok')
+    expect(strip).toHaveTextContent('Low power — supported')
+    expect(strip).toHaveTextContent('Look-ahead — supported')
+    expect(strip).toHaveTextContent('Async depth — supported')
+    expect(
+      screen.queryByTestId('node-qsv-node-no-probe'),
+    ).not.toBeInTheDocument()
+  })
 })

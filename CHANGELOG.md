@@ -8,6 +8,16 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 
 ### Added
 
+- Intel Quick Sync extras, probed per machine: look-ahead (with extended
+  bitrate control), the async pipeline depth and low-power mode are now
+  tested with the same one-second self-check as the encoders themselves
+  and reported on the node card in plain language. Two new Encode settings
+  turn them on (`Extra quality`, `Low-power mode`); both are off by
+  default and change nothing until you ask. A requested extra the machine
+  cannot do logs one warning and carries on — a setting never fails a
+  job. [docs/intel-qsv.md](docs/intel-qsv.md) explains the trade-offs and
+  states honestly what Intel's "Deep Link" marketing covers that a single
+  ffmpeg process cannot reach (Hyper Encode: not implemented, not planned).
 - VAAPI as a first-class encoder backend: AMD cards and other VAAPI hardware
   now encode through the `*_vaapi` encoders with real device detection
   (`/dev/dri/renderD128-130`), and the node capability list reports `vaapi`

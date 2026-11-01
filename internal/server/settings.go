@@ -42,6 +42,11 @@ type Values struct {
 	UpdateCheck         bool     `json:"update_check"`
 	UpdateChannel       string   `json:"update_channel"`
 	BackupBeforeUpdate  bool     `json:"backup_before_update"`
+	// Intel QSV opt-ins (task 35): both default off, and with both off the
+	// QSV argument vector is unchanged. Each node applies them only where
+	// its capability probe found the features.
+	QSVExtraQuality bool `json:"qsv_extra_quality"`
+	QSVLowPower     bool `json:"qsv_low_power"`
 }
 
 // Video codec choices for the settings API (ARCHITECTURE.md easy-mode
@@ -119,6 +124,9 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 	if raw[store.SettingBackupBeforeUpdate] == "false" {
 		out.BackupBeforeUpdate = false
 	}
+	// QSV opt-ins (task 35): default off.
+	out.QSVExtraQuality = raw[store.SettingQSVExtraQuality] == "true"
+	out.QSVLowPower = raw[store.SettingQSVLowPower] == "true"
 	if langs := read(raw, store.SettingPreferredLanguages, ""); langs != "" {
 		out.PreferredLanguages = splitLanguages(langs)
 	}
@@ -184,6 +192,12 @@ type Update struct {
 	UpdateCheck        *bool
 	UpdateChannel      *string
 	BackupBeforeUpdate *bool
+
+	// Intel QSV opt-ins (task 35): look-ahead + extbrc, and low-power
+	// mode. Both default off; nodes apply them only where their capability
+	// probe found the features.
+	QSVExtraQuality *bool
+	QSVLowPower     *bool
 
 	// Login toggle. nil means "leave as is". Turning login on requires a
 	// username (when none is stored) and a password in the same request.
@@ -256,6 +270,16 @@ func (s *Settings) Update(ctx context.Context, auth *Auth, u Update) error {
 	if u.BackupBeforeUpdate != nil {
 		if err := s.st.SetSetting(ctx, store.SettingBackupBeforeUpdate, strconv.FormatBool(*u.BackupBeforeUpdate)); err != nil {
 			return fmt.Errorf("settings: backup before update: %w", err)
+		}
+	}
+	if u.QSVExtraQuality != nil {
+		if err := s.st.SetSetting(ctx, store.SettingQSVExtraQuality, strconv.FormatBool(*u.QSVExtraQuality)); err != nil {
+			return fmt.Errorf("settings: qsv extra quality: %w", err)
+		}
+	}
+	if u.QSVLowPower != nil {
+		if err := s.st.SetSetting(ctx, store.SettingQSVLowPower, strconv.FormatBool(*u.QSVLowPower)); err != nil {
+			return fmt.Errorf("settings: qsv low power: %w", err)
 		}
 	}
 

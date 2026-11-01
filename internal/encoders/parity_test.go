@@ -3,10 +3,12 @@
 package encoders
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -186,6 +188,85 @@ func TestFlowBitrateGuard(t *testing.T) {
 	require.Equal(t, flow.CodecHEVC, runs.Target.Video.Codec)
 	require.True(t, runs.Target.Video.ReencodeIfSameCodec,
 		"a bitrate-gated transcode must really run even on same-codec files")
+}
+
+// TestQSVPrefsOffParity (task 35): with both QSV settings off — whatever
+// the capability probe found — the qsv backend's argument vector is byte
+// identical to the behaviour before task 35. This is the regression that
+// matters: a machine that opted into nothing must encode exactly as it
+// did before.
+func TestQSVPrefsOffParity(t *testing.T) {
+	resetQSVVariants()
+	resetQSVFeaturesAndPrefs()
+	defer func() {
+		resetQSVVariants()
+		resetQSVFeaturesAndPrefs()
+	}()
+
+	// Every feature probed true: still nothing in the vector without the
+	// user's opt-in.
+	setQSVFeatures(map[string]qsvFeatures{
+		flow.CodecHEVC: {LookAhead: true, ExtBRC: true, AsyncDepth: true, LowPower: true},
+		flow.CodecAV1:  {LookAhead: true, ExtBRC: true, AsyncDepth: true, LowPower: true},
+		flow.CodecH264: {LookAhead: true, ExtBRC: true, AsyncDepth: true, LowPower: true},
+	})
+
+	base := func(encoder string) string {
+		return join(
+			"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+			"-i", "in.mkv",
+			keepAllMaps,
+			"-c:v", encoder, "-global_quality", "26",
+			keepAllAudioCodecs, keepAllSubCodecs,
+			"out.mkv")
+	}
+	for _, tc := range []struct{ codec, encoder string }{
+		{flow.CodecHEVC, "hevc_qsv"},
+		{flow.CodecAV1, "av1_qsv"},
+		{flow.CodecH264, "h264_qsv"},
+	} {
+		assertArgs(t, QSV, qsvSpec(tc.codec, 3), base(tc.encoder))
+	}
+
+	// The vaapi variant is byte identical too (it never carried the
+	// extras).
+	assertArgs(t, QSV, vaapiSpec(flow.CodecHEVC, 3, "/dev/dri/renderD128"), join(
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+		"-vaapi_device", "/dev/dri/renderD128",
+		"-i", "in.mkv",
+		keepAllMaps,
+		"-c:v", "hevc_vaapi", "-global_quality", "26", "-vf", "format=nv12,hwupload",
+		keepAllAudioCodecs, keepAllSubCodecs,
+		"out.mkv"))
+}
+
+// TestQSVRequestedUnsupportedParity (task 35): with every probe false the
+// settings produce no flags at all — one warn per requested feature, no
+// error, and the same byte-identical vector as with the settings off.
+func TestQSVRequestedUnsupportedParity(t *testing.T) {
+	resetQSVVariants()
+	resetQSVFeaturesAndPrefs()
+	defer func() {
+		resetQSVVariants()
+		resetQSVFeaturesAndPrefs()
+	}()
+
+	setQSVFeatures(map[string]qsvFeatures{}) // every probe rejected
+	setQSVPrefsForTest(QSVPrefs{ExtraQuality: true, LowPower: true})
+
+	spec := qsvSpec(flow.CodecH264, 3)
+	args := strings.Join(QSV.BuildArgs(spec), " ")
+	assert.Equal(t, join(
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+		"-i", "in.mkv",
+		keepAllMaps,
+		"-c:v", "h264_qsv", "-global_quality", "26",
+		keepAllAudioCodecs, keepAllSubCodecs,
+		"out.mkv"), args)
+
+	for _, flag := range []string{"-look_ahead", "-extbrc", "-low_power", "-async_depth"} {
+		assert.NotContains(t, args, flag)
+	}
 }
 
 // TestFlowSkipAndRename: skip_if_smaller and rename surface outside the

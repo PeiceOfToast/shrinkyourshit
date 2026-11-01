@@ -1320,6 +1320,12 @@ components:
         scratch_dir: { type: string }
         max_parallel_jobs: { type: integer }
         log_level: { type: string }
+        qsv_extra_quality:
+          type: boolean
+          description: Use look-ahead and extended bitrate control on machines whose probe supports both (task 35). Off by default.
+        qsv_low_power:
+          type: boolean
+          description: Pass the low-power mode where supported; faster, slightly worse (task 35). Off by default.
     Library:
       type: object
       required: [id, name, path, target]

@@ -191,6 +191,38 @@ func TestHeartbeatRefreshesNodeAndJobs(t *testing.T) {
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now(), after.LastHeartbeatAt, 5*time.Second)
 	require.JSONEq(t, `{"encoders":[]}`, after.Capabilities)
+
+	// The QSV opt-ins default to off (task 35).
+	require.False(t, concurrency.QSVExtraQuality)
+	require.False(t, concurrency.QSVLowPower)
+}
+
+// TestHeartbeatCarriesQSVPrefs (task 35): the server's QSV opt-ins reach
+// the worker on the heartbeat response.
+func TestHeartbeatCarriesQSVPrefs(t *testing.T) {
+	h := newNodeHarness(t)
+	ctx := context.Background()
+
+	node := &store.Node{
+		Name: "worker-1", KeyHash: HashKey("k"), AccessMode: store.NodeAccessShared,
+		Status: store.NodeStatusApproved, Enabled: true,
+	}
+	require.NoError(t, h.st.CreateNode(ctx, node))
+
+	require.NoError(t, h.st.SetSetting(ctx, store.SettingQSVExtraQuality, "true"))
+	require.NoError(t, h.st.SetSetting(ctx, store.SettingQSVLowPower, "true"))
+
+	state, err := h.reg.Heartbeat(ctx, node, `{"encoders":[]}`, "", nil)
+	require.NoError(t, err)
+	require.True(t, state.QSVExtraQuality)
+	require.True(t, state.QSVLowPower)
+
+	// Back off one of them: the heartbeat follows the setting.
+	require.NoError(t, h.st.SetSetting(ctx, store.SettingQSVLowPower, "false"))
+	state, err = h.reg.Heartbeat(ctx, node, `{"encoders":[]}`, "", nil)
+	require.NoError(t, err)
+	require.True(t, state.QSVExtraQuality)
+	require.False(t, state.QSVLowPower)
 }
 
 func TestResolveNodePath(t *testing.T) {

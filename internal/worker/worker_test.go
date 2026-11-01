@@ -39,6 +39,29 @@ func testWorkerConfig(api *fakeAPI, scratchDir string, run encoders.RunFn) Confi
 	}
 }
 
+// TestApplyHeartbeatAppliesQSVPrefs (task 35): the server's QSV opt-ins
+// reach the qsv backend through the heartbeat, and turning a setting off
+// takes it back — both off (the default) requests nothing, which keeps the
+// argument vector byte-identical to the pre-task-35 behaviour.
+func TestApplyHeartbeatAppliesQSVPrefs(t *testing.T) {
+	cfg := Config{ServerURL: "http://localhost:1", Key: "k",
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	w, err := New(cfg)
+	require.NoError(t, err)
+
+	running := &HeartbeatState{DesiredState: NodeStateRunning, Concurrency: 1}
+	w.applyHeartbeat(running)
+	require.Equal(t, encoders.QSVPrefs{}, encoders.QSVRequested())
+
+	w.applyHeartbeat(&HeartbeatState{DesiredState: NodeStateRunning, Concurrency: 1,
+		QSVExtraQuality: true, QSVLowPower: true})
+	require.Equal(t, encoders.QSVPrefs{ExtraQuality: true, LowPower: true},
+		encoders.QSVRequested())
+
+	w.applyHeartbeat(running)
+	require.Equal(t, encoders.QSVPrefs{}, encoders.QSVRequested())
+}
+
 // waitUntil polls cond until it holds or the deadline passes.
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()

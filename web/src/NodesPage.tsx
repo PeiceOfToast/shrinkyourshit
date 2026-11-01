@@ -33,6 +33,7 @@ import {
   type Job,
   type Node,
   type PathMapping,
+  type QSVFeatures,
 } from './api'
 import ConfirmDialog from './ConfirmDialog'
 import ModalDialog from './dialog'
@@ -467,6 +468,7 @@ function NodeRow({
   const [confirming, setConfirming] = useState<null | 'stop' | 'reject'>(null)
   const encoders = node.capabilities?.encoders ?? []
   const ffmpeg = node.capabilities?.ffmpeg_version
+  const qsvFeatures = encoders.find((e) => e.name === 'qsv')?.qsv_features
   const running = node.desired_state === 'running'
 
   return (
@@ -605,6 +607,10 @@ function NodeRow({
           {ffmpeg && <span className="text-xs text-slate-500">{ffmpeg}</span>}
         </div>
       )}
+
+      {/* QSV extras (task 35): what this machine's probe actually found,
+          in plain language, so a setting that did nothing is explainable. */}
+      {qsvFeatures && <QSVFeatureStrip id={node.id} features={qsvFeatures} />}
 
       {/* Footer (task 18): this node's own totals, and its parallel-job cap. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-800 pt-3 text-xs text-slate-400">
@@ -873,5 +879,67 @@ export default function NodesPage() {
         />
       )}
     </PageContainer>
+  )
+}
+
+/**
+ * QSVFeatureStrip (task 35): what this machine's capability probe actually
+ * found, in plain language — so a setting that had no effect is
+ * explainable from the node card. One line per probed feature; the
+ * unsupported wording says what the machine cannot do rather than naming
+ * an ffmpeg flag.
+ */
+export function QSVFeatureStrip({
+  id,
+  features,
+}: {
+  id: string
+  features: QSVFeatures
+}) {
+  const lines = [
+    {
+      key: 'look-ahead',
+      label: 'Look-ahead',
+      yes: 'supported — better quality at the same file size, a little slower (used for the H.264 format)',
+      no: 'This machine cannot do look-ahead.',
+    },
+    {
+      key: 'low-power',
+      label: 'Low power',
+      yes: 'supported — faster, slightly lower quality, less power',
+      no: 'This machine cannot do the faster low-power mode.',
+    },
+    {
+      key: 'async-depth',
+      label: 'Async depth',
+      yes: 'supported — more frames in flight, so it keeps up better',
+      no: 'This machine cannot use the deeper multi-frame pipeline.',
+    },
+  ]
+  return (
+    <div
+      className="mt-2 rounded-xl bg-slate-950/60 p-3 ring-1 ring-slate-800"
+      data-testid={`node-qsv-${id}`}
+    >
+      <p className="text-xs font-semibold text-slate-300">
+        Intel Quick Sync on this machine
+      </p>
+      <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
+        {lines.map((line) => {
+          const supported =
+            line.key === 'look-ahead'
+              ? features.look_ahead
+              : line.key === 'low-power'
+                ? features.low_power
+                : features.async_depth
+          return (
+            <li key={line.key} data-testid={`node-qsv-${id}-${line.key}`}>
+              <span className="text-slate-300">{line.label}</span> —{' '}
+              {supported ? line.yes : line.no}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }

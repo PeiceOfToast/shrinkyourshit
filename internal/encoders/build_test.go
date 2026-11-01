@@ -89,6 +89,30 @@ func resetQSVVariants() {
 	qsv.variants = nil
 }
 
+// resetQSVFeaturesAndPrefs clears the feature probe and the applied opt-ins
+// (task 35), so tests that depend on the default argument vector stay
+// independent of test order.
+func resetQSVFeaturesAndPrefs() {
+	qsv := QSV.(*qsvEncoder)
+	qsv.mu.Lock()
+	defer qsv.mu.Unlock()
+	qsv.probed = false
+	qsv.features = nil
+	qsv.prefs = QSVPrefs{}
+	qsv.warned = nil
+}
+
+// setQSVFeatures pins per-codec probe results as if detection had run
+// (task 35 tests).
+func setQSVFeatures(features map[string]qsvFeatures) {
+	QSV.(*qsvEncoder).setFeatures(features)
+}
+
+// setQSVPrefs pins the applied opt-ins without warns (task 35 tests).
+func setQSVPrefsForTest(p QSVPrefs) {
+	QSV.(*qsvEncoder).setPrefs(p, "test", nil)
+}
+
 func setQSVVariant(codec string, v qsvVariant) {
 	QSV.(*qsvEncoder).setVariant(codec, v)
 }
@@ -469,6 +493,204 @@ func TestExtractCommandsOffAndDuplicateLangs(t *testing.T) {
 	require.Len(t, cmds, 1)
 	assert.Equal(t, "out.und.srt", cmds[0].Args[len(cmds[0].Args)-1])
 	assert.Equal(t, "und", cmds[0].Language)
+}
+
+// TestBuildArgsQSVFeatureFlags (task 35): the argument vector as a table
+// over the applied opt-ins and the probed features — including the case
+// where nothing is supported, which must equal the pre-task-35 vector.
+func TestBuildArgsQSVFeatureFlags(t *testing.T) {
+	// Per-codec probe results used across the cases: h264 accepts
+	// everything (look-ahead is h264-only), hevc accepts everything but
+	// look-ahead, av1 nothing.
+	probes := map[string]qsvFeatures{
+		flow.CodecH264: {LookAhead: true, ExtBRC: true, AsyncDepth: true, LowPower: true},
+		flow.CodecHEVC: {ExtBRC: true, AsyncDepth: true, LowPower: true},
+	}
+
+	tests := []struct {
+		name   string
+		prefs  QSVPrefs
+		probes map[string]qsvFeatures
+		codec  string
+		step   int
+		want   string
+	}{
+		{
+			name:   "settings off with every feature supported",
+			probes: probes,
+			codec:  flow.CodecH264, step: 3,
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "h264_qsv", "-global_quality", "26",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+		{
+			name:   "settings on but nothing supported",
+			prefs:  QSVPrefs{ExtraQuality: true, LowPower: true},
+			probes: map[string]qsvFeatures{},
+			codec:  flow.CodecH264, step: 3,
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "h264_qsv", "-global_quality", "26",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+		{
+			name:  "extra quality on with look-ahead and extbrc (h264)",
+			prefs: QSVPrefs{ExtraQuality: true},
+			// Async depth probed off, so this case isolates the look-ahead
+			// pair.
+			probes: map[string]qsvFeatures{
+				flow.CodecH264: {LookAhead: true, ExtBRC: true},
+			},
+			codec: flow.CodecH264, step: 3,
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "h264_qsv", "-global_quality", "26",
+				"-look_ahead", "1", "-extbrc", "1",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+		{
+			name:   "extra quality on cannot give hevc the h264-only look-ahead",
+			prefs:  QSVPrefs{ExtraQuality: true},
+			probes: probes,
+			codec:  flow.CodecHEVC, step: 3,
+			// hevc gets no look-ahead (h264-only option), but it does get
+			// the async pipeline depth the opt-in carries.
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "hevc_qsv", "-global_quality", "26", "-async_depth", "3",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+		{
+			name:   "low power on with async depth (hevc, step 3)",
+			prefs:  QSVPrefs{LowPower: true},
+			probes: probes,
+			codec:  flow.CodecHEVC, step: 3,
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "hevc_qsv", "-global_quality", "26",
+				"-low_power", "1", "-async_depth", "3",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+		{
+			name:   "both on, everything supported, quality 5 (shallowest pipeline)",
+			prefs:  QSVPrefs{ExtraQuality: true, LowPower: true},
+			probes: probes,
+			codec:  flow.CodecH264, step: 5,
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "h264_qsv", "-global_quality", "22",
+				"-look_ahead", "1", "-extbrc", "1", "-low_power", "1", "-async_depth", "2",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+		{
+			name:   "both on, everything supported, quality 1 (deepest pipeline)",
+			prefs:  QSVPrefs{ExtraQuality: true, LowPower: true},
+			probes: probes,
+			codec:  flow.CodecH264, step: 1,
+			want: join(
+				"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+				"-i", "in.mkv",
+				keepAllMaps,
+				"-c:v", "h264_qsv", "-global_quality", "30",
+				"-look_ahead", "1", "-extbrc", "1", "-low_power", "1", "-async_depth", "4",
+				keepAllAudioCodecs, keepAllSubCodecs,
+				"out.mkv"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resetQSVFeaturesAndPrefs()
+			defer resetQSVFeaturesAndPrefs()
+			setQSVFeatures(tc.probes)
+			setQSVPrefsForTest(tc.prefs)
+			assertArgs(t, QSV, qsvSpec(tc.codec, tc.step), tc.want)
+		})
+	}
+
+	// The vaapi variant never carries the QSV extras (the *_vaapi encoders
+	// have none of those options), whatever the settings and probes say.
+	t.Run("vaapi variant ignores the extras", func(t *testing.T) {
+		resetQSVFeaturesAndPrefs()
+		defer resetQSVFeaturesAndPrefs()
+		setQSVFeatures(probes)
+		setQSVPrefsForTest(QSVPrefs{ExtraQuality: true, LowPower: true})
+		assertArgs(t, QSV, vaapiSpec(flow.CodecH264, 3, "/dev/dri/renderD128"), join(
+			"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+			"-vaapi_device", "/dev/dri/renderD128",
+			"-i", "in.mkv",
+			keepAllMaps,
+			"-c:v", "h264_vaapi", "-qp", "26", "-vf", "format=nv12,hwupload",
+			keepAllAudioCodecs, keepAllSubCodecs,
+			"out.mkv"))
+	})
+
+	// A copied video (explicit copy or the satisfied rule) never gains the
+	// extras either.
+	t.Run("copy stays copy", func(t *testing.T) {
+		resetQSVFeaturesAndPrefs()
+		defer resetQSVFeaturesAndPrefs()
+		setQSVFeatures(probes)
+		setQSVPrefsForTest(QSVPrefs{ExtraQuality: true, LowPower: true})
+		assertArgs(t, QSV, withTarget(copyTarget()), join(
+			"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+			"-i", "in.mkv",
+			keepAllMaps,
+			"-c:v", "copy",
+			keepAllAudioCodecs, keepAllSubCodecs,
+			"out.mkv"))
+	})
+}
+
+// TestBuildArgsQSVICQAndFallbackRangeEnds (task 35): the ICQ path
+// (hevc_qsv, av1_qsv — -global_quality is Intel's ICQ quality) and the
+// fallback path (h264_qsv keeps the existing mapping, because ICQ support
+// for h264 varies by Intel generation) pinned at the quality range ends.
+func TestBuildArgsQSVICQAndFallbackRangeEnds(t *testing.T) {
+	resetQSVVariants()
+	defer resetQSVVariants()
+
+	cases := []struct {
+		codec, gq1, gq5 string
+	}{
+		{flow.CodecHEVC, "30", "22"}, // ICQ path
+		{flow.CodecAV1, "30", "22"},  // ICQ path
+		{flow.CodecH264, "30", "22"}, // existing mapping, kept as the fallback
+	}
+	for _, c := range cases {
+		for _, step := range []struct {
+			n  int
+			gq string
+		}{{1, c.gq1}, {5, c.gq5}} {
+			t.Run(c.codec+" step "+itoa(step.n), func(t *testing.T) {
+				assertArgs(t, QSV, qsvSpec(c.codec, step.n), join(
+					"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+					"-i", "in.mkv",
+					keepAllMaps,
+					"-c:v", qsvEncoderFor[c.codec], "-global_quality", step.gq,
+					keepAllAudioCodecs, keepAllSubCodecs,
+					"out.mkv"))
+			})
+		}
+	}
 }
 
 func mustStep(t *testing.T, s string) int {

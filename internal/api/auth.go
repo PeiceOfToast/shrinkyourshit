@@ -160,6 +160,8 @@ type settingsBody struct {
 	UpdateCheck         *bool     `json:"update_check"`
 	UpdateChannel       *string   `json:"update_channel"`
 	BackupBeforeUpdate  *bool     `json:"backup_before_update"`
+	QSVExtraQuality     *bool     `json:"qsv_extra_quality"`
+	QSVLowPower         *bool     `json:"qsv_low_power"`
 	LoginEnabled        *bool     `json:"login_enabled"`
 	Username            string    `json:"admin_username"`
 	Password            string    `json:"password"`
@@ -193,6 +195,8 @@ func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 		UpdateCheck:         body.UpdateCheck,
 		UpdateChannel:       body.UpdateChannel,
 		BackupBeforeUpdate:  body.BackupBeforeUpdate,
+		QSVExtraQuality:     body.QSVExtraQuality,
+		QSVLowPower:         body.QSVLowPower,
 		LoginEnabled:        body.LoginEnabled,
 		Username:            body.Username,
 		Password:            body.Password,

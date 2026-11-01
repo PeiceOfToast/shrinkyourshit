@@ -131,6 +131,10 @@ export interface Settings {
   update_check: boolean
   update_channel: string
   backup_before_update: boolean
+  /** Intel QSV opt-ins (task 35): both default off; nodes apply them only
+   * where their capability probe found the features. */
+  qsv_extra_quality: boolean
+  qsv_low_power: boolean
 }
 
 export function getSettings(): Promise<Settings> {
@@ -154,6 +158,9 @@ export interface SettingsUpdate {
   update_check?: boolean
   update_channel?: string
   backup_before_update?: boolean
+  /** Intel QSV opt-ins (task 35). */
+  qsv_extra_quality?: boolean
+  qsv_low_power?: boolean
 }
 
 export function updateSettings(body: SettingsUpdate): Promise<Settings> {
@@ -496,9 +503,29 @@ export function browse(path = '/'): Promise<BrowseResponse> {
  * discovered-server list for the setup wizard's join card.
  */
 export interface NodeCapabilities {
-  encoders?: { name: string; codecs: string[] }[]
+  encoders?: NodeEncoder[]
   cpu_cores?: number
   ffmpeg_version?: string
+}
+
+/**
+ * The optional Intel Quick Sync features the qsv backend probed on a node
+ * (task 35): look-ahead with extended bitrate control, the async pipeline
+ * depth and low-power mode. Present only on the qsv encoder entry; all
+ * four false when the probe could not run.
+ */
+export interface QSVFeatures {
+  look_ahead: boolean
+  extbrc: boolean
+  async_depth: boolean
+  low_power: boolean
+}
+
+/** One detected encoder backend; the qsv entry carries its probe. */
+export interface NodeEncoder {
+  name: string
+  codecs: string[]
+  qsv_features?: QSVFeatures
 }
 
 export interface PathMapping {

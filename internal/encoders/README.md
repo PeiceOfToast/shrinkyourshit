@@ -11,7 +11,7 @@ a subprocess (STACK.md).
 | `encoders.go` | The `Encoder` interface, `Capability`/`EncoderInfo`, `Spec`, backend registration, `Registry` |
 | `detect.go` | Detection: `-encoders`/`-hwaccels` parsing, device checks, the 1-second `testsrc` self-test, process-lifetime cache |
 | `nvenc.go` | NVIDIA NVENC (hevc_nvenc, av1_nvenc, h264_nvenc) |
-| `qsv.go` | Intel QSV (hevc_qsv, av1_qsv, h264_qsv), with VAAPI equivalents as a Linux fallback |
+| `qsv.go` | Intel QSV (hevc_qsv, av1_qsv, h264_qsv), with VAAPI equivalents as a Linux fallback; the optional feature probe and the user's QSV opt-ins (task 35, [docs/intel-qsv.md](../../docs/intel-qsv.md)) |
 | `vaapi.go` | The VAAPI backend (hevc_vaapi, av1_vaapi, h264_vaapi): AMD and other VAAPI hardware (task 30) |
 | `videotoolbox.go` | Apple VideoToolbox (h264_videotoolbox, hevc_videotoolbox); `videotoolbox_other.go` is the non-macOS stub |
 | `cpu.go` | Software encoders (libx265, libsvtav1, libx264) |
@@ -123,6 +123,22 @@ plus `format=nv12,hwupload`). The chosen variant is stored on the backend
 and used by `BuildArgs` — so `BuildArgs` for the "qsv" backend may emit
 `-c:v hevc_vaapi`. This is per DECISIONS.md 14 (Intel QSV/VAAPI as one
 backend from the user's point of view).
+
+### The qsv backend's optional features (task 35)
+
+Detection also probes the optional QSV encoder features per codec —
+look-ahead with extbrc, async depth and low power — by running the same
+one-second self-test with the candidate flag set and reading the exit
+code. Results are cached per backend instance (the same pattern as the
+variant/device maps), reported on the qsv entry's `qsv_features` in the
+node capabilities, and consulted by `BuildArgs`: a flag is emitted only
+when the user opted in (`qsv_extra_quality`, `qsv_low_power` — carried to
+the worker on the heartbeat) **and** the probe accepted it. With the
+settings off the argument vector is byte-identical to the pre-task-35
+behaviour, and a requested-but-unsupported feature produces one warn and
+carries on. ffmpeg's `-look_ahead` option exists only on `h264_qsv`, so
+look-ahead can only probe true for the h264 target. The plain-language
+version of all of this is [docs/intel-qsv.md](../../docs/intel-qsv.md).
 
 ## The vaapi backend (AMD and friends, task 30)
 
