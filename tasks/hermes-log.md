@@ -224,3 +224,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-01T00:01:12Z started task 32 (plugins-as-flow-steps), deps 15+31 done, session ses_e6b97058cffefYCIXMSr6KVxTl
 - 2026-11-01T02:30:00Z task 32: PM verification passed (all 9 acceptance boxes ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, make lint green, make test green: go tests plus 219 vitest tests in 31 files, CI run 41264000654 all 9 checks SUCCESS)
 - 2026-11-01T02:30:00Z task 32: PR #35 merged with squash 0f68570, branch task/32-plugins-as-flow-steps deleted on the remote, main pulled on the VM
+- 2026-11-01T02:31:19Z started task 33 (script-escape-hatch), deps 15+31+32 done, session ses_e6b0da2d3ffeFBcMdpdhVCsabZ
