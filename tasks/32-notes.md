@@ -25,4 +25,16 @@
 
 ## Gates
 
-(to be filled at the end)
+1. **The settings value shape is strings.** A step plugin's settings editor edits plain text inputs; the manifest's stored values are also strings, so per-step overrides need no type conversion. Confirmed with task 31: `Settings []Setting` values are `string` (`values` on the plugin row), so the step's overrides are `map[string]string` and the merge is a shallow copy. `ValueChoices` still feeds the select in the Plugins page, but the flow step edits free text over the same keys.
+2. **Continue-on-error UI placement**: the toggle is a second param of the plugin step, and its warning is the param's `help` text, sourced from the docs sentence. A per-step failure with `continue_on_error: true` logs a warning and the chain continues (documented in docs/plugins.md); on the store side no settings migration was needed since the plugin step carries its own values.
+3. **Palette options are server-driven.** The `plugin` param's `options` field carries the enabled step-plugin names from the API; `FlowPalette` only hides the entry (replacing it with an explainer linking to the plugins tab) when the list is empty, and the same list feeds the select in `flowParams.tsx`. No client-side filtering beyond what the server already sends, so the client and server can't disagree about which plugins are enabled.
+4. **Mobile step rules**: the step stack rows keep the 44px touch controls from task 22; the new per-step settings inputs render inside the expanded row the same way the other parameter inputs do, with the same text-input sizing, so no extra mobile work was needed beyond keeping the existing classes.
+5. **Docs merge point**: `docs/plugins.md`'s new "Step plugins" section sits between the manifest reference and the hook documentation; `ARCHITECTURE.md` gained the step type in the plugin type list and the `PluginStep` shape in the job spec section. The editor's in-page copy stays plain-language: no codec or FFmpeg terms appear in the plugin step's labels.
+
+## Summary (5 lines)
+
+- Built: a fourth plugin type `step`; the runner step contract (`file_path`, `source_path`, `step_index`, `settings`, phase `step` env) with scratch-only result validation and re-probe; a `plugin` flow step (name required, settings overrides, `continue_on_error`, cannot precede `probe`) validated at save and dispatch with 422s naming the plugin; the worker walks chain steps and runs each plugin step at its position, failing the job on non-zero exit or timeout, with the source untouched.
+- Skipped: shipping plugins from server to node (explicitly out of scope), a wasm/sandboxed runtime (task 33), and any marketplace idea.
+- Next task should know: `flow.ApplyStep`/`FreshEffective` are the worker's per-step primitives; `plugin.Runner.RunStep` is the single entry for step runs; the step-types response carries the enabled step plugins in the plugin param's `options`, so future step types can follow the same pattern.
+- Open follow-up (not a task): the `plugin` param's options list only refreshes with the step-types fetch (`staleTime: Infinity`) — a freshly installed plugin needs a reload or a query invalidation.
+- Gates above are the interpretation decisions; everything else followed the task file and the reference docs.
