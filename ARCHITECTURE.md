@@ -114,7 +114,9 @@ Status enums are fixed strings; do not add values without updating this file.
 - `enabled` gates every call; `refresh_on_done` subscribes the integration to job completions (the manual test endpoint works either way).
 
 **Plugin:** `id, name (unique), version, type, enabled (default off), source, settings (JSON, the collected values), installed_at` (task 31, migration 0013)
-- `type`: `preflight | postprocess | notify` — the moment the plugin runs around a job's life.
+- `type`: `preflight | postprocess | notify | step` — the first three are
+  moments the plugin runs around a job's life; `step` is a plugin the flow
+  editor places in the chain (task 32).
 - `name` matches `^[a-z0-9][a-z0-9-]{1,40}$` and is the identity of the plugin directory under `<data dir>/plugins/<name>/` (on the `/config` volume, so installs survive a container replace). The manifest (`plugin.yaml`) on disk is the truth about the version and the settings list; the row is the index and the switch.
 - `source` is where the plugin was installed from (the git URL or the path); `settings` holds the values collected in the UI, each becoming the environment variable its manifest entry names when the plugin runs.
 - `enabled=false` until the admin turns the plugin on: nothing runs otherwise. Removal deletes the row and the directory and refuses while enabled.
@@ -252,10 +254,13 @@ Edge{ from, to, when }
 - Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`,
   `transcode_video`, `remux_container`, `convert_audio`, `subtitles`,
   `rename`, `skip_if_smaller`, `health_check`, `move` (the last two are
-  task 24). A graph is a single linear chain: at most one
+  task 24), `plugin` (task 32). A graph is a single linear chain: at most one
   edge in and one out per node, exactly one entry step of type `probe`, no
   loops, no unreachable steps, and a guard always has a following step.
 - Parameters per type (validated with unknown-field rejection):
+  - `plugin {plugin: name, settings: map, continue_on_error: bool}` — runs
+    an installed, enabled step plugin against the working file; the
+    settings override the plugin's stored ones for this step (task 32).
   - `if_codec_not {codec: hevc|av1|h264}` — runs the next step only when
     the video is not that codec.
   - `if_bitrate_above {mbps: >0}` — runs the next step only above this
@@ -387,7 +392,15 @@ Hook plugins run around a job's life, not inside it: `preflight` (claim
 time, can veto a job), `postprocess` (a done job whose output was applied)
 and `notify` (every done and failed job). One notifier path: the plugin
 phases fan out through the same router the webhooks and the integration
-refresher hang off, and preflight is the queue's own synchronous hook.
+refresher hang off, and preflight is the queue's own synchronous hook. The
+fourth type, `step` (task 32), is the exception to "not inside it": a
+`plugin` flow step runs an enabled step plugin on the job's working copy in
+scratch, mid-chain, and the job re-probes the file afterwards so later
+guards see what the plugin produced. A failing or timed-out step plugin
+fails the job and leaves the original byte identical; `continue_on_error`
+keeps the chain going with a warning, for sidecar style steps only. The
+node runs the plugin from its own `<data dir>/plugins/<name>/`; a missing
+install fails the job naming the plugin and the node.
 
 - A plugin is a directory with a `plugin.yaml` manifest (`name`, `version`,
   `type`, optional `description`/`author`, `command` (exec'd argv, no
@@ -404,10 +417,11 @@ refresher hang off, and preflight is the queue's own synchronous hook.
   `SYS_PHASE`, `SYS_DATA_DIR` and the manifest's declared names, and its
   stdout/stderr land in the job's structured log (`source: plugin`). The
   whole process group is killed at the timeout.
-- No sandbox (yet): a plugin runs as the server user with the server's
-  access to the media folders. The bundled curated set, a plugin as a flow
-  step, a marketplace and a sandboxed script runtime stay post-MVP. The
-  plugin author's contract is docs/plugins.md.
+- No sandbox (yet): a plugin runs as the server or node user with the
+  app's access to the media folders. The bundled curated set, a plugin
+  marketplace and a sandboxed script runtime stay post-MVP; the plugin as a
+  flow step shipped in task 32. The plugin author's contract is
+  docs/plugins.md.
 
 ## Integrations
 

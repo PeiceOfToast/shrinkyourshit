@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ApiError,
   getFlowStepTypes,
+  getPlugins,
   getLibrary,
   getLibraryFlow,
   putLibraryFlow,
@@ -81,6 +82,11 @@ export default function FlowCanvasPage() {
   const palette = useQuery({
     queryKey: ['flow-step-types'],
     queryFn: getFlowStepTypes,
+    staleTime: Infinity,
+  })
+  const plugins = useQuery({
+    queryKey: ['plugins'],
+    queryFn: getPlugins,
     staleTime: Infinity,
   })
 
@@ -194,6 +200,11 @@ export default function FlowCanvasPage() {
   const guard = useUnsavedGuard(dirty)
 
   const paletteItems = useMemo(() => palette.data?.items ?? [], [palette.data])
+  const enabledStepPlugins = useMemo(
+    () =>
+      (plugins.data?.items ?? []).filter((p) => p.type === 'step' && p.enabled),
+    [plugins.data],
+  )
   const addToGraph = useCallback(
     (type: string) => {
       if (!graph) return
@@ -406,6 +417,7 @@ export default function FlowCanvasPage() {
               <FlowInspector
                 graph={graph!}
                 palette={paletteItems}
+                plugins={enabledStepPlugins}
                 selection={selection}
                 editing={editing}
                 onChange={applyGraph}

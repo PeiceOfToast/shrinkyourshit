@@ -8,7 +8,7 @@
  * server render on the row that failed.
  */
 import { useState } from 'react'
-import type { FlowGraph, FlowStep, StepTypeInfo } from './api'
+import type { FlowGraph, FlowStep, Plugin, StepTypeInfo } from './api'
 import {
   chainEdges,
   chipsFor,
@@ -23,6 +23,8 @@ import ParamField from './flowParams'
 export interface StepStackEditorProps {
   graph: FlowGraph
   palette: StepTypeInfo[]
+  /** The installed, enabled step plugins — the plugin kind's select. */
+  plugins?: Plugin[]
   /** Server field errors keyed by step id (or "graph"). */
   errors: Record<string, string>
   onChange: (graph: FlowGraph) => void
@@ -31,6 +33,7 @@ export interface StepStackEditorProps {
 export default function StepStackEditor({
   graph,
   palette,
+  plugins,
   errors,
   onChange,
 }: StepStackEditorProps) {
@@ -194,6 +197,7 @@ export default function StepStackEditor({
                     key={f.name}
                     field={f}
                     step={step}
+                    plugins={plugins}
                     testId={`step-param-${f.name}`}
                     onChange={(name, value) =>
                       updateParams(step.id, name, value)

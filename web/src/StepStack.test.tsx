@@ -11,7 +11,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import StepStackEditor from './StepStackEditor'
 import RulesPage from './RulesPage'
-import type { FlowGraph, StepTypeInfo } from './api'
+import type { FlowGraph, Plugin, StepTypeInfo } from './api'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
 import { ToastProvider } from './toast'
 
@@ -117,6 +117,7 @@ function renderEditor(
       <StepStackEditor
         graph={g}
         palette={props.palette ?? PALETTE}
+        plugins={props.plugins}
         errors={props.errors ?? {}}
         onChange={(next) => {
           changes.push(next)
@@ -217,6 +218,140 @@ describe('StepStackEditor', () => {
     expect(
       screen.getByTestId('step-condition-transcode_video').textContent,
     ).toContain('only when')
+  })
+})
+
+// --- Task 32: the plugin step renders and edits. ---
+
+const PLUGIN_PALETTE: StepTypeInfo[] = [
+  ...PALETTE,
+  {
+    type: 'plugin',
+    label: 'Run a plugin',
+    description: 'Run an installed step plugin on the working copy.',
+    condition: false,
+    params: [
+      {
+        name: 'plugin',
+        label: 'plugin',
+        kind: 'plugin',
+        options: ['remove-chapters'],
+        required: true,
+      },
+      {
+        name: 'continue_on_error',
+        label: 'continue on error',
+        kind: 'toggle',
+        help: 'For logging and sidecar style plugins only: a failing step is a warning and the chain continues.',
+      },
+    ],
+  },
+]
+
+describe('StepStackEditor plugin step (task 32)', () => {
+  const stepPlugin: Plugin = {
+    id: 'p1',
+    name: 'remove-chapters',
+    version: '1.0.0',
+    type: 'step',
+    enabled: true,
+    source: 'git+https://example.com/x.git',
+    timeout_seconds: 30,
+    settings: [
+      { key: 'level', label: 'Level', required: true },
+      { key: 'lang', label: 'Language', required: false },
+    ],
+    values: { level: '2', lang: 'eng' },
+    installed_at: '2026-01-01T00:00:00Z',
+  }
+
+  it('adds a plugin step with the first enabled plugin as the default', () => {
+    const changes = renderEditor({
+      palette: PLUGIN_PALETTE,
+      plugins: [stepPlugin],
+    })
+    fireEvent.change(screen.getByTestId('step-add-type'), {
+      target: { value: 'plugin' },
+    })
+    fireEvent.click(screen.getByTestId('step-add-button'))
+    expect(changes[0].nodes[3].type).toBe('plugin')
+    expect(changes[0].nodes[3].params).toEqual({
+      plugin: 'remove-chapters',
+      continue_on_error: false,
+    })
+  })
+
+  it('renders the plugin select, the settings form and the continue-on-error switch', () => {
+    renderEditor({
+      palette: PLUGIN_PALETTE,
+      plugins: [stepPlugin],
+      graph: (() => {
+        const g = graph()
+        g.nodes.splice(1, 0, {
+          id: 'plugin',
+          type: 'plugin',
+          params: { plugin: 'remove-chapters' },
+        })
+        g.edges = [
+          { from: 'probe', to: 'plugin' },
+          { from: 'plugin', to: 'transcode_video' },
+          { from: 'transcode_video', to: 'remux_container' },
+        ]
+        return g
+      })(),
+    })
+    expect(screen.getByTestId('step-chips-plugin').textContent).toContain(
+      'plugin remove-chapters',
+    )
+    fireEvent.click(screen.getByTestId('step-edit-plugin'))
+    // The settings form renders from the selected manifest.
+    expect(screen.getByTestId('step-param-plugin-setting-level')).toBeTruthy()
+    // The stored value is the placeholder, the input is the override.
+    const level = screen.getByTestId(
+      'step-param-plugin-setting-level',
+    ) as HTMLInputElement
+    expect(level.value).toBe('')
+    fireEvent.change(level, { target: { value: '3' } })
+    expect(screen.getByTestId('step-chips-plugin').textContent).toContain(
+      'level 3',
+    )
+    // The reset button clears the override.
+    fireEvent.click(screen.getByTestId('step-param-plugin-reset-level'))
+    expect(screen.getByTestId('step-chips-plugin').textContent).not.toContain(
+      'level 3',
+    )
+  })
+
+  it('shows the continue-on-error switch and its warning', () => {
+    renderEditor({
+      palette: PLUGIN_PALETTE,
+      plugins: [stepPlugin],
+      graph: (() => {
+        const g = graph()
+        g.nodes.splice(1, 0, {
+          id: 'plugin',
+          type: 'plugin',
+          params: { plugin: 'remove-chapters' },
+        })
+        g.edges = [
+          { from: 'probe', to: 'plugin' },
+          { from: 'plugin', to: 'transcode_video' },
+          { from: 'transcode_video', to: 'remux_container' },
+        ]
+        return g
+      })(),
+    })
+    fireEvent.click(screen.getByTestId('step-edit-plugin'))
+    const toggle = screen.getByTestId(
+      'step-param-continue_on_error',
+    ) as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    // The continue-on-error switch carries the warning text.
+    expect(toggle.closest('label')?.textContent).toContain('sidecar')
+    fireEvent.click(toggle)
+    expect(screen.getByTestId('step-chips-plugin').textContent).toContain(
+      'continue on error yes',
+    )
   })
 })
 

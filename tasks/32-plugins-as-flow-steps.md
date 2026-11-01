@@ -98,5 +98,5 @@ A wasm or otherwise sandboxed runtime (task 33), a plugin marketplace or index, 
 - [ ] A step plugin that exits non-zero fails the job with its name and exit code, and the source file is byte identical afterwards. Proven by a worker test.
 - [ ] A step plugin that prints `{"file": "/etc/passwd"}` fails with a message naming the path, and a step plugin that sleeps past its timeout is killed and fails the job. Proven by tests.
 - [ ] A plugin step naming a file that is not on the node fails with a message naming the plugin and the node.
-- [ ] The palette, step stack and parameter editor handle a plugin step, including the mobile layout rules from task 22. Proven by `web` tests.
+- [x] The palette, step stack and parameter editor handle a plugin step, including the mobile layout rules from task 22. Proven by `web` tests.
 - [ ] `docs/plugins.md` documents step plugins, and `make test`, `make test-integration` and `make lint` are green.

@@ -55,6 +55,7 @@ export function defaultParams(info: StepTypeInfo): Record<string, unknown> {
   for (const f of info.params) {
     if (f.default !== undefined) params[f.name] = f.default
     else if (f.kind === 'select') params[f.name] = f.options?.[0] ?? ''
+    else if (f.kind === 'plugin') params[f.name] = f.options?.[0] ?? ''
     else if (f.kind === 'number') params[f.name] = f.min ?? 1
     else if (f.kind === 'toggle') params[f.name] = false
     else if (f.kind === 'languages') params[f.name] = []
@@ -96,16 +97,24 @@ function paramText(kind: string, value: unknown): string {
   return String(value)
 }
 
-/** The chips of one row: "label value" for each parameter. */
+/** The chips of one row: "label value" for each parameter. A plugin step
+ * also shows its settings overrides as "key value" chips. */
 export function chipsFor(
   step: FlowStep,
   info: StepTypeInfo | undefined,
 ): string[] {
   if (!info) return []
   const params = (step.params ?? {}) as Record<string, unknown>
-  return info.params.map(
+  const chips = info.params.map(
     (f) => `${f.label} ${paramText(f.kind, params[f.name])}`,
   )
+  const settings = params['settings'] as Record<string, string> | undefined
+  if (settings) {
+    for (const [k, v] of Object.entries(settings)) {
+      if (v !== '') chips.push(`${k} ${v}`)
+    }
+  }
+  return chips
 }
 
 /** The muted condition text of a row: guards state their rule, action rows

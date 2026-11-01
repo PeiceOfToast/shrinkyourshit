@@ -662,7 +662,7 @@ export function validateFlow(
 export interface StepParamField {
   name: string
   label: string
-  kind: 'select' | 'number' | 'text' | 'languages' | 'toggle'
+  kind: 'select' | 'number' | 'text' | 'languages' | 'toggle' | 'plugin'
   options?: string[]
   min?: number
   max?: number
@@ -939,9 +939,11 @@ export function getWebhookDeliveries(
 }
 
 /** The plugins (task 31): hook plugins installed from a git URL or a
- * directory. A plugin runs as the server user at the moment its manifest
- * declares. Installed plugins are disabled until enabled on purpose. */
-export type PluginType = 'preflight' | 'postprocess' | 'notify'
+ * directory, plus step plugins (task 32) the flow editor places in the
+ * chain. A plugin runs as the server user at the moment its manifest
+ * declares (a step plugin runs on the node, where a flow places it).
+ * Installed plugins are disabled until enabled on purpose. */
+export type PluginType = 'preflight' | 'postprocess' | 'notify' | 'step'
 
 export interface PluginSetting {
   key: string

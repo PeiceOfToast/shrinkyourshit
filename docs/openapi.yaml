@@ -40,7 +40,7 @@ tags:
   - name: webhooks
     description: Outgoing webhooks and their delivery history.
   - name: plugins
-    description: The installed hook plugins (task 31) and their phases.
+    description: The installed plugins — hooks around a job's life (task 31) and step plugins the flow editor places in the chain (task 32).
   - name: nodes
     description: Node administration and lifecycle.
   - name: pairing
@@ -1409,12 +1409,28 @@ components:
         repeated: { type: integer }
     StepType:
       type: object
-      required: [id, label]
+      required: [type, label, params]
       properties:
-        id: { type: string }
+        type: { type: string, description: The step id the graph's nodes use. }
         label: { type: string }
-        category: { type: string }
-        ports: { type: object }
+        description: { type: string }
+        condition: { type: boolean, description: Guards gate the step that follows them. }
+        params:
+          type: array
+          description: The parameter fields to render for the step; kind `plugin` is a select of installed, enabled step plugins.
+          items:
+            type: object
+            required: [name, label, kind]
+            properties:
+              name: { type: string }
+              label: { type: string }
+              kind: { type: string, description: select|number|text|languages|toggle|plugin }
+              options: { type: array, items: { type: string } }
+              min: { type: number }
+              max: { type: number }
+              required: { type: boolean }
+              default: { type: object }
+              help: { type: string }
     FlowPreview:
       type: object
       properties:
@@ -1520,7 +1536,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         version: { type: string }
-        type: { type: string, enum: [preflight, postprocess, notify], description: The phase the plugin runs in. }
+        type: { type: string, enum: [preflight, postprocess, notify, step], description: preflight/postprocess/notify are hooks around a job's life; step is a plugin a flow places in the chain. }
         enabled: { type: boolean, description: Installed plugins are disabled; enabling is a separate explicit action. }
         source: { type: string, description: The git URL or directory it was installed from. }
         description: { type: string }
