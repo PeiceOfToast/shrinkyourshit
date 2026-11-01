@@ -49,3 +49,61 @@ Steps:
 - [x] Fixed missing `encoding/json` imports in `internal/store/crud.go`
       and `internal/store/sqlite.go`.
 - [x] Build passes (`go build ./...`).
+
+## DECISIONS.md quote
+
+> Item 4: "The core must stay generic so other file types can be added
+> later." — this task is that extension point. `DECISIONS.md` is not
+> touched.
+
+## Verification results (2026-11-01)
+
+- `timeout 300 npx tsc --noEmit` — clean.
+- Web tests (detail, list, edit pages + KindPicker) — 29 passed.
+- `make test` — all Go packages ok, 32 web test files, 231 web tests passed.
+- `make test-integration` — all packages ok (api 439s, server 524s, worker
+  303s, store 143s, cmd 83s).
+- `make lint` — go vet clean, golangci-lint 0 issues, eslint 0 warnings,
+  spdx ok, prettier clean.
+- First `make lint` run caught two real issues, both fixed: `ineffassign`
+  in the scanner's scan-summary stamping (rewritten with an explicit
+  `stampErr` variable) and `react-refresh/only-export-components` in
+  KindPicker.tsx (constants and `kindLabel` moved to `web/src/kinds.ts`).
+- Note: the earlier hang was not reproduced. `make lint`'s web step (eslint
+  + prettier via npm) is the slowest part; every re-verification here
+  completed well inside its timeout, so no lint step is flagged as
+  chronically slow.
+
+## Acceptance mapping
+
+All eight boxes ticked in `tasks/34-non-media-file-types.md`:
+
+1. `scanner_test.go`: TestScannerImageLibrarySkipsOtherKinds,
+   TestScannerKindSkippedRowRecorded,
+   TestScannerNonMediaKindQueuesKindAgnosticWork.
+2. `api/filekinds_test.go`: TestLibraryFileKindsValidation (+ default and
+   create/update round-trip).
+3. `worker/runner_test.go`: TestRunnerNonMediaRenameAndMove (no encoder, no
+   ffprobe).
+4. `worker/runner_test.go`: TestRunnerNonMediaMediaOnlyFlowSkips.
+5. Full go/web suites green; TestLibraryFileKindsDefault asserts ["video"].
+6. Web tests: KindPicker, LibraryEditPage, LibrariesPage, LibraryDetailPage
+   (skipped count + hint).
+7. Docs committed with the code (cdbb360).
+8. make test / test-integration / lint green.
+
+## Summary
+
+- Built: probe.Kind decided by extension, library `file_kinds` (+ last-scan
+  summary persistence), kind-aware scanner/planner/worker, API validation,
+  UI kind picker + skipped count + hint, docs.
+- Skipped: transfer-mode extension thrash (the server keeps the file's own
+  extension for non-media), per-file rule trees, image encoding (out of
+  scope per the task).
+- The worker decides kind from the path extension at job start; media-only
+  flows on non-media files complete as skips, never failures.
+- Next task should know: `flow.ResolvePlan` and `ApplyStep` now take a
+  `probe.Kind`; `SetLibraryScanTime` became `SetLibraryScanResult(ctx, id,
+  at, summaryJSON)`.
+- Pending: owner should open a PR from `task/34-non-media-file-types` and
+  watch CI.
