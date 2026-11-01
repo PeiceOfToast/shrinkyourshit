@@ -71,6 +71,81 @@ func TestInstallFromPathMissingManifest(t *testing.T) {
 	assert.Contains(t, err.Error(), "plugin.yaml")
 }
 
+// TestInstallWasmFromPath (task 33): a wasm plugin installs like any
+// other; the entry module travels with the manifest.
+func TestInstallWasmFromPath(t *testing.T) {
+	dataDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "wasm-plugin")
+	require.NoError(t, os.MkdirAll(src, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, FileName), []byte(
+		"name: wasm-plugin\ntype: step\nruntime: wasm\nentry: hello.wasm\n"), 0o644))
+	fixture, err := os.ReadFile(filepath.Join("testdata", "hello.wasm"))
+	require.NoError(t, err, "the committed fixture must be present")
+	require.NoError(t, os.WriteFile(filepath.Join(src, "hello.wasm"), fixture, 0o644))
+
+	m, err := InstallFromPath(src, dataDir)
+	require.NoError(t, err)
+	assert.Equal(t, RuntimeWASM, m.Runtime)
+	assert.Equal(t, MemoryPagesDefault, m.MemoryPages, "memory_pages defaults to 1024 pages")
+
+	installed, err := os.ReadFile(filepath.Join(Dir(dataDir, "wasm-plugin"), "hello.wasm"))
+	require.NoError(t, err)
+	assert.Equal(t, fixture, installed)
+}
+
+// TestInstallWasmBrokenEntryRejected (task 33): an entry that does not
+// parse is rejected at install time naming the field, and nothing is left
+// half-installed.
+func TestInstallWasmBrokenEntryRejected(t *testing.T) {
+	dataDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "broken-wasm")
+	require.NoError(t, os.MkdirAll(src, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, FileName), []byte(
+		"name: broken-wasm\ntype: step\nruntime: wasm\nentry: main.wasm\n"), 0o644))
+	// The \0asm magic passes the fast check; the garbage body fails the
+	// compile-time verification.
+	require.NoError(t, os.WriteFile(filepath.Join(src, "main.wasm"),
+		[]byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff}, 0o644))
+
+	_, err := InstallFromPath(src, dataDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "entry:", "the message names the field")
+	assert.Contains(t, err.Error(), "main.wasm")
+	assert.NoDirExists(t, Dir(dataDir, "broken-wasm"), "nothing is installed on a rejection")
+}
+
+// TestInstallWasmNonModuleEntryRejected (task 33): a file without the
+// wasm magic bytes is rejected before wazero even parses one.
+func TestInstallWasmNonModuleEntryRejected(t *testing.T) {
+	dataDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "not-wasm")
+	require.NoError(t, os.MkdirAll(src, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, FileName), []byte(
+		"name: not-wasm\ntype: step\nruntime: wasm\nentry: main.wasm\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "main.wasm"), []byte("MZ not wasm"), 0o644))
+
+	_, err := InstallFromPath(src, dataDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "magic bytes")
+	assert.NoDirExists(t, Dir(dataDir, "not-wasm"))
+}
+
+// TestInstallWasmMissingEntryRejected (task 33): an entry that does not
+// exist in the plugin directory is an install-time error naming the field.
+func TestInstallWasmMissingEntryRejected(t *testing.T) {
+	dataDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "ghost-wasm")
+	require.NoError(t, os.MkdirAll(src, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, FileName), []byte(
+		"name: ghost-wasm\ntype: step\nruntime: wasm\nentry: missing.wasm\n"), 0o644))
+
+	_, err := InstallFromPath(src, dataDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "entry:")
+	assert.Contains(t, err.Error(), "missing.wasm")
+	assert.NoDirExists(t, Dir(dataDir, "ghost-wasm"))
+}
+
 // gitAvailable reports whether the git binary exists; the git install
 // test needs it (CI installs git; a bare container may not).
 func gitAvailable(t *testing.T) string {

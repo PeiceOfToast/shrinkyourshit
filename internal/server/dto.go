@@ -370,16 +370,27 @@ type JobSpec struct {
 }
 
 // PluginStep is a resolved step plugin (task 32): the manifest facts the
-// node needs — the command, the declared env names and the timeout — the
-// merged settings (per-step overrides over the plugin's stored values),
-// and where it sits in the chain. The node runs the command from its own
-// `<data dir>/plugins/<name>/` directory; the server never ships plugin
-// files in v1.
+// node needs — the command, the declared env names and the timeout, and
+// (task 33) the runtime and, for a wasm plugin, its entry module file and
+// memory budget — the merged settings (per-step overrides over the
+// plugin's stored values), and where it sits in the chain. The node runs
+// the command from its own `<data dir>/plugins/<name>/` directory; the
+// server never ships plugin files in v1.
 type PluginStep struct {
-	Name            string            `json:"name"`
-	Command         []string          `json:"command"`
-	EnvNames        []string          `json:"env_names"`
-	TimeoutSec      int               `json:"timeout_seconds"`
+	Name       string   `json:"name"`
+	Command    []string `json:"command"`
+	EnvNames   []string `json:"env_names"`
+	TimeoutSec int      `json:"timeout_seconds"`
+	// Runtime is how the entry point executes (task 33): "native" (the
+	// default, task 31's subprocess) or "wasm" (task 33's sandbox). Empty
+	// for a pre-task-33 spec; the worker treats empty as native.
+	Runtime string `json:"runtime,omitempty"`
+	// Entry is the wasm module file inside the plugin directory (wasm
+	// only, task 33). Empty for a native plugin.
+	Entry string `json:"entry,omitempty"`
+	// MemoryPages is the wasm memory budget in 64 KiB pages (wasm only,
+	// task 33). Zero means the worker's default.
+	MemoryPages     int               `json:"memory_pages,omitempty"`
 	Settings        map[string]string `json:"settings"`
 	StepIndex       int               `json:"step_index"`
 	ContinueOnError bool              `json:"continue_on_error,omitempty"`

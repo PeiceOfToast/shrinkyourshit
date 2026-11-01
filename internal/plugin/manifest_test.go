@@ -197,3 +197,84 @@ func TestValidNameAndEnvName(t *testing.T) {
 	assert.False(t, ValidEnvName("not a name"))
 	assert.False(t, ValidEnvName("1bad"))
 }
+
+/* ------------------------------------------------------------------ */
+/* The wasm runtime (task 33)                                          */
+/* ------------------------------------------------------------------ */
+
+// TestWasmManifestDefaults (task 33): runtime: wasm with entry only. The
+// memory budget defaults to 1024 pages (64 MiB) and the timeout to 30s,
+// exactly like a native manifest's defaults.
+func TestWasmManifestDefaults(t *testing.T) {
+	m, err := Parse([]byte(
+		"name: wasm-plugin\ntype: step\nruntime: wasm\nentry: main.wasm\n"))
+	require.NoError(t, err)
+	assert.Equal(t, RuntimeWASM, m.Runtime)
+	assert.Equal(t, "main.wasm", m.Entry)
+	assert.Equal(t, MemoryPagesDefault, m.MemoryPages)
+	assert.Equal(t, TimeoutDefault, m.TimeoutSeconds)
+}
+
+// TestWasmMemoryPagesClamps (task 33): memory_pages clamps to 16..4096;
+// 0 and negatives mean "not set" and take the default.
+func TestWasmMemoryPagesClamps(t *testing.T) {
+	cases := map[int]int{
+		0: MemoryPagesDefault, -3: MemoryPagesDefault,
+		1: MemoryPagesMin, 15: MemoryPagesMin,
+		1024: 1024, 4096: MemoryPagesMax, 99999: MemoryPagesMax,
+	}
+	for in, want := range cases {
+		m := Manifest{Name: "wasm-probe", Type: TypeStep, Runtime: RuntimeWASM, Entry: "main.wasm", MemoryPages: in}
+		require.NoError(t, m.Validate())
+		assert.Equal(t, want, m.MemoryPages, "memory_pages %d", in)
+		assert.Equal(t, want, m.MemoryLimit())
+	}
+}
+
+// TestWasmManifestWithCommandRejected (task 33): a manifest that sets both
+// runtime: wasm and command is rejected naming both fields.
+func TestWasmManifestWithCommandRejected(t *testing.T) {
+	m := Manifest{Name: "wasm-probe", Type: TypeStep, Runtime: RuntimeWASM,
+		Entry: "main.wasm", Command: []string{"echo", "hi"}}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runtime")
+	assert.Contains(t, err.Error(), "command")
+	assert.Contains(t, err.Error(), "entry")
+}
+
+// TestWasmEntryShapeRejected (task 33): a wasm entry must be a plain file
+// name inside the plugin directory.
+func TestWasmEntryShapeRejected(t *testing.T) {
+	for _, entry := range []string{"", "../evil.wasm", "sub/main.wasm", "/abs.wasm", "."} {
+		m := Manifest{Name: "wasm-probe", Type: TypeStep, Runtime: RuntimeWASM, Entry: entry}
+		err := m.Validate()
+		require.Error(t, err, "entry %q", entry)
+		assert.Contains(t, err.Error(), "entry:", "entry %q: the message names the field", entry)
+	}
+}
+
+// TestNativeManifestWithWasmFieldsRejected (task 33): entry and
+// memory_pages are wasm-only; setting them on a native manifest is a typo
+// that must fail at install time naming the field.
+func TestNativeManifestWithWasmFieldsRejected(t *testing.T) {
+	m := Manifest{Name: "native-probe", Type: TypeStep, Runtime: RuntimeNative,
+		Command: []string{"echo", "hi"}, Entry: "main.wasm"}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "entry:")
+
+	m = Manifest{Name: "native-probe", Type: TypeStep, Command: []string{"echo", "hi"}, MemoryPages: 64}
+	err = m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "memory_pages:")
+}
+
+// TestUnknownRuntimeRejected (task 33): an unknown runtime value is an
+// error naming the field.
+func TestUnknownRuntimeRejected(t *testing.T) {
+	m := Manifest{Name: "wasm-probe", Type: TypeStep, Runtime: "go", Entry: "main.wasm"}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runtime:")
+}

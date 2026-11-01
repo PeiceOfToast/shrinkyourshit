@@ -16,6 +16,7 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 | mDNS | `github.com/grandcat/zeroconf` (service type `_shrinkyourshit._tcp`) |
 | Password hashing | `golang.org/x/crypto/argon2` (argon2id) |
 | Logging | `log/slog`, JSON in Docker, text in dev |
+| WASM runtime | `github.com/tetratelabs/wazero`: the sandboxed script escape hatch (task 33). Justification: pure Go (no cgo) so a wasm plugin is a dependency, not a toolchain, and identical on every target; `os/exec` is for ffmpeg, not for user code. |
 | Config | Environment variables with `SHRINK_` prefix, optional `config.yaml` in the data dir, flags override both. Use `github.com/spf13/pflag` only; no viper. |
 | CLI | Subcommands: `shrinkyourshit serve` (default), `shrinkyourshit worker`, `shrinkyourshit version`. Implemented with the standard library. |
 | Process execution | `os/exec` for ffmpeg and ffprobe. Always pass `-progress pipe:1 -nostats` for encodes and parse key=value lines. |

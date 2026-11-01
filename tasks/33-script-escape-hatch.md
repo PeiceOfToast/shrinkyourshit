@@ -70,12 +70,12 @@ Assembly is fine (assemble once with `wat2wasm` and commit the bytes). Note in t
 A wasm plugin SDK in a second language, WASI preview 2, host functions beyond WASI (no ffmpeg handle, no database, no HTTP client), native scripts under any "just this once" flag, signing or verifying plugin code, resource accounting per plugin across jobs, `DECISIONS.md` changes.
 
 ## Acceptance
-- [ ] A manifest with `runtime: wasm` and a valid `entry` installs; one that sets both `runtime: wasm` and `command`, and one whose entry does not parse, are both rejected with a message naming the field. Proven by tests.
-- [ ] `hello.wasm` runs and its stdout reaches the job log with `source: plugin`. Proven by a unit test.
-- [ ] `rewrite.wasm` changes the file, and the change is visible downstream exactly as in task 32's in-place test.
-- [ ] `escape.wasm` cannot open `/etc/passwd`: the module fails to open it and the job log shows the module's own report. Proven by a test.
-- [ ] `badfile.wasm` printing an outside path fails the job with the path in the message.
-- [ ] `spin.wasm` is stopped by `timeout_seconds` and the job fails; `oom.wasm` traps at the memory limit and the job fails with the wazero error text. Both proven by tests.
-- [ ] Default behaviour is untouched: every task 31 native plugin test still passes unchanged, and a manifest without `runtime` behaves exactly as before.
-- [ ] `docs/scripts.md` exists with the worked Go example, and `STACK.md` lists wazero with its justification.
-- [ ] `make test`, `make test-integration` and `make lint` are green.
+- [x] A manifest with `runtime: wasm` and a valid `entry` installs; one that sets both `runtime: wasm` and `command`, and one whose entry does not parse, are both rejected with a message naming the field. Proven by tests.
+- [x] `hello.wasm` runs and its stdout reaches the job log with `source: plugin`. Proven by a unit test.
+- [x] `rewrite.wasm` changes the file, and the change is visible downstream exactly as in task 32's in-place test.
+- [x] `escape.wasm` cannot open `/etc/passwd`: the module fails to open it and the job log shows the module's own report. Proven by a test.
+- [x] `badfile.wasm` printing an outside path fails the job with the path in the message.
+- [x] `spin.wasm` is stopped by `timeout_seconds` and the job fails; `oom.wasm` traps at the memory limit and the job fails with the wazero error text. Both proven by tests.
+- [x] Default behaviour is untouched: every task 31 native plugin test still passes unchanged, and a manifest without `runtime` behaves exactly as before.
+- [x] `docs/scripts.md` exists with the worked Go example, and `STACK.md` lists wazero with its justification.
+- [x] `make test`, `make test-integration` and `make lint` are green.

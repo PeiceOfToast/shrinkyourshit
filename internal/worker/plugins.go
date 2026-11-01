@@ -74,6 +74,11 @@ func (r *runner) execPluginStep(ctx context.Context, spec *server.JobSpec, ps se
 			Command:        ps.Command,
 			Env:            ps.EnvNames,
 			TimeoutSeconds: ps.TimeoutSec,
+			// Runtime facts (task 33): how the step executes and, for a
+			// wasm plugin, its entry module file and memory budget.
+			Runtime:     ps.Runtime,
+			Entry:       ps.Entry,
+			MemoryPages: ps.MemoryPages,
 		},
 		Dir:      dir,
 		Settings: ps.Settings,

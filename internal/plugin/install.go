@@ -3,6 +3,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/tetratelabs/wazero"
 )
 
 // ErrAlreadyInstalled is returned when a plugin with the same name (or a
@@ -51,6 +54,13 @@ func InstallFromPath(src string, dataDir string) (Manifest, error) {
 	}
 	dest := Dir(dataDir, m.Name)
 	if err := installTree(src, dest); err != nil {
+		return Manifest{}, err
+	}
+	// A wasm plugin's entry module is verified at install time (task 33):
+	// a broken module is rejected here with the parse error instead of at
+	// the first job.
+	if err := verifyWasmEntry(m, dest); err != nil {
+		_ = os.RemoveAll(dest)
 		return Manifest{}, err
 	}
 	return m, nil
@@ -104,7 +114,44 @@ func InstallFromGit(ctx context.Context, gitURL, ref, dataDir string) (Manifest,
 	if err := installTree(tmp, Dir(dataDir, m.Name)); err != nil {
 		return Manifest{}, err
 	}
+	// The same wasm entry verification as a path install (task 33): a
+	// broken module is rejected with the parse error, and the half
+	// install is removed.
+	dest := Dir(dataDir, m.Name)
+	if err := verifyWasmEntry(m, dest); err != nil {
+		_ = os.RemoveAll(dest)
+		return Manifest{}, err
+	}
 	return m, nil
+}
+
+// verifyWasmEntry checks a wasm plugin's entry module at install time
+// (task 33): the file must exist and parse as a wasm binary — the \0asm
+// magic bytes and a successful wazero compile in a throwaway runtime. The
+// error names the entry field so a manifest mistake fails loudly here.
+func verifyWasmEntry(m Manifest, dest string) error {
+	if m.Runtime != RuntimeWASM {
+		return nil
+	}
+	path := filepath.Join(dest, m.Entry)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("entry: %q does not exist in the plugin directory", m.Entry)
+		}
+		return fmt.Errorf("entry: %q is unreadable: %v", m.Entry, err)
+	}
+	if len(raw) < 4 || !bytes.Equal(raw[:4], wasmMagic) {
+		return fmt.Errorf("entry: %q is not a wasm binary (wrong magic bytes)", m.Entry)
+	}
+	// CompileModule decodes and validates the module: an invalid opcode,
+	// a broken type section or a bad function body fails here.
+	rt := wazero.NewRuntime(context.Background())
+	defer func() { _ = rt.Close(context.Background()) }()
+	if _, err := rt.CompileModule(context.Background(), raw); err != nil {
+		return fmt.Errorf("entry: %q is not a valid wasm module: %v", m.Entry, err)
+	}
+	return nil
 }
 
 // installTree copies the plugin tree from src to dest, refusing an
