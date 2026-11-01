@@ -540,10 +540,16 @@ func (s *PluginService) ResolveSteps(ctx context.Context, plan flow.Plan) ([]Plu
 			settings[k] = v
 		}
 		out = append(out, PluginStep{
-			Name:            params.Plugin,
-			Command:         in.Manifest.Command,
-			EnvNames:        in.Manifest.Env,
-			TimeoutSec:      in.Manifest.Timeout(),
+			Name:       params.Plugin,
+			Command:    in.Manifest.Command,
+			EnvNames:   in.Manifest.Env,
+			TimeoutSec: in.Manifest.Timeout(),
+			// Runtime facts (task 33): the runtime and, for a wasm
+			// plugin, its entry module file and memory budget, so the
+			// node runs the step from its own install the same way.
+			Runtime:         in.Manifest.Runtime,
+			Entry:           in.Manifest.Entry,
+			MemoryPages:     in.Manifest.MemoryPages,
 			Settings:        settings,
 			StepIndex:       i,
 			ContinueOnError: params.ContinueOnError,

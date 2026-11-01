@@ -64,11 +64,19 @@ settings:
 | `timeout_seconds` | no | 1–300. The default is 30 seconds. |
 | `env` | no | The names of extra environment variables to pass through (the app's other settings are not read). |
 | `settings` | no | The collected values the UI asks for. |
+| `runtime` | no | `native` (the default) or `wasm`. A `wasm` plugin runs as a sandboxed WebAssembly module instead of a subprocess — see [docs/scripts.md](scripts.md). |
+| `entry` | wasm only | The module file inside the plugin directory (`main.wasm` by convention). Required when `runtime` is `wasm`; must be absent otherwise. |
+| `memory_pages` | wasm only | The module's memory budget in 64 KiB pages, default 1024, clamped to 16–4096. |
 
 A plugin's `type` fixes when it runs. A `preflight`, `postprocess` or
 `notify` plugin never runs inside a job's chain; a `step` plugin never runs
 at those three moments and only runs where a flow places it. The type is
 part of the manifest: changing it means reinstalling the plugin.
+
+A `wasm` plugin is the sandboxed escape hatch: it gets the scratch
+directory, the job JSON on stdin, captured output, a deadline and a memory
+ceiling — and nothing else. It is documented separately in
+[docs/scripts.md](scripts.md).
 
 ## The stdin JSON
 

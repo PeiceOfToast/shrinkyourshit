@@ -42,6 +42,31 @@ const (
 	TimeoutMax     = 300
 )
 
+// Runtime is how a plugin's entry point executes (task 33). Native is task
+// 31's subprocess. WASM is the sandbox: a WASI module run by wazero, with
+// no filesystem outside the job scratch dir and no network.
+const (
+	RuntimeNative = "native"
+	RuntimeWASM   = "wasm"
+)
+
+// RuntimeValues lists the valid manifest runtimes.
+func RuntimeValues() []string {
+	return []string{RuntimeNative, RuntimeWASM}
+}
+
+// Memory page bounds (task 33): the manifest's memory_pages defaults to
+// 1024 pages (64 MiB) and is clamped to 16..4096 (1 MiB..256 MiB). A wasm
+// module runs in a fixed memory budget — the ceiling exists so a runaway
+// allocation is a fast, loud trap instead of an OOM of the whole server,
+// and the floor exists so a manifest typo does not silently starve a
+// module that needs real work space.
+const (
+	MemoryPagesDefault = 1024
+	MemoryPagesMin     = 16
+	MemoryPagesMax     = 4096
+)
+
 // nameRe is the manifest name rule (task 31): lowercase, digits and
 // dashes, starting with a letter or digit, 2 to 41 characters.
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,40}$`)
@@ -85,9 +110,12 @@ type Manifest struct {
 	Description    string    `yaml:"description"`
 	Author         string    `yaml:"author"`
 	Type           string    `yaml:"type"`
-	Command        []string  `yaml:"command"`
+	Runtime        string    `yaml:"runtime"` // default native
+	Entry          string    `yaml:"entry"`   // wasm only: the module file in the plugin dir
+	Command        []string  `yaml:"command"` // native only
 	TimeoutSeconds int       `yaml:"timeout_seconds"`
 	Env            []string  `yaml:"env"`
+	MemoryPages    int       `yaml:"memory_pages"` // wasm only
 	Settings       []Setting `yaml:"settings"`
 }
 
@@ -138,7 +166,50 @@ func (m *Manifest) Validate() error {
 	if !known {
 		return fmt.Errorf("type: %q must be one of %v", m.Type, TypeValues())
 	}
-	if len(m.Command) == 0 {
+
+	// Runtime (task 33): defaults to native so every manifest written
+	// before it existed keeps working byte for byte.
+	switch {
+	case m.Runtime == "":
+		m.Runtime = RuntimeNative
+	case m.Runtime != RuntimeNative && m.Runtime != RuntimeWASM:
+		return fmt.Errorf("runtime: %q must be one of %v", m.Runtime, RuntimeValues())
+	}
+	if m.Runtime == RuntimeWASM {
+		// A wasm plugin's entry point is a module file, not a command:
+		// a manifest that sets both is a mistake that fails loudly here.
+		if len(m.Command) != 0 {
+			return fmt.Errorf("runtime: wasm and command are mutually exclusive; declare entry instead of command")
+		}
+		m.Entry = strings.TrimSpace(m.Entry)
+		if m.Entry == "" {
+			return fmt.Errorf("entry: a wasm plugin needs the module file name inside its directory")
+		}
+		if strings.ContainsAny(m.Entry, `/\`) || m.Entry == "." || m.Entry == ".." || strings.Contains(m.Entry, "..") {
+			return fmt.Errorf("entry: %q must be a plain file name inside the plugin directory", m.Entry)
+		}
+		// memory_pages clamps to 16..4096 (task 33); 0 and negatives mean
+		// "not set" and take the default.
+		switch {
+		case m.MemoryPages == 0, m.MemoryPages < 0:
+			m.MemoryPages = MemoryPagesDefault
+		case m.MemoryPages < MemoryPagesMin:
+			m.MemoryPages = MemoryPagesMin
+		case m.MemoryPages > MemoryPagesMax:
+			m.MemoryPages = MemoryPagesMax
+		}
+	} else {
+		// The fields are wasm-only: setting them on a native manifest is
+		// a typo that must fail at install time, not at the first job.
+		if m.Entry != "" {
+			return fmt.Errorf("entry: only a wasm plugin has a module file; use command instead")
+		}
+		if m.MemoryPages != 0 {
+			return fmt.Errorf("memory_pages: only a wasm plugin has a memory budget")
+		}
+	}
+
+	if m.Runtime == RuntimeNative && len(m.Command) == 0 {
 		return fmt.Errorf("command: must be a non-empty array")
 	}
 	for i, part := range m.Command {
@@ -196,6 +267,23 @@ func (m Manifest) Timeout() int {
 		return TimeoutMax
 	}
 	return m.TimeoutSeconds
+}
+
+// MemoryLimit is the manifest's wasm memory budget in 64 KiB pages (task
+// 33), clamped the same way Timeout is: a zero value that skipped
+// validation still gets the default so a hand-built manifest cannot ask
+// for the whole server's memory.
+func (m Manifest) MemoryLimit() int {
+	if m.MemoryPages <= 0 {
+		return MemoryPagesDefault
+	}
+	if m.MemoryPages > MemoryPagesMax {
+		return MemoryPagesMax
+	}
+	if m.MemoryPages < MemoryPagesMin {
+		return MemoryPagesMin
+	}
+	return m.MemoryPages
 }
 
 // trimList trims and drops the empty entries of a string list.

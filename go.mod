@@ -7,6 +7,7 @@ require (
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
+	github.com/tetratelabs/wazero v1.8.2
 	golang.org/x/crypto v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.34.5

@@ -236,11 +236,11 @@ func TestRunStepHandsTheStepContract(t *testing.T) {
 		Command: []string{"sh", scriptPath},
 	}, Dir: dir}
 	out := NewRunner(dir).RunStep(context.Background(), p, StepRequest{
-		Job:       JobContext{JobID: "j1", Library: "Movies"},
-		Scratch:   scratch,
-		FilePath:  working,
-		StepIndex: 3,
-		Settings:  map[string]string{"level": "quiet"},
+		Job:        JobContext{JobID: "j1", Library: "Movies"},
+		Scratch:    scratch,
+		FilePath:   working,
+		StepIndex:  3,
+		Settings:   map[string]string{"level": "quiet"},
 		SourcePath: "/library/Movies/movie.mkv",
 	})
 	require.True(t, out.Result.OK(), out.Result.Error)
@@ -388,8 +388,8 @@ func TestRunStepResultLineAmongLogOutput(t *testing.T) {
 	require.NoError(t, os.WriteFile(next, []byte("next"), 0o644))
 
 	p := Plugin{Manifest: Manifest{
-		Name:    "logger",
-		Type:    TypeStep,
+		Name: "logger",
+		Type: TypeStep,
 		Command: []string{"sh", "-c", `echo starting; echo progress 1; echo '{"file": "'"$1"'"}'`,
 			"logger", next},
 	}, Dir: dir}

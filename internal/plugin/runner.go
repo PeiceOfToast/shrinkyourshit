@@ -121,6 +121,13 @@ func NewRunner(dataDir string) *Runner {
 // captured output and the verdict. Run never panics and never blocks
 // beyond the manifest's timeout: the process group is killed on timeout.
 func (r *Runner) Run(ctx context.Context, p Plugin, job JobContext, phase string) Result {
+	// A wasm plugin (task 33) runs in the sandbox instead of a subprocess;
+	// a hook phase has no scratch dir, so the module gets no filesystem.
+	if p.Manifest.Runtime == RuntimeWASM {
+		job.Phase = phase
+		res, _ := r.RunWASM(ctx, p, job, "")
+		return res
+	}
 	return r.exec(ctx, p, job, phase, nil, nil)
 }
 
@@ -176,8 +183,17 @@ func (r *Runner) RunStep(ctx context.Context, p Plugin, req StepRequest) StepOut
 	job.StepIndex = req.StepIndex
 	job.Settings = req.Settings
 
-	res := r.exec(ctx, p, job, TypeStep, []string{fmt.Sprintf("SYS_STEP_INDEX=%d", req.StepIndex)},
-		[]string{req.FilePath})
+	// A wasm plugin (task 33) runs in the sandbox: the job scratch dir is
+	// preopened at guest "." and the same stdin JSON and env contract
+	// apply, with SYS_STEP_INDEX included. The result protocol below is
+	// identical for both runtimes.
+	var res Result
+	if p.Manifest.Runtime == RuntimeWASM {
+		res, _ = r.RunWASM(ctx, p, job, req.Scratch)
+	} else {
+		res = r.exec(ctx, p, job, TypeStep, []string{fmt.Sprintf("SYS_STEP_INDEX=%d", req.StepIndex)},
+			[]string{req.FilePath})
+	}
 	out := StepOutcome{Result: res}
 	if !res.OK() {
 		return out
@@ -201,6 +217,12 @@ func (r *Runner) RunStep(ctx context.Context, p Plugin, req StepRequest) StepOut
 	if named == "" {
 		out.File = req.FilePath // the plugin worked in place
 		return out
+	}
+	// A wasm module (task 33) sees only the scratch dir, so a result line
+	// it prints names the file relative to the preopen; join before the
+	// absolute-path validation, which still enforces the scratch-only rule.
+	if p.Manifest.Runtime == RuntimeWASM && !filepath.IsAbs(named) {
+		named = filepath.Join(req.Scratch, named)
 	}
 	if err := validateStepFile(named, req.Scratch); err != nil {
 		// A rejected result is a failed step: the caller fails the job
@@ -370,10 +392,15 @@ func (o *outputCapture) read(wg *sync.WaitGroup, stream io.Reader, stderr bool) 
 	sc := bufio.NewScanner(stream)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024) // lines up to 64 KiB
 	for sc.Scan() {
-		o.mu.Lock()
-		if len(o.lines) < MaxOutputLines {
-			o.lines = append(o.lines, OutputLine{Text: sc.Text(), Stderr: stderr})
-		}
-		o.mu.Unlock()
+		o.addLine(sc.Text(), stderr)
 	}
+}
+
+// addLine appends one captured line, capped at MaxOutputLines.
+func (o *outputCapture) addLine(text string, stderr bool) {
+	o.mu.Lock()
+	if len(o.lines) < MaxOutputLines {
+		o.lines = append(o.lines, OutputLine{Text: text, Stderr: stderr})
+	}
+	o.mu.Unlock()
 }
