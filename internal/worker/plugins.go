@@ -10,6 +10,7 @@ import (
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 )
 
@@ -30,11 +31,11 @@ func pluginNameOf(step flow.PlanStep) string {
 	return step.ID
 }
 
-// execPluginStep runs one plugin step of the chain on the current working
-// file and returns the file the rest of the chain continues with. The
-// returned error is the job's failure message (it names the plugin and,
-// on non-zero exit, carries the exit code and the last 20 lines of
-// stderr).
+// execPluginStep runs one resolved plugin step (from the job spec) on the
+// current working file and returns the file the rest of the chain continues
+// with. The returned error is the job's failure message (it names the
+// plugin and, on non-zero exit, carries the exit code and the last 20 lines
+// of stderr).
 //
 // Failure rules, deliberately different from the notify/postprocess hooks
 // (task 32): a non-zero exit fails the job; a timeout kills the process
@@ -43,20 +44,10 @@ func pluginNameOf(step flow.PlanStep) string {
 // identical. Not installed on this node is unconditional — even with
 // continue_on_error, because it is an installation error, not a plugin
 // verdict.
-func (r *runner) execPluginStep(ctx context.Context, spec *server.JobSpec, step flow.PlanStep, index int,
+func (r *runner) execPluginStep(ctx context.Context, spec *server.JobSpec, ps server.PluginStep,
 	working, scratchDir string, sink *jobLogSink) (string, error) {
 
-	params, err := flow.DecodePluginStep(step)
-	if err != nil {
-		return "", fmt.Errorf("plugin step %s: %v", step.ID, err)
-	}
-	name := params.Plugin
-
-	// The spec entry for this step: the server resolved it at dispatch.
-	ps, ok := pluginStepFor(spec.Plugins, index)
-	if !ok {
-		return "", fmt.Errorf("plugin %s has no resolved step in the job spec at chain position %d", name, index)
-	}
+	name := ps.Name
 
 	// The node's own install of the plugin. Missing: fail naming the
 	// plugin and the node.
@@ -138,16 +129,37 @@ func (r *runner) execPluginStep(ctx context.Context, spec *server.JobSpec, step 
 		return out.File, nil
 	}
 	failErr := verdict(out.Result)
-	if params.ContinueOnError && !strings.HasPrefix(out.Result.Error, "could not start") {
-		// continue_on_error exists for logging and sidecar style steps,
-		// not for anything that changes the file (docs/plugins.md): the
-		// failure is a warning and the chain continues with the unchanged
-		// working file. An entry point that cannot even start is an
-		// installation problem and fails the job regardless.
-		sink.warnf("plugin %s failed but the flow continues on error: %v", name, failErr)
+	if ps.ContinueOnError && !strings.HasPrefix(out.Result.Error, "could not start") {
+		// continue_on_error exists for logging and sidecar style steps
+		// (docs/plugins.md): a failing step is a warning and the chain
+		// continues. An entry point that cannot even start is an
+		// installation problem, not a plugin verdict, and fails the job
+		// regardless.
+		sink.pluginWarnf(name, "failed but the flow continues on error: %v", failErr)
 		return working, nil
 	}
 	return "", failErr
+}
+
+// walkPluginFallback runs a spec's resolved plugin steps in chain order
+// against the working file — the pre-task-14 fallback for specs that lack a
+// flow graph. Each step is re-probed so later guards (in the encode's own
+// skip-if-satisfied logic) and the encode see what the plugin produced.
+func (r *runner) walkPluginFallback(ctx context.Context, spec *server.JobSpec,
+	working *string, cur *probe.MediaInfo, dir string, sink *jobLogSink) error {
+	for _, ps := range spec.Plugins {
+		next, err := r.execPluginStep(ctx, spec, ps, *working, dir, sink)
+		if err != nil {
+			return err
+		}
+		info, perr := r.prober(ctx, r.cfg.FFprobePath, next)
+		if perr != nil {
+			return fmt.Errorf("plugin %s: probe the working file after the step: %v", ps.Name, perr)
+		}
+		*working = next
+		*cur = info
+	}
+	return nil
 }
 
 // pluginStepFor finds the spec's resolved PluginStep for the plan step at

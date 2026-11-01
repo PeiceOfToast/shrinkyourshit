@@ -44,7 +44,7 @@ type JobContext struct {
 	Status      string            `json:"status"`
 	Phase       string            `json:"phase"`
 	FilePath    string            `json:"file_path,omitempty"`
-	StepIndex   int               `json:"step_index,omitempty"`
+	StepIndex   int               `json:"step_index,omitempty"` // hook contexts leave it unset
 	Settings    map[string]string `json:"settings,omitempty"`
 }
 
@@ -121,7 +121,7 @@ func NewRunner(dataDir string) *Runner {
 // captured output and the verdict. Run never panics and never blocks
 // beyond the manifest's timeout: the process group is killed on timeout.
 func (r *Runner) Run(ctx context.Context, p Plugin, job JobContext, phase string) Result {
-	return r.exec(ctx, p, job, phase, nil)
+	return r.exec(ctx, p, job, phase, nil, nil)
 }
 
 // StepRequest is one step-plugin run (task 32). Scratch is the job's
@@ -176,7 +176,8 @@ func (r *Runner) RunStep(ctx context.Context, p Plugin, req StepRequest) StepOut
 	job.StepIndex = req.StepIndex
 	job.Settings = req.Settings
 
-	res := r.exec(ctx, p, job, TypeStep, []string{fmt.Sprintf("SYS_STEP_INDEX=%d", req.StepIndex)})
+	res := r.exec(ctx, p, job, TypeStep, []string{fmt.Sprintf("SYS_STEP_INDEX=%d", req.StepIndex)},
+		[]string{req.FilePath})
 	out := StepOutcome{Result: res}
 	if !res.OK() {
 		return out
@@ -202,7 +203,9 @@ func (r *Runner) RunStep(ctx context.Context, p Plugin, req StepRequest) StepOut
 		return out
 	}
 	if err := validateStepFile(named, req.Scratch); err != nil {
-		res.Error = fmt.Sprintf("rejected result file: %s", err)
+		// A rejected result is a failed step: the caller fails the job
+		// with the offending path(s) in the message.
+		out.Result.Error = fmt.Sprintf("rejected result file: %s", err)
 		return out
 	}
 	out.File = named
@@ -240,9 +243,11 @@ func validateStepFile(name, scratch string) error {
 // exec is the shared process run (task 31): required settings gate the
 // run, the stdin JSON is the job context, the environment is exactly
 // SYS_PLUGIN_NAME, SYS_PHASE, SYS_DATA_DIR, the manifest's declared names
-// and (task 32, step runs) extraEnv's variables. The process group is
+// and (task 32, step runs) extraEnv's variables. extraArgs are appended
+// after the manifest's command (task 32, step runs: the working file, so a
+// plugin script never has to parse JSON to find it). The process group is
 // killed at the manifest's timeout.
-func (r *Runner) exec(ctx context.Context, p Plugin, job JobContext, phase string, extraEnv []string) Result {
+func (r *Runner) exec(ctx context.Context, p Plugin, job JobContext, phase string, extraEnv, extraArgs []string) Result {
 	job.Phase = phase
 
 	// Required settings gate the run: a missing value means the plugin
@@ -288,7 +293,8 @@ func (r *Runner) exec(ctx context.Context, p Plugin, job JobContext, phase strin
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, p.Manifest.Command[0], p.Manifest.Command[1:]...)
+	args := append(append([]string{}, p.Manifest.Command[1:]...), extraArgs...)
+	cmd := exec.CommandContext(runCtx, p.Manifest.Command[0], args...)
 	cmd.Dir = p.Dir
 	cmd.Env = env
 	cmd.Stdin = bytes.NewReader(raw)

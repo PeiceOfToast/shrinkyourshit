@@ -143,7 +143,17 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	var hc *flow.HealthCheckSpec
 	working := local // the working file the chain operates on
 	cur := srcInfo   // the current probe of the working file
-	if spec.Flow != nil {
+	if spec.Flow == nil {
+		// Pre-task-14 fallback (task 32): a spec without a flow graph
+		// still runs its resolved plugin steps, in chain order, against
+		// the working file.
+		if err := r.walkPluginFallback(ctx, spec, &working, &cur, dir, sink); err != nil {
+			if cancelled.Load() || ctx.Err() != nil {
+				return nil
+			}
+			return fail("%v", err)
+		}
+	} else {
 		plan, err := flow.Compile(*spec.Flow)
 		if err != nil {
 			return fail("invalid flow: %v", err)
@@ -160,7 +170,12 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 			if cancelled.Load() || ctx.Err() != nil {
 				return nil
 			}
-			next, err := r.execPluginStep(ctx, spec, step, i, working, dir, sink)
+			ps, ok := pluginStepFor(spec.Plugins, i)
+			if !ok {
+				return fail("plugin %s has no resolved step in the job spec at chain position %d",
+					pluginNameOf(step), i)
+			}
+			next, err := r.execPluginStep(ctx, spec, ps, working, dir, sink)
 			if err != nil {
 				if cancelled.Load() || ctx.Err() != nil {
 					return nil
