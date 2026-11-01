@@ -46,6 +46,6 @@ Same rules as the table above.
 |------|------|--------|-----------|
 | 32 | 32-plugins-as-flow-steps.md | done | PR #35 https://github.com/PeiceOfToast/shrinkyourshit/pull/35, v1.8 |
 | 33 | 33-script-escape-hatch.md | done | v1.8, PR #36 https://github.com/PeiceOfToast/shrinkyourshit/pull/36, branch task/33-script-escape-hatch |
-| 34 | 34-non-media-file-types.md | todo | v1.8 |
+| 34 | 34-non-media-file-types.md | in_progress | v1.8 |
 | 35 | 35-intel-qsv-tuning.md | todo | v1.8 |
 

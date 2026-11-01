@@ -21,15 +21,6 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
-// mediaExtensions is the list of file types the scanner considers media
-// (task 03). Everything else in a library folder is ignored.
-var mediaExtensions = map[string]bool{
-	".mkv": true, ".mp4": true, ".avi": true, ".mov": true, ".m4v": true,
-	".ts": true, ".wmv": true, ".flv": true, ".webm": true,
-	".mp3": true, ".flac": true, ".aac": true, ".m4a": true,
-	".ogg": true, ".opus": true, ".wav": true,
-}
-
 // Prober probes one file. It is a function type so tests can replace
 // ffprobe entirely; production uses probe.Probe.
 type Prober func(ctx context.Context, ffprobePath, path string) (probe.MediaInfo, error)
@@ -53,7 +44,8 @@ type ScanResult struct {
 	Seen      int `json:"seen"`     // media files found on disk
 	Probed    int `json:"probed"`   // ffprobe runs
 	Reused    int `json:"reused"`   // re-evaluated from the cached probe without ffprobe
-	Skipped   int `json:"skipped"`  // fingerprint unchanged, nothing to do
+	Skipped      int `json:"skipped"`       // fingerprint unchanged, nothing to do
+	SkippedKinds int `json:"skipped_kinds"` // files whose kind the library does not look for (task 34)
 	Queued    int `json:"queued"`   // jobs newly queued
 	Satisfied int `json:"satisfied"` // files (re)classified as satisfied
 	Missing   int `json:"missing"`  // DB rows marked missing (no longer on disk)
@@ -168,11 +160,11 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	}
 	logFlowTargetMismatch(s.log, lib, plan)
 
-	paths, err := collectMediaPaths(lib.Path)
+	paths, skippedKinds, err := s.collectMediaPaths(lib.Path, lib.FileKinds)
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("scanner: walk %s: %w", lib.Path, err)
 	}
-	res := ScanResult{Seen: len(paths)}
+	res := ScanResult{Seen: len(paths), SkippedKinds: skippedKinds}
 
 	findings := make([]*finding, 0, len(paths))
 	var (
@@ -496,11 +488,17 @@ func (s *Scanner) apply(ctx context.Context, lib *store.Library, plan flow.Plan,
 	return false, true, nil
 }
 
-// collectMediaPaths walks root and returns every regular, non-hidden media
-// file path. The root itself may be a dotfolder — only entries inside are
-// filtered.
-func collectMediaPaths(root string) ([]string, error) {
+// collectMediaPaths walks root and returns every regular, non-hidden file
+// whose kind the library looks for. Files of other kinds are counted as
+// skipped and logged at debug, never queued and never a failure (task 34).
+// The root itself may be a dotfolder — only entries inside are filtered.
+func (s *Scanner) collectMediaPaths(root string, kinds []string) ([]string, int, error) {
+	allowed := map[string]bool{}
+	for _, k := range kinds {
+		allowed[k] = true
+	}
 	var paths []string
+	skipped := 0
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err // missing root or unreadable dir fails the scan
@@ -514,16 +512,19 @@ func collectMediaPaths(root string) ([]string, error) {
 		if !d.Type().IsRegular() || isHidden(d.Name()) {
 			return nil // symlinks, devices and dotfiles are not library media
 		}
-		if !mediaExtensions[strings.ToLower(filepath.Ext(d.Name()))] {
+		kind := probe.KindForPath(path)
+		if !allowed[string(kind)] {
+			skipped++
+			s.log.Debug("scanner: skipped file: kind not wanted", "path", path, "kind", kind)
 			return nil
 		}
 		paths = append(paths, path)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return paths, nil
+	return paths, skipped, nil
 }
 
 // statAndFingerprint returns size, mtime (unix seconds) and the

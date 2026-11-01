@@ -51,6 +51,10 @@ type Library struct {
 	// LastScanAt is when a scan of this library last finished without
 	// error (task 19). Zero means "never scanned".
 	LastScanAt time.Time
+	// FileKinds is what the library holds (task 34): a non-empty list of
+	// probe.Kinds with no duplicates. The scanner skips files whose kind
+	// is not listed before probing them.
+	FileKinds []string
 }
 
 // File is one media file inside a library. Probe is opaque JSON produced by

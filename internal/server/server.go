@@ -80,16 +80,26 @@ type ResultInfo struct {
 type ResultInspector func(ctx context.Context, ffprobePath, path string) (ResultInfo, error)
 
 // defaultInspector stats, fingerprints and probes the file with ffprobe.
+// A file that is not media is never probed (task 34): ffprobe cannot
+// describe it, so its identity and size come from the stat and the
+// fingerprint alone.
 func defaultInspector(ctx context.Context, ffprobePath, path string) (ResultInfo, error) {
-	info, err := probe.Probe(ctx, ffprobePath, path)
-	if err != nil {
-		return ResultInfo{}, err
-	}
 	fp, err := probe.Fingerprint(path)
 	if err != nil {
 		return ResultInfo{}, err
 	}
 	st, err := os.Stat(path)
+	if err != nil {
+		return ResultInfo{}, err
+	}
+	if !probe.IsMedia(probe.KindForPath(path)) {
+		return ResultInfo{
+			Fingerprint: fp,
+			Size:        st.Size(),
+			Mtime:       st.ModTime().Unix(),
+		}, nil
+	}
+	info, err := probe.Probe(ctx, ffprobePath, path)
 	if err != nil {
 		return ResultInfo{}, err
 	}

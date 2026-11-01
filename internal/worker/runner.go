@@ -114,6 +114,13 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		}
 	}
 
+	// A file that is not media (task 34) is never probed: no encoder
+	// runs, the fingerprint alone is the identity, and the result policy
+	// applies the working copy as it is.
+	if !probe.IsMedia(probe.KindForPath(local)) {
+		return r.completeNonMedia(ctx, spec, local, dir, sink, tail, cancelled)
+	}
+
 	srcInfo, err := r.prober(ctx, r.cfg.FFprobePath, local)
 	if err != nil {
 		return fail("probe source: %v", err)

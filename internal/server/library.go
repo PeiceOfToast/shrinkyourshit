@@ -23,6 +23,8 @@ import (
 // generated from the compiled Target here; a hand-edited flow is stored
 // through UpdateFlow instead. On update an unchanged Target keeps the
 // stored flow, so a name/watch-only save cannot destroy manual steps.
+// FileKinds is what the library holds (task 34): a non-empty list of valid
+// probe.Kinds with no duplicates.
 type LibraryParams struct {
 	Name         string
 	Path         string
@@ -31,6 +33,7 @@ type LibraryParams struct {
 	Watch        bool
 	Schedule     string
 	ResultPolicy string
+	FileKinds    []string
 }
 
 // LibraryManager owns library CRUD and the target-driven re-evaluation of a
@@ -183,6 +186,28 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		return nil, fmt.Errorf("invalid result_policy %q: want one of %v", policy, store.ResultPolicyValues())
 	}
 
+	// FileKinds must be non-empty, valid, and hold no duplicates (task 34).
+	if len(p.FileKinds) == 0 {
+		return nil, fmt.Errorf("library file_kinds must not be empty: want at least one of %v", probe.KindValues())
+	}
+	seen := map[string]bool{}
+	for _, k := range p.FileKinds {
+		valid := false
+		for _, v := range probe.KindValues() {
+			if string(v) == k {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("invalid file kind %q: want one of %v", k, probe.KindValues())
+		}
+		if seen[k] {
+			return nil, fmt.Errorf("duplicate file kind %q", k)
+		}
+		seen[k] = true
+	}
+
 	target := flow.Default()
 	if p.TargetJSON != nil {
 		var err error
@@ -204,6 +229,7 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		Watch:        p.Watch,
 		Schedule:     p.Schedule,
 		ResultPolicy: policy,
+		FileKinds:    p.FileKinds,
 	}
 	if old != nil {
 		lib.ID = old.ID
