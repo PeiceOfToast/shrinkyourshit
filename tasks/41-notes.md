@@ -26,14 +26,14 @@ No other existing assertion changed. None deleted.
 ## Verification
 - `web`: `npx tsc --noEmit` clean. `npx vitest run`: 57 files, 356 tests passed (baseline was 55 files, 344).
 - `npm run lint` (eslint, `--max-warnings 0`) clean. `npm run format:check` clean. `npm run build` clean.
-- Playwright (`npx playwright test`, after `npm run build`, copying `web/dist` into `internal/webui/dist`, and `go build` to `bin/shrinkyourshit`): 58 passed, 6 skipped. The 6 skips are the suite's own per-viewport skips, as in task 40. The mobile audit passes at 320, 390, 414 and 768 on `/libraries/new` and (because the seed created a library) on `/libraries/:id` and `/libraries/:id/edit`.
-- Go: `go test ./...` all packages ok. `go vet ./...` clean. `scripts/check-spdx.sh` exit 0.
-- **Not run:** `golangci-lint` (not installed here). `make` is not installed here either, so the make steps were run by hand. `make test-integration` (no ffmpeg here, so the file-table card test and the integration suites skipped).
-- **Environment workaround:** the Playwright Chromium needed `libatk`. It loaded through `LD_LIBRARY_PATH` pointing at the user-local `~/.local/chromium-deps/lib`. No system packages were changed.
+- Playwright (`npx playwright test` against the built binary, with ffmpeg on PATH so the seed creates a file): 61 passed, 3 skipped. The skips are the suite's own per-viewport skips. The mobile audit passes at 320, 390, 414 and 768 on `/libraries/new`, `/libraries/:id` and `/libraries/:id/edit`.
+- Go: `go test ./...` all packages ok. `go vet ./...` clean. `golangci-lint run`: 0 issues. `scripts/check-spdx.sh`: exit 0.
+- Integration: `go test -tags=integration ./...` (the `make test-integration` command), run with ffmpeg on PATH. See the final message for the result.
+- Environment: `make`, `gh`, `golangci-lint` and `ffmpeg` live in `~/.local/bin`, and Chromium's libraries in `~/.local/chromium-deps/lib` (passed through `LD_LIBRARY_PATH`). No system packages were changed.
 
 ## Summary
 1. **Built:** New library page on FormSections with a sticky "Add library" bar (Cancel, and "Pick a folder first." while disabled). Stop slider restyled with the `.range` class, labels trimmed under `sm`. Kind picker and the subtitles and watch boxes use `Checkbox`. Folder picker restyled as an `lg` dialog. Edit page's sections, plain option labels, and "Exact settings" panel (interim, same values).
 2. **Skipped:** the Danger zone and Remove move (task 47). The `main pb-24` rule (AppShell). FlowPreviewPanel restyle. `Disclosure` for the exact panel.
 3. **Next tasks should know:** the stop slider's `hidden sm:inline-flex` labels are not `sr-only` (see deviation 1). The Edit page's exact panel is a native `details` with a ref, so task 47 removes it rather than reusing it. `FlowPreviewPanel` still has raw slate classes, so task 53's lint will flag it unless it gets restyled first.
 4. **Owner decisions:** deviation 1 (stop labels not sr-only) and deviation 2 (exact panel built on details, not Disclosure) are the two choices to confirm. Spec 8.4 #1 (Edit loses the rule controls, task 47) is still open.
-5. **Known gaps:** `golangci-lint` was not run here. Playwright ran with no ffmpeg, so the file-table card and integration checks were skipped locally; CI has ffmpeg and will run them.
+5. **Known gaps:** none in the checks this task owns. The Playwright run uses the local ffmpeg, which is a static build (7.0.2), not the jellyfin-ffmpeg that the Docker image ships.
