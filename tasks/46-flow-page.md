@@ -13,14 +13,14 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] Shares the Rules PageHeader and SegmentedControl.
-- [ ] One "Edit flow".
-- [ ] Canvas background equals canvas `rgb(2,6,23)` (Playwright: computed `background-color` of `.react-flow`).
-- [ ] No step-id text on node faces (FlowCanvas test: `canvas-node-probe` does not contain "probe" as a separate element); the inspector shows the id.
-- [ ] fitView `minZoom` 0.85.
-- [ ] Minimap only at 10 or more nodes.
-- [ ] The mobile notice is a Banner.
-- [ ] `e2e/mobile.spec.ts` flow leg still green.
+- [x] Shares the Rules PageHeader and SegmentedControl.
+- [x] One "Edit flow".
+- [x] Canvas background equals canvas `rgb(2,6,23)` (Playwright: computed `background-color` of `.react-flow`).
+- [x] No step-id text on node faces (FlowCanvas test: `canvas-node-probe` does not contain "probe" as a separate element); the inspector shows the id.
+- [x] fitView `minZoom` 0.85.
+- [x] Minimap only at 10 or more nodes.
+- [x] The mobile notice is a Banner.
+- [x] `e2e/mobile.spec.ts` flow leg still green.
 
 ## Rules for this wave
 
