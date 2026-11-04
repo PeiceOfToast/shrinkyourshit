@@ -103,15 +103,14 @@ Format: original file:line (in `HEAD`), old to new, why.
 
 ## Verification
 
-- `npm run test` (web): 58 files, 395 tests passed.
+- `npm run test` (web): 58 files, 396 tests passed. `make test` exit 0.
 - `npm run lint` (`eslint --max-warnings 0`): clean after the rulesSummary export was removed (a react-refresh warning).
 - `npm run format:check`: clean. `npx tsc --noEmit`: clean. `npm run build`: clean.
 - `go test ./...`: all packages `ok` (no Go changes).
 - Playwright (`npx playwright test`), against a binary rebuilt with the new embed (`internal/webui/dist` copied
   from `web/dist`, `go build`), with `LD_LIBRARY_PATH=/home/mb/.local/chromium-deps/lib SHRINK_E2E_PORT=8733`:
   61 passed, 6 skipped (the same file-table skips as tasks 45 and 46).
-- `make` is not installed on this VM, so the Makefile targets were run by hand. `golangci-lint` was not run;
-  there are no Go changes.
+- `make test` and `make lint` run with the VM's own `make` and `golangci-lint` (in `/home/mb/.local/bin`): both exit 0.
 
 ## Summary
 
