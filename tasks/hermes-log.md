@@ -283,3 +283,8 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T05:58:30Z pm: killed lingering sleeping claude process (pid 1458680) from run 20261104-053121-2c090cab; it had already pushed its STATUS.md commit and had only a 15 min wakeup left to do a merge that belongs to the PM
 - 2026-11-04T05:58:30Z pm: v1.9 next task is 43 (libraries list), starts next tick
 - 2026-11-04T06:01:42Z started task 43 (Libraries list) run 20261104-060113-1a774e2d role=build
+- 2026-11-04T06:34:00Z task 43: PR #46 CI was red only on e2e, a real defect (whole-row link in the libraries list measured 38 px at 320/390/414/768, under the 44 px touch rule); the fix makes the DataList rowHref link a 44 px block (min-h-11) and restores the strict 44 px assertion the earlier run had relaxed in LibrariesPage.test.tsx, commit d308c21
+- 2026-11-04T06:34:00Z task 43: verified PR #46 (CI green on all nine checks including e2e and docker-arm64, acceptance checklist ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, 57 web test files / 368 tests and web lint clean on the VM), merged squash, main at 96fcfa3, remote branch deleted, main pulled on VM
+- 2026-11-04T06:34:00Z pm: killed lingering claude process (pid 1470513, run 20261104-060113-1a774e2d) that status reported done 30+ min earlier; it had left its e2e fix uncommitted in the working tree, so the PM committed and pushed it after running the web suites
+- 2026-11-04T06:34:00Z pm: local Playwright cannot launch chromium on the coding VM (browserType.launch fails, missing system deps), so local e2e runs prove nothing; CI e2e is the only valid gate
+- 2026-11-04T06:34:00Z pm: v1.9 next task is 44 (library detail), starts next tick
