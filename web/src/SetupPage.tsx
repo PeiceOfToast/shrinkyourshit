@@ -15,6 +15,9 @@ import { RedirectWhenSetupComplete } from './guards'
 import SetupWizard from './SetupWizard'
 import { initialWizardState, type WizardState } from './wizardModel'
 import { useToast } from './toastContext'
+import Banner from './Banner'
+import Card from './Card'
+import Icon from './Icon'
 
 export default function SetupPage() {
   return (
@@ -78,28 +81,31 @@ function SetupFlow() {
 
   if (joinedServer) {
     return (
-      <main className="flex min-h-full items-center justify-center bg-slate-950 p-4 text-slate-100">
-        <div
-          className="w-full max-w-xl rounded-2xl bg-slate-900 p-8 shadow-xl ring-1 ring-slate-800"
-          data-testid="joined-panel"
-        >
-          <h1 className="text-xl font-bold">Joining {joinedServer}</h1>
-          <p className="mt-3 text-slate-300">
-            This machine is now a helper of that server. Approve it in the
-            server's Nodes page — its window will show “Waiting for approval”
-            until you do. This page goes away while the machine switches over.
-          </p>
+      <main className="grid min-h-dvh place-items-center bg-canvas p-4 text-fg">
+        <div className="flex w-full max-w-lg flex-col gap-6">
+          <Wordmark />
+          <Card padding="none" className="p-6 sm:p-8" testId="joined-panel">
+            <div className="flex flex-col gap-4">
+              <h1 className="text-title text-fg">Joining {joinedServer}</h1>
+              <Banner tone="info">
+                Approve this machine on the server's Nodes page.
+              </Banner>
+              <p className="text-body text-fg-muted">
+                This machine is now a helper of that server. Its window will
+                show “Waiting for approval” until you approve it. This page goes
+                away while the machine switches over.
+              </p>
+            </div>
+          </Card>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="flex min-h-full items-center justify-center bg-slate-950 p-4 text-slate-100">
-      <div className="w-full max-w-xl">
-        <h1 className="mb-6 text-center text-3xl font-bold tracking-tight">
-          ShrinkYourShit
-        </h1>
+    <main className="grid min-h-dvh place-items-center bg-canvas p-4 text-fg">
+      <div className="flex w-full max-w-lg flex-col gap-6">
+        <Wordmark />
         <SetupWizard
           state={state}
           setState={setState}
@@ -120,5 +126,15 @@ function SetupFlow() {
         />
       </div>
     </main>
+  )
+}
+
+/** The brand mark and name. A div, not a heading: each screen's h1 is its title. */
+function Wordmark() {
+  return (
+    <div className="flex items-center justify-center gap-2 text-base font-semibold text-fg">
+      <Icon name="brand" className="h-5 w-5 shrink-0 text-accent-text" />
+      ShrinkYourShit
+    </div>
   )
 }
