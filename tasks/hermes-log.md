@@ -261,3 +261,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T03:08:57Z task 37: build run 20261104-024618-10bd43cf finished; verified checklist ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, make test 262 web tests green, make lint clean, PR #40 CI green incl docker-arm64
 - 2026-11-04T03:08:57Z task 37: merged PR #40 squash (main at 1f43472), remote branch deleted, main pulled on VM
 - 2026-11-04T03:08:57Z pm: v1.9 next task is 38 (layout primitives), starts next tick
+- 2026-11-04T03:18:38Z task 38: started Claude Code build (haiku) run 20261104-031627-36191582 on branch task/38-layout-primitives; claude_client.py timed out writing run meta.json after the ssh launch, but the session started and is producing output, so no restart was needed
