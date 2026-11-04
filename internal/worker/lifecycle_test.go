@@ -125,7 +125,10 @@ func TestWorkerDrainFinishesAndStops(t *testing.T) {
 	api.mu.Lock()
 	api.desiredState = NodeStateDraining
 	api.mu.Unlock()
-	_, spec2 := defaultSpec(t, dir, "job2")
+	// job2 gets its own directory: job1's replace step removes movie.mp4
+	// from dir, so sharing dir would let job1 delete job2's fixture while
+	// it is being written and stat'ed.
+	_, spec2 := defaultSpec(t, t.TempDir(), "job2")
 	api.enqueue("job2", spec2)
 
 	waitUntil(t, "job1 completes", func() bool {
