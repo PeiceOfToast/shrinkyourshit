@@ -342,3 +342,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T20:29:27Z pm: task 54 verified on VM 201: checklist 6/6, go test ./... exit 0, make test green (444 web tests), make lint exit 0 (spdx + prettier clean), DECISIONS.md unchanged vs origin/main
 - 2026-11-04T20:29:27Z pm: PR #58 opened, CI run 41905138339 green 9/9 (go, e2e, web, docker, docker-arm64, cross, installer, installer-powershell, report)
 - 2026-11-04T20:29:27Z pm: PR #58 squash-merged as 2981f6e, branch task/54-target-scale-and-rate deleted; STATUS.md 54 done; task 55 dispatched
+- 2026-11-04T20:58:00Z pm: task 55 build run 20261104-202935 done; checklist 3/3 but made no PR and make lint failed QF1001 (rate.go:30, De Morgan), so no merge
+- 2026-11-04T21:04:00Z pm: follow-up run 20261104-205307 fixed QF1001, corrected the false make-not-installed note, set STATUS 55 done; verified on VM 201: make test exit 0 (go packages ok, 444 web tests), make lint exit 0 (golangci-lint 0 issues, spdx, eslint, prettier), DECISIONS.md unchanged vs origin/main
+- 2026-11-04T21:16:37Z pm: PR #59 opened, CI run 41912770158 green 9/9 (go, e2e, web, docker, docker-arm64, cross, installer, installer-powershell, report); squash-merged as 5d18d5e, branch task/55-encoder-rate-and-scale-args deleted, main pulled on VM
