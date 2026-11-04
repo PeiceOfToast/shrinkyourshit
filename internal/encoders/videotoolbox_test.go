@@ -58,3 +58,31 @@ func TestBuildArgsVideotoolbox(t *testing.T) {
 		keepAllAudioCodecs, keepAllSubCodecs,
 		"out.mkv"))
 }
+
+// TestRateArgsVideotoolbox (task 55): bitrate mode passes -b:v with the
+// optional cap and no -q:v; a scale joins the video options; the preset is
+// skipped (VideoToolbox has no preset flag). crf is never offered to this
+// backend (the registry skips it, see TestRateArgsRegistryRateMode).
+func TestRateArgsVideotoolbox(t *testing.T) {
+	bitrate := codecTarget(flow.CodecHEVC, 3)
+	bitrate.Video.Rate = &flow.RateTarget{Mode: flow.RateModeBitrate, BitrateKBPS: 4000, MaxKBPS: 6000}
+	assertArgs(t, VideoToolbox, withTarget(bitrate), join(
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+		"-i", "in.mkv",
+		keepAllMaps,
+		"-c:v", "hevc_videotoolbox", "-b:v", "4000k", "-maxrate", "6000k", "-bufsize", "12000k",
+		"-allow_sw", "0",
+		keepAllAudioCodecs, keepAllSubCodecs,
+		"out.mkv"))
+
+	scaled := codecTarget(flow.CodecHEVC, 3)
+	scaled.Video.Scale = &flow.ScaleTarget{Height: 720, OnlyIfLarger: true}
+	scaled.Video.Preset = "slow"
+	assertArgs(t, VideoToolbox, withTarget(scaled), join(
+		"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y",
+		"-i", "in.mkv",
+		keepAllMaps,
+		"-c:v", "hevc_videotoolbox", "-q:v", "60", "-allow_sw", "0", "-vf", "scale=-2:720",
+		keepAllAudioCodecs, keepAllSubCodecs,
+		"out.mkv"))
+}

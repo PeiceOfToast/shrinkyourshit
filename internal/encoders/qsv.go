@@ -358,16 +358,23 @@ func (e *qsvEncoder) BuildArgs(spec Spec) []string {
 	codec := spec.Target.Video.Codec
 	v := e.variantFor(codec)
 	q := qualityFor(spec.Target.Video.Quality)
+	// h264_vaapi has no global_quality mode; -qp sets the fixed quantizer.
+	qualityFlag := "-global_quality"
+	if v.device != "" && codec == flow.CodecH264 {
+		qualityFlag = "-qp"
+	}
+	video := hwRateArgs(spec, v.encoderName, qualityFlag, q.QSVGQ)
 	if v.device == "" {
-		video := []string{"-c:v", v.encoderName, "-global_quality", itoa(q.QSVGQ)}
 		video = e.appendExtras(video, codec, spec)
+		// The named preset is passed through on the plain QSV path; the
+		// vaapi variant has no preset option (the *_vaapi encoders take
+		// -quality instead), so it never carries one.
+		if spec.Preset != "" {
+			video = append(video, "-preset", spec.Preset)
+		}
 		return buildCommand(spec, nil, video)
 	}
-	video := []string{"-c:v", v.encoderName, "-global_quality", itoa(q.QSVGQ), "-vf", "format=nv12,hwupload"}
-	// h264_vaapi has no global_quality mode; -qp sets the fixed quantizer.
-	if codec == flow.CodecH264 {
-		video = []string{"-c:v", v.encoderName, "-qp", itoa(q.QSVGQ), "-vf", "format=nv12,hwupload"}
-	}
+	video = append(video, "-vf", "format=nv12,hwupload")
 	return buildCommand(spec, []string{"-vaapi_device", v.device}, video)
 }
 
@@ -382,7 +389,9 @@ func (e *qsvEncoder) BuildArgs(spec Spec) []string {
 func (e *qsvEncoder) appendExtras(video []string, codec string, spec Spec) []string {
 	prefs := e.requestedPrefs()
 	f := e.featuresFor(codec)
-	if prefs.ExtraQuality && f.LookAhead && f.ExtBRC {
+	// Look-ahead is a rate mode of its own and does not combine with -b:v,
+	// so it is left out in bitrate mode (task 55).
+	if prefs.ExtraQuality && f.LookAhead && f.ExtBRC && rateMode(spec.Rate) != flow.RateModeBitrate {
 		video = append(video, "-look_ahead", "1", "-extbrc", "1")
 	}
 	if prefs.LowPower && f.LowPower {

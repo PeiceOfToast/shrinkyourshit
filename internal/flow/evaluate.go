@@ -51,7 +51,12 @@ func videoReasons(info probe.MediaInfo, t Target) []string {
 	for _, v := range info.Video {
 		alreadyTarget := v.Codec == t.Video.Codec
 		if alreadyTarget && !t.Video.ReencodeIfSameCodec {
-			continue // satisfied (DECISIONS.md B2)
+			// Satisfied (DECISIONS.md B2) unless a scale would change the
+			// picture: a 4K file with a 1080p target still needs work.
+			if ScaleApplies(v.Height, t.Video.Scale) {
+				reasons = append(reasons, fmt.Sprintf("video is %dp, scale target is %dp", v.Height, t.Video.Scale.Height))
+			}
+			continue
 		}
 		r := fmt.Sprintf("video is %s, target is %s", or(v.Codec, "unknown"), t.Video.Codec)
 		if alreadyTarget {

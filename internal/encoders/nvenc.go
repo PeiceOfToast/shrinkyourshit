@@ -76,14 +76,24 @@ func (e *nvencEncoder) SelfTest(ctx context.Context) error {
 }
 
 // BuildArgs maps the quality step onto hevc_nvenc/av1_nvenc/h264_nvenc
-// (constant quality, preset p5). video.codec=copy is handled centrally by
-// buildCommand.
+// (constant quality, preset p5 in quality mode). crf mode uses the Target's
+// CRF as the constant quality (-cq, NVENC's CRF-like knob), bitrate mode uses
+// -b:v. video.codec=copy is handled centrally by buildCommand.
 func (e *nvencEncoder) BuildArgs(spec Spec) []string {
 	if spec.Target.Video.Codec == flow.CodecCopy {
 		return buildCommand(spec, nil, nil)
 	}
 	name := nvencEncoderFor[spec.Target.Video.Codec]
 	q := qualityFor(spec.Target.Video.Quality)
-	video := []string{"-c:v", name, "-cq", itoa(q.NVENCCQ), "-preset", "p5"}
-	return buildCommand(spec, nil, video)
+	var video []string
+	switch rateMode(spec.Rate) {
+	case flow.RateModeBitrate:
+		video = append([]string{"-c:v", name}, bitrateArgs(spec)...)
+	case flow.RateModeCRF:
+		video = []string{"-c:v", name, "-cq", itoa(constantQuality(spec, 0))}
+	default:
+		video = []string{"-c:v", name, "-cq", itoa(q.NVENCCQ)}
+	}
+	video = append(video, capArgs(spec)...)
+	return buildCommand(spec, nil, append(video, "-preset", presetFor(spec, nvencPresets)))
 }

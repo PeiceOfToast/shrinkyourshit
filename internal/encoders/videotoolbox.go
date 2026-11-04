@@ -82,6 +82,15 @@ func (e *videotoolboxEncoder) BuildArgs(spec Spec) []string {
 	}
 	name := videotoolboxEncoderFor[spec.Target.Video.Codec]
 	q := qualityFor(spec.Target.Video.Quality)
-	video := []string{"-c:v", name, "-q:v", itoa(q.VideoToolboxQ), "-allow_sw", "0"}
+	// crf mode never reaches here: Registry skips this backend for crf
+	// (rateModeSupported), so the quality path is the only fallback.
+	var video []string
+	if rateMode(spec.Rate) == flow.RateModeBitrate {
+		video = append([]string{"-c:v", name}, bitrateArgs(spec)...)
+	} else {
+		video = []string{"-c:v", name, "-q:v", itoa(q.VideoToolboxQ)}
+	}
+	video = append(video, capArgs(spec)...)
+	video = append(video, "-allow_sw", "0")
 	return buildCommand(spec, nil, video)
 }

@@ -118,6 +118,21 @@ type ScaleTarget struct {
 	AllowUpscale bool `json:"allow_upscale"`
 }
 
+// ScaleApplies reports whether scaling a video of srcHeight to the target
+// changes it. It is the one rule the encoders and the satisfied rule share:
+// a source taller than the target is scaled down; a source shorter than the
+// target is scaled up only with AllowUpscale; a source already at the target
+// height, or of unknown height, is left alone (no filter, no re-encode).
+func ScaleApplies(srcHeight int, s *ScaleTarget) bool {
+	if s == nil || srcHeight <= 0 || srcHeight == s.Height {
+		return false
+	}
+	if srcHeight > s.Height {
+		return true
+	}
+	return s.AllowUpscale
+}
+
 // RateTarget is one of three rate control modes. Crf and bitrate are
 // mutually exclusive; MaxKBPS caps either one (zero means uncapped).
 type RateTarget struct {

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"sync"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
@@ -181,9 +180,7 @@ func (e *vaapiEncoder) BuildArgs(spec Spec) []string {
 	if codec == flow.CodecH264 {
 		qualityFlag = "-qp"
 	}
-	video := []string{
-		"-c:v", v.encoderName, qualityFlag, strconv.Itoa(q.QSVGQ),
-		"-vf", "format=nv12,hwupload",
-	}
+	video := hwRateArgs(spec, v.encoderName, qualityFlag, q.QSVGQ)
+	video = append(video, "-vf", "format=nv12,hwupload")
 	return buildCommand(spec, []string{"-vaapi_device", v.device}, video)
 }
