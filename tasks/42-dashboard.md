@@ -13,11 +13,11 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] EncodingStatus panel with the four sentences in 5.3 (a unit test per state).
-- [ ] Stats with the labels and subs in 5.3, keeping the test ids.
-- [ ] Recent activity shows `file_name`, never `job {id}`.
-- [ ] The empty dashboard uses EmptyState with the "Add library" link.
-- [ ] Working now and Nodes split 8/4 at `lg`.
+- [x] EncodingStatus panel with the four sentences in 5.3 (a unit test per state).
+- [x] Stats with the labels and subs in 5.3, keeping the test ids.
+- [x] Recent activity shows `file_name`, never `job {id}`.
+- [x] The empty dashboard uses EmptyState with the "Add library" link.
+- [x] Working now and Nodes split 8/4 at `lg`.
 
 ## Rules for this wave
 

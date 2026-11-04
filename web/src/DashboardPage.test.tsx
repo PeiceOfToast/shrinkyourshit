@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import DashboardPage from './DashboardPage'
 import { LiveEvents } from './events'
 import { updateStatusKey } from './queries'
+import { ToastProvider } from './toast'
 import {
   FakeEventSource,
   installFetchMock,
@@ -122,10 +123,12 @@ function renderDashboard(
   client.setQueryData(updateStatusKey, updateStatus)
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        {withEvents && <LiveEvents />}
-        <DashboardPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          {withEvents && <LiveEvents />}
+          <DashboardPage />
+        </MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }
@@ -187,7 +190,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText(/1m 30s left/)).toBeInTheDocument()
   })
 
-  it('shows a one-line empty state that links to /libraries/new, with no form and no create button', async () => {
+  it('shows the EmptyState that links to /libraries/new, with no form and no create button', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -217,8 +220,8 @@ describe('DashboardPage', () => {
       expect(screen.getByTestId('empty-dashboard')).toBeInTheDocument(),
     )
     const empty = screen.getByTestId('empty-dashboard')
-    expect(empty).toHaveTextContent('No libraries yet.')
-    expect(screen.getByRole('link', { name: 'Add one' })).toHaveAttribute(
+    expect(empty).toHaveTextContent('Add your first library')
+    expect(screen.getByRole('link', { name: 'Add library' })).toHaveAttribute(
       'href',
       '/libraries/new',
     )
@@ -231,7 +234,7 @@ describe('DashboardPage', () => {
     expect(screen.queryByTestId('dashboard')).not.toBeInTheDocument()
   })
 
-  it('renders the four stats as fluid StatCards, 2 columns below sm and 4 at sm and up', async () => {
+  it('renders the four stats as fluid StatCards, 2 columns below lg and 4 from lg up', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
@@ -256,9 +259,9 @@ describe('DashboardPage', () => {
       .findByTestId('stat-space-saved')
       .then((card) => card.parentElement)
     expect(grid?.className).toContain('grid-cols-2')
-    expect(grid?.className).toContain('sm:grid-cols-4')
-    // One grid produces the geometry jsdom cannot measure: 2 columns on a
-    // phone, 4 from sm up. Testids and order are the dashboard's contract.
+    expect(grid?.className).toContain('lg:grid-cols-4')
+    // One grid produces the geometry jsdom cannot measure: 2 columns below
+    // lg, 4 from lg up (spec 5.3). Testids and order are the dashboard's contract.
     const ids = Array.from(grid?.children ?? []).map(
       (el) => (el as HTMLElement).dataset.testid ?? '',
     )
@@ -328,13 +331,13 @@ describe('DashboardPage', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('history-job-done-1')).toHaveTextContent(
-        'shrunk',
+        'Shrunk',
       ),
     )
     expect(screen.getByTestId('history-job-done-1')).toHaveTextContent(
       '4.0 GB → 2.0 GB',
     )
-    expect(screen.getByTestId('history-job-fail-1')).toHaveTextContent('failed')
+    expect(screen.getByTestId('history-job-fail-1')).toHaveTextContent('Failed')
 
     // The Nodes card is live: each node with its state, and the working
     // node's progress bar.
@@ -345,10 +348,10 @@ describe('DashboardPage', () => {
       'media-box (built-in)',
     )
     expect(screen.getByTestId('node-activity-node-1')).toHaveTextContent(
-      'ready',
+      'Running',
     )
     expect(screen.getByTestId('node-activity-node-2')).toHaveTextContent(
-      'waiting for approval · working on',
+      'Waiting for approval',
     )
     await waitFor(() =>
       expect(screen.getByTestId('node-progress-node-2')).toHaveAttribute(
@@ -582,5 +585,232 @@ describe('DashboardPage', () => {
     // The shell owns the single SSE stream, not the page.
     expect(FakeEventSource.instances).toHaveLength(0)
     void fireEvent
+  })
+
+  it('shows the paused panel with the waiting count and a resume action', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture({ desired_state: 'stopped' })], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderDashboard()
+    expect(
+      await screen.findByText('Encoding is paused. 3 files are waiting.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Resume encoding' }),
+    ).toBeEnabled()
+  })
+
+  it('says the paused panel with nothing waiting when the queue is empty', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: { ...zeros, queued: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture({ desired_state: 'stopped' })], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderDashboard()
+    expect(
+      await screen.findByText(
+        'Encoding is paused. Nothing is waiting right now.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('says how many files are shrinking while encoding runs', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [job(20)], total: 1 },
+      },
+    ])
+    renderDashboard()
+    expect(
+      await screen.findByText('Shrinking 1 file · 3 waiting'),
+    ).toBeInTheDocument()
+  })
+
+  it('says all caught up when nothing runs and nothing is paused', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: { ...zeros, queued: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderDashboard()
+    expect(await screen.findByText('All caught up.')).toBeInTheDocument()
+  })
+
+  it('names the running file, never its job id, and splits Working now and Nodes 8/4 at lg', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: {
+          items: [
+            {
+              ...job(30),
+              file_name: 'sample-1080p.mkv',
+              file_path: '/media/movies/sample-1080p.mkv',
+            },
+          ],
+          total: 1,
+        },
+      },
+    ])
+    renderDashboard()
+    const row = await screen.findByTestId('running-job-job-1')
+    expect(row).toHaveTextContent('sample-1080p.mkv')
+    expect(row).not.toHaveTextContent('job job-1')
+    expect(screen.getByTestId('dashboard-working').className).toContain(
+      'lg:col-span-8',
+    )
+    expect(screen.getByTestId('dashboard-nodes').className).toContain(
+      'lg:col-span-4',
+    )
+  })
+
+  it('shows the stat sub-lines: files from the nodes, nothing to do, and failures in danger', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: { ...zeros, failed: 2 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [nodeFixture({ stats: { files_done: 5, bytes_saved: 1 } })],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderDashboard()
+    expect(await screen.findByTestId('stat-space-saved')).toHaveTextContent(
+      'from 5 files',
+    )
+    expect(screen.getByTestId('stat-files')).toHaveTextContent('Files watched')
+    expect(screen.getByTestId('stat-satisfied')).toHaveTextContent(
+      'nothing to do',
+    )
+    expect(screen.getByTestId('stat-queued')).toHaveTextContent('2 failed')
+  })
+
+  it('shows the file name and the size change in Recent activity', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: {
+          items: [
+            {
+              ...job(100, 'done'),
+              id: 'done-1',
+              file_name: 'sample-51.mkv',
+              bytes_before: 1_000_000,
+              bytes_after: 900_000,
+            },
+          ],
+          total: 1,
+        },
+      },
+    ])
+    renderDashboard()
+    const row = await screen.findByTestId('history-job-done-1')
+    expect(row).toHaveTextContent('sample-51.mkv')
+    expect(row).toHaveTextContent('Movies')
+    expect(row).toHaveTextContent('1.0 MB → 900 KB')
+    expect(row).toHaveTextContent('−10 %')
+    expect(row).not.toHaveTextContent('job done-1')
   })
 })

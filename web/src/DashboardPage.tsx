@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Dashboard (task 10): read only, always. Space saved, files, queue,
- * running jobs with live progress (SSE invalidates the jobs query), node
- * activity, recent history and a warning surface driven by real state
- * (every node stopped or disabled, heartbeat lost, recent failures).
- * Creating a library happens only at /libraries/new, which the empty
- * state links to.
+ * Dashboard (task 10, restyled in task 42 to spec 5.3): read only, always.
+ * It answers "is it working, and how much has it saved" in this order: the
+ * EncodingStatus panel, warnings, four stats, the live work and the nodes,
+ * and the recent history. Creating a library happens only at /libraries/new,
+ * which the empty state links to.
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -18,12 +17,29 @@ import {
   type Job,
   type Node,
 } from './api'
+import Badge from './Badge'
+import Banner from './Banner'
+import Card from './Card'
+import EmptyState from './EmptyState'
+import EncodingStatus from './EncodingStatus'
+import Icon from './Icon'
 import PageContainer from './PageContainer'
+import PageHeader from './PageHeader'
 import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
-import { formatBytes, formatEta, statusLabel } from './easyModel'
+import {
+  formatBytes,
+  formatCount,
+  formatEta,
+  formatPercent,
+  formatRelative,
+} from './format'
 import { useUpdateStatus } from './queries'
 import { Skeleton, SkeletonRows, SkeletonStatCards } from './skeleton'
 import StatCard from './StatCard'
+import { btn, btnPrimary, linkTouch } from './uiControls'
+
+/** Recent activity shows at most this many finished jobs. */
+const HISTORY_ROWS = 10
 
 function progressWidth(percent: number): string {
   return `${Math.max(0, Math.min(100, percent))}%`
@@ -35,83 +51,103 @@ function SpeedEta({ job }: { job: Job }) {
   const eta = formatEta(job.eta_seconds)
   if (eta) bits.push(`${eta} left`)
   if (bits.length === 0) return null
-  return <span className="text-xs text-slate-500">{bits.join(' · ')}</span>
+  return <span className="text-caption text-fg-muted">{bits.join(' · ')}</span>
 }
 
-function ActiveJobs({ jobs }: { jobs: Job[] }) {
-  if (jobs.length === 0) {
-    return (
-      <p className="text-sm text-slate-400" data-testid="dashboard-idle">
-        Nothing is running right now.
-      </p>
-    )
-  }
+/**
+ * One running file: its name (never a job id), the percent and a progress
+ * bar, then speed and ETA. The bar keeps `job-progress-{id}` for the live
+ * tests.
+ */
+function RunningJob({ job }: { job: Job }) {
+  const name = job.file_name || job.file_id
   return (
-    <ul className="space-y-4">
-      {jobs.map((job) => (
-        <li key={job.id} data-testid={`running-job-${job.id}`}>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-sm font-medium text-slate-200">
-              {statusLabel(job.status)} · job {job.id.slice(0, 8)}
-            </span>
-            <span className="text-sm text-slate-400">
-              {Math.round(job.percent)}%
-            </span>
-          </div>
-          <div
-            className="mt-1 h-2 overflow-hidden rounded-full bg-slate-800"
-            role="progressbar"
-            aria-valuenow={Math.round(job.percent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            data-testid={`job-progress-${job.id}`}
-          >
-            <div
-              className="h-full rounded-full bg-emerald-500 transition-all"
-              style={{ width: progressWidth(job.percent) }}
-            />
-          </div>
-          <div className="mt-1">
-            <SpeedEta job={job} />
-          </div>
-        </li>
-      ))}
-    </ul>
+    <li className="flex flex-col gap-1" data-testid={`running-job-${job.id}`}>
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        <span
+          className="truncate text-body font-medium text-fg"
+          title={job.file_path || name}
+        >
+          {name}
+        </span>
+        <span className="shrink-0 text-body tabular-nums text-fg-muted">
+          {Math.round(job.percent)}%
+        </span>
+      </div>
+      <div
+        className="h-2 overflow-hidden rounded-full bg-raised"
+        role="progressbar"
+        aria-label={`Progress of ${name}`}
+        aria-valuenow={Math.round(job.percent)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        data-testid={`job-progress-${job.id}`}
+      >
+        <div
+          className="h-full rounded-full bg-info transition-all"
+          style={{ width: progressWidth(job.percent) }}
+        />
+      </div>
+      <SpeedEta job={job} />
+    </li>
   )
 }
 
 /**
- * One node's live activity: name, state and what it is working on right
- * now (SSE node.updated / job.updated refresh both queries).
+ * The lifecycle badge (spec 5.0). Approval comes first: a node that is not
+ * approved yet has no lifecycle to show. An approved node shows its state.
  */
-function NodeActivity({ node, job }: { node: Node; job?: Job }) {
-  const stateLabels: Record<string, string> = {
-    pending: 'waiting for approval',
-    approved: node.enabled ? 'ready' : 'paused',
-    revoked: 'revoked',
+function NodeBadge({ node }: { node: Node }) {
+  if (node.status === 'pending') {
+    return <Badge tone="warning">Waiting for approval</Badge>
   }
+  if (node.status === 'revoked') {
+    return <Badge tone="danger">Revoked</Badge>
+  }
+  switch (node.effective_state) {
+    case 'running':
+      return (
+        <Badge tone="success" dot>
+          Running
+        </Badge>
+      )
+    case 'draining':
+      return <Badge tone="warning">Draining</Badge>
+    case 'error':
+      return <Badge tone="danger">Error</Badge>
+    default:
+      return <Badge>Stopped</Badge>
+  }
+}
+
+/** One node: name, lifecycle badge and last check-in, plus its bar while it works. */
+function NodeRow({ node, job }: { node: Node; job?: Job }) {
   return (
-    <li className="space-y-1" data-testid={`node-activity-${node.id}`}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-sm font-medium text-slate-200">
+    <li
+      className="flex flex-col gap-2 py-3"
+      data-testid={`node-activity-${node.id}`}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="truncate text-body font-medium text-fg">
           {node.name}
         </span>
-        <span className="text-xs text-slate-500">
-          {stateLabels[node.status] ?? node.status}
-          {job ? ` · working on ${job.file_id.slice(0, 8)}` : ''}
-        </span>
+        <NodeBadge node={node} />
       </div>
+      <p className="text-caption text-fg-muted">
+        Checked in {formatRelative(node.last_heartbeat_at)}
+      </p>
       {job && (
         <div
-          className="h-2 overflow-hidden rounded-full bg-slate-800"
+          className="h-2 overflow-hidden rounded-full bg-raised"
           role="progressbar"
+          aria-label={`Progress on ${node.name}`}
           aria-valuenow={Math.round(job.percent)}
           aria-valuemin={0}
           aria-valuemax={100}
           data-testid={`node-progress-${node.id}`}
         >
           <div
-            className="h-full rounded-full bg-sky-500 transition-all"
+            className="h-full rounded-full bg-info transition-all"
             style={{ width: progressWidth(job.percent) }}
           />
         </div>
@@ -120,11 +156,7 @@ function NodeActivity({ node, job }: { node: Node; job?: Job }) {
   )
 }
 
-/**
- * The Nodes card: every registered machine with its live progress. The
- * built-in node is listed like any other.
- */
-function NodeActivityList({
+function NodeList({
   nodes,
   nodesPending,
   jobs,
@@ -138,9 +170,9 @@ function NodeActivityList({
   }
   if (nodes.length === 0) {
     return (
-      <p className="text-sm text-slate-400" data-testid="nodes-empty">
+      <p className="text-body text-fg-muted" data-testid="nodes-empty">
         This machine is doing the work. Add other machines on the{' '}
-        <Link to="/nodes" className="text-emerald-400 underline">
+        <Link to="/nodes" className={linkTouch}>
           Nodes
         </Link>{' '}
         page.
@@ -154,40 +186,90 @@ function NodeActivityList({
     }
   }
   return (
-    <ul className="space-y-4" data-testid="nodes-activity">
+    <ul className="-my-3 divide-y divide-line" data-testid="nodes-activity">
       {nodes.map((node) => (
-        <NodeActivity
-          key={node.id}
-          node={node}
-          job={activeByNode.get(node.id)}
-        />
+        <NodeRow key={node.id} node={node} job={activeByNode.get(node.id)} />
       ))}
     </ul>
   )
 }
 
+/** Warnings as Banners (spec 3.7), each with its one fix as a button. */
 function Warnings({ warnings }: { warnings: DashboardWarning[] }) {
   if (warnings.length === 0) {
     return null
   }
   return (
-    <div className="space-y-2" data-testid="dashboard-warnings">
+    <div className="flex flex-col gap-3" data-testid="dashboard-warnings">
       {warnings.map((warning) => (
-        <div
+        <Banner
           key={warning.id}
-          className="rounded-2xl bg-amber-950/50 p-4 ring-1 ring-amber-800/60"
-          data-testid={`warning-${warning.id}`}
+          tone="warning"
+          testId={`warning-${warning.id}`}
+          action={
+            <Link to={warning.linkTo} className={btn}>
+              {warning.linkLabel}
+            </Link>
+          }
         >
-          <p className="text-sm text-amber-200">{warning.message}</p>
-          <Link
-            to={warning.linkTo}
-            className="mt-2 inline-flex min-h-11 items-center rounded-lg bg-amber-800/60 px-3 text-sm font-semibold text-amber-100 hover:bg-amber-700/60"
-          >
-            {warning.linkLabel}
-          </Link>
-        </div>
+          {warning.message}
+        </Banner>
       ))}
     </div>
+  )
+}
+
+/**
+ * One finished job in Recent activity. The file name leads; the caption says
+ * what happened, where and when; the sizes sit on the right. A failed job
+ * shows its error under the caption.
+ */
+function HistoryRow({
+  job,
+  libraryName,
+}: {
+  job: Job
+  libraryName: string | undefined
+}) {
+  const done = job.status === 'done'
+  const name = job.file_name || job.file_id
+  const when = formatRelative(job.created_at)
+  const caption = [done ? 'Shrunk' : 'Failed', libraryName, when]
+    .filter(Boolean)
+    .join(' · ')
+  const change =
+    job.bytes_before > 0
+      ? ((job.bytes_after - job.bytes_before) / job.bytes_before) * 100
+      : 0
+  return (
+    <li
+      className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3 sm:px-6"
+      data-testid={`history-job-${job.id}`}
+    >
+      <Icon
+        name={done ? 'check' : 'alert'}
+        className={`h-5 w-5 shrink-0 ${done ? 'text-success' : 'text-danger'}`}
+      />
+      <div className="min-w-0">
+        <p className="truncate text-body text-fg" title={job.file_path || name}>
+          {name}
+        </p>
+        <p className="truncate text-caption text-fg-muted">{caption}</p>
+        {!done && job.error && (
+          <p className="truncate text-caption text-danger">{job.error}</p>
+        )}
+      </div>
+      {done && job.bytes_before > 0 && (
+        <div className="text-right">
+          <p className="whitespace-nowrap text-body tabular-nums text-fg-muted">
+            {formatBytes(job.bytes_before)} → {formatBytes(job.bytes_after)}
+          </p>
+          <p className="whitespace-nowrap text-caption tabular-nums text-accent-text">
+            {formatPercent(change)}
+          </p>
+        </div>
+      )}
+    </li>
   )
 }
 
@@ -204,26 +286,42 @@ export default function DashboardPage() {
   if (libraries.data && libraries.data.total === 0) {
     return (
       <PageContainer data-testid="empty-dashboard">
-        <p className="text-slate-400">
-          No libraries yet.{' '}
-          <Link to="/libraries/new" className="text-emerald-400 underline">
-            Add one
-          </Link>
-          .
-        </p>
+        <PageHeader title="Dashboard" />
+        <EmptyState
+          icon="library"
+          title="Add your first library"
+          body="Pick a folder of videos. ShrinkYourShit makes smaller copies and swaps them in only when they are smaller and verified."
+          action={
+            <Link className={btnPrimary} to="/libraries/new">
+              Add library
+            </Link>
+          }
+        />
       </PageContainer>
     )
   }
 
+  const allNodes = nodes.data?.items ?? []
   const allJobs = jobs.data?.items ?? []
   const active = allJobs.filter(
     (j) => j.status === 'running' || j.status === 'claimed',
   )
-  const history = allJobs.filter(
-    (j) => j.status === 'done' || j.status === 'failed',
+  const history = allJobs
+    .filter((j) => j.status === 'done' || j.status === 'failed')
+    .slice(0, HISTORY_ROWS)
+  const libraryNames = new Map(
+    (libraries.data?.items ?? []).map((lib) => [lib.id, lib.name]),
+  )
+  // Paused is every known node not set to run. Unknown nodes are not paused.
+  const paused =
+    allNodes.length > 0 && !allNodes.some((n) => n.desired_state === 'running')
+  // Files finished across every node (node.stats is per node, task 18).
+  const filesDone = allNodes.reduce(
+    (sum, n) => sum + (n.stats?.files_done ?? 0),
+    0,
   )
   const warnings = computeWarnings({
-    nodes: nodes.data?.items ?? [],
+    nodes: allNodes,
     jobs: allJobs,
     stats: { queued: stats.data?.queued ?? 0 },
     now: Date.now(),
@@ -234,117 +332,123 @@ export default function DashboardPage() {
   })
 
   return (
-    <PageContainer className="space-y-6" data-testid="dashboard">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+    <PageContainer data-testid="dashboard">
+      <PageHeader title="Dashboard" />
+
+      <EncodingStatus variant="panel" waiting={stats.data?.queued} />
 
       <Warnings warnings={warnings} />
 
       {stats.isPending ? (
         <SkeletonStatCards />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
             testid="stat-space-saved"
             label="Space saved"
             tone="good"
             value={formatBytes(stats.data?.bytes_saved ?? 0)}
             icon="encode"
+            sub={
+              filesDone > 0 ? `from ${formatCount(filesDone)} files` : undefined
+            }
           />
           <StatCard
             testid="stat-files"
-            label="Files"
-            value={stats.data?.files ?? 0}
+            label="Files watched"
+            value={formatCount(stats.data?.files ?? 0)}
             icon="library"
           />
           <StatCard
             testid="stat-satisfied"
-            label="Nothing to do"
-            value={stats.data?.satisfied ?? 0}
+            label="Already small"
+            value={formatCount(stats.data?.satisfied ?? 0)}
             icon="check"
+            sub="nothing to do"
           />
           <StatCard
             testid="stat-queued"
             label="Waiting"
-            value={stats.data?.queued ?? 0}
+            value={formatCount(stats.data?.queued ?? 0)}
             icon="clock"
+            sub={
+              (stats.data?.failed ?? 0) > 0 ? (
+                <span className="text-danger">
+                  {formatCount(stats.data?.failed ?? 0)} failed
+                </span>
+              ) : undefined
+            }
           />
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-          <h2 className="font-semibold">Working now</h2>
-          <div className="mt-4">
-            {jobs.isPending ? (
-              <div
-                role="status"
-                aria-label="Loading"
-                data-testid="jobs-skeleton"
-              >
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="mt-2 h-5 w-full" />
-              </div>
-            ) : (
-              <ActiveJobs jobs={active} />
-            )}
-          </div>
-        </section>
+      <div className="grid gap-6 lg:grid-cols-12">
+        <Card
+          title="Working now"
+          className="lg:col-span-8"
+          testId="dashboard-working"
+        >
+          {jobs.isPending ? (
+            <div
+              role="status"
+              aria-label="Loading"
+              data-testid="jobs-skeleton"
+              className="flex flex-col gap-2"
+            >
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-full" />
+            </div>
+          ) : active.length === 0 ? (
+            <p className="text-body text-fg-muted" data-testid="dashboard-idle">
+              Nothing is being shrunk right now.
+              {paused && ' Encoding is paused.'}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-4">
+              {active.map((job) => (
+                <RunningJob key={job.id} job={job} />
+              ))}
+            </ul>
+          )}
+        </Card>
 
-        <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-          <h2 className="font-semibold">Nodes</h2>
-          <div className="mt-4">
-            <NodeActivityList
-              nodes={nodes.data?.items ?? []}
-              nodesPending={nodes.isPending}
-              jobs={active}
-            />
-          </div>
-        </section>
+        <Card
+          title="Nodes"
+          className="lg:col-span-4"
+          testId="dashboard-nodes"
+          actions={
+            <Link to="/nodes" className={linkTouch}>
+              Manage
+            </Link>
+          }
+        >
+          <NodeList
+            nodes={allNodes}
+            nodesPending={nodes.isPending}
+            jobs={active}
+          />
+        </Card>
       </div>
 
-      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="font-semibold">Recent history</h2>
+      <Card title="Recent activity" padding="none">
         {history.length === 0 ? (
-          <p
-            className="mt-4 text-sm text-slate-400"
-            data-testid="history-empty"
-          >
-            No finished jobs yet.
-          </p>
+          <EmptyState
+            testId="history-empty"
+            title="Nothing here yet"
+            body="Finished files show up here with their sizes before and after."
+          />
         ) : (
-          <ul className="mt-4 space-y-2" data-testid="history">
+          <ul className="divide-y divide-line" data-testid="history">
             {history.map((job) => (
-              <li
+              <HistoryRow
                 key={job.id}
-                className="flex items-center justify-between gap-4 rounded-lg bg-slate-800/50 px-3 py-2 text-sm"
-                data-testid={`history-job-${job.id}`}
-              >
-                <span className="text-slate-300">
-                  job {job.id.slice(0, 8)} ·{' '}
-                  <span
-                    className={
-                      job.status === 'done'
-                        ? 'text-emerald-400'
-                        : 'text-red-400'
-                    }
-                  >
-                    {job.status === 'done' ? 'shrunk' : 'failed'}
-                  </span>
-                </span>
-                {job.status === 'done' && job.bytes_before > 0 && (
-                  <span className="text-slate-500">
-                    {formatBytes(job.bytes_before)} →{' '}
-                    {formatBytes(job.bytes_after)}
-                  </span>
-                )}
-                {job.status === 'failed' && job.error && (
-                  <span className="truncate text-slate-500">{job.error}</span>
-                )}
-              </li>
+                job={job}
+                libraryName={libraryNames.get(job.library_id)}
+              />
             ))}
           </ul>
         )}
-      </section>
+      </Card>
     </PageContainer>
   )
 }
