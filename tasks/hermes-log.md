@@ -282,3 +282,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T05:58:30Z task 42: two owner-level deviations recorded in tasks/42-notes.md, not blocking and nothing decided here (Working now uses its own row instead of NodeJobLine to keep data-testids and the 2.5x/2.5-multiply sign assertion; dashboard query errors still render no ErrorBox, deferred to a later task)
 - 2026-11-04T05:58:30Z pm: killed lingering sleeping claude process (pid 1458680) from run 20261104-053121-2c090cab; it had already pushed its STATUS.md commit and had only a 15 min wakeup left to do a merge that belongs to the PM
 - 2026-11-04T05:58:30Z pm: v1.9 next task is 43 (libraries list), starts next tick
+- 2026-11-04T06:01:42Z started task 43 (Libraries list) run 20261104-060113-1a774e2d role=build
