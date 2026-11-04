@@ -83,3 +83,11 @@ instead of navigating"). It changes the join flow, so I did not make it.
    label, step-3 summary, joined-panel sentence). Check those words against the copy sweep. The guards
    (`guards.tsx` FullPageCard, Loading, RequireReady) still use slate classes and are out of this task's scope.
 5. **Not done here:** Playwright and visual checks. Both need CI or a machine with the browser libraries.
+
+## Status
+
+Blocked on two gates, not on code. (1) The PR is not open: the `gh` CLI is not installed in this environment, so I
+did not open it and did not read the stored token to call the API. The branch `task/51-setup-login` is pushed; open it
+against `main` at https://github.com/PeiceOfToast/shrinkyourshit/compare/task/51-setup-login?expand=1. (2) The task
+requires `npx playwright test` green before ticking. It was not run locally (see Verification). Once CI is green, tick
+the checklist and set STATUS to `done` with the PR link.
