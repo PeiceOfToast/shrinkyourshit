@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "nodes": [
+    {"id": "probe", "type": "probe"},
+    {"id": "ifc", "type": "if_codec_not", "params": {"codec": "hevc"}},
+    {"id": "ifb", "type": "if_bitrate_above", "params": {"mbps": 10}},
+    {"id": "transcode", "type": "transcode_video", "params": {"codec": "hevc", "quality": 2}},
+    {"id": "remux", "type": "remux_container", "params": {"container": "mkv"}},
+    {"id": "audio", "type": "convert_audio", "params": {"mode": "keep_preferred", "languages": ["eng", "ger"]}},
+    {"id": "subs", "type": "subtitles", "params": {"mode": "remove", "extract_removed": true}},
+    {"id": "rename", "type": "rename", "params": {"template": "{name}.shrunk"}},
+    {"id": "skip", "type": "skip_if_smaller"},
+    {"id": "hc", "type": "health_check", "params": {"mode": "sample", "minutes": 3}},
+    {"id": "mv", "type": "move", "params": {"destination": "/data/shrunk/", "keep_tree": true}}
+  ],
+  "edges": [
+    {"from": "probe", "to": "ifc"}, {"from": "ifc", "to": "ifb"}, {"from": "ifb", "to": "transcode"},
+    {"from": "transcode", "to": "remux"}, {"from": "remux", "to": "audio"}, {"from": "audio", "to": "subs"},
+    {"from": "subs", "to": "rename"}, {"from": "rename", "to": "skip"}, {"from": "skip", "to": "hc"},
+    {"from": "hc", "to": "mv"}
+  ]
+}

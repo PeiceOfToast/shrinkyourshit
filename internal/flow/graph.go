@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/plugin"
@@ -25,6 +26,7 @@ const (
 	StepIfCodecNot     = "if_codec_not"
 	StepIfBitrateAbove = "if_bitrate_above"
 	StepTranscodeVideo = "transcode_video"
+	StepScale          = "scale"
 	StepRemuxContainer = "remux_container"
 	StepConvertAudio   = "convert_audio"
 	StepSubtitles      = "subtitles"
@@ -33,6 +35,16 @@ const (
 	StepHealthCheck    = "health_check"
 	StepMove           = "move"
 	StepPlugin         = "plugin"
+)
+
+// Hardware values for transcode_video.hardware. auto is the global policy
+// and the default, so existing graphs keep today's behaviour.
+const (
+	HardwareAuto         = "auto"
+	HardwareQSV          = "qsv"
+	HardwareVAAPI        = "vaapi"
+	HardwareVideoToolbox = "videotoolbox"
+	HardwareSoftware     = "software"
 )
 
 // Flow sources: who owns the graph on a library.
@@ -114,9 +126,27 @@ type (
 
 	// transcode_video: encode the video with this codec (never copy — a
 	// copy video is expressed by leaving the step out) at quality 1..5.
+	// The rate fields are optional: an empty rate_mode is quality, and the
+	// other rate fields must be zero then (rateRuleError). Hardware is
+	// validated here and carried into the plan in task 57.
 	transcodeVideoParams struct {
-		Codec   string `json:"codec"`
-		Quality int    `json:"quality"`
+		Codec       string  `json:"codec"`
+		Quality     int     `json:"quality"`
+		RateMode    string  `json:"rate_mode,omitempty"`
+		CRF         float64 `json:"crf,omitempty"`
+		BitrateKBPS int     `json:"bitrate_kbps,omitempty"`
+		MaxKBPS     int     `json:"max_kbps,omitempty"`
+		Preset      string  `json:"preset,omitempty"`
+		Hardware    string  `json:"hardware,omitempty"`
+	}
+
+	// scale: resize the video to this height (2160, 1440, 1080, 720 or
+	// 480), keeping the aspect ratio. only_if_larger defaults to true and
+	// allow_upscale to false (a video is never enlarged by default).
+	scaleParams struct {
+		Height       scaleHeight `json:"height"`
+		OnlyIfLarger *bool       `json:"only_if_larger"`
+		AllowUpscale bool        `json:"allow_upscale"`
 	}
 
 	// remux_container: the output container (mkv or mp4). Exactly one of
@@ -180,6 +210,28 @@ type (
 	// (task 32): the server decodes them to check and resolve the step.
 	PluginStepParams = pluginParams
 )
+
+// scaleHeight is the scale step's height. The palette offers it as a select,
+// and the web form sends select values as strings, so the step accepts "1080"
+// as well as 1080. Anything else is still rejected by validation.
+type scaleHeight int
+
+func (h *scaleHeight) UnmarshalJSON(b []byte) error {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) >= 2 && trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"' {
+		var str string
+		if err := json.Unmarshal(trimmed, &str); err != nil {
+			return err
+		}
+		trimmed = []byte(str)
+	}
+	n, err := strconv.Atoi(string(bytes.TrimSpace(trimmed)))
+	if err != nil {
+		return fmt.Errorf("height must be a whole number, got %s", string(b))
+	}
+	*h = scaleHeight(n)
+	return nil
+}
 
 // decodeParams strictly decodes a step's params into out, rejecting unknown
 // fields so a typo in a hand-written graph is a validation error, not a
@@ -347,7 +399,7 @@ func isGuard(t string) bool { return t == StepIfCodecNot || t == StepIfBitrateAb
 // arrives) — are media-agnostic.
 func StepNeedsMedia(t string) bool {
 	switch t {
-	case StepProbe, StepIfCodecNot, StepIfBitrateAbove, StepTranscodeVideo,
+	case StepProbe, StepIfCodecNot, StepIfBitrateAbove, StepTranscodeVideo, StepScale,
 		StepRemuxContainer, StepConvertAudio, StepSubtitles, StepHealthCheck:
 		return true
 	}
@@ -358,7 +410,7 @@ func StepNeedsMedia(t string) bool {
 // for remux_container, exactly once) in a graph.
 func isShaping(t string) bool {
 	switch t {
-	case StepTranscodeVideo, StepRemuxContainer, StepConvertAudio, StepSubtitles,
+	case StepTranscodeVideo, StepScale, StepRemuxContainer, StepConvertAudio, StepSubtitles,
 		StepRename, StepSkipIfSmaller, StepHealthCheck, StepMove:
 		return true
 	}
@@ -431,6 +483,26 @@ func validateStepParams(n Step) *paramError {
 		}
 		if p.Quality < QualityMin || p.Quality > QualityMax {
 			return perr("params.quality", "want %d to %d, got %d", QualityMin, QualityMax, p.Quality)
+		}
+		if field, msg := rateRuleError(p.RateMode, p.CRF, p.BitrateKBPS, p.MaxKBPS); field != "" {
+			return perr("params."+field, "%s", msg)
+		}
+		if !validPreset(p.Preset) {
+			return perr("params.preset", "want veryfast, faster, fast, medium, slow, slower or veryslow, got %q", p.Preset)
+		}
+		switch p.Hardware {
+		case "", HardwareAuto, HardwareQSV, HardwareVAAPI, HardwareVideoToolbox, HardwareSoftware:
+		default:
+			return perr("params.hardware", "want auto, qsv, vaapi, videotoolbox or software, got %q", p.Hardware)
+		}
+		return nil
+	case StepScale:
+		var p scaleParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		if !validScaleHeight(int(p.Height)) {
+			return perr("params.height", "want 2160, 1440, 1080, 720 or 480, got %d", p.Height)
 		}
 		return nil
 	case StepRemuxContainer:

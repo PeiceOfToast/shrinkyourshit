@@ -106,3 +106,46 @@ func TestParseTargetRejectsUnknownEnums(t *testing.T) {
 		})
 	}
 }
+
+// TestTargetJSONOmitsUnsetTuningFields: a Target without scale, rate or preset
+// writes the exact v1.9 shape. The new fields only appear when set.
+func TestTargetJSONOmitsUnsetTuningFields(t *testing.T) {
+	raw, err := json.Marshal(Default())
+	require.NoError(t, err)
+	for _, key := range []string{`"scale"`, `"rate"`, `"preset"`} {
+		require.NotContains(t, string(raw), key)
+	}
+
+	full := Default()
+	full.Video.Scale = &ScaleTarget{Height: 1080, OnlyIfLarger: true}
+	full.Video.Rate = &RateTarget{Mode: RateModeCRF, CRF: 22.5, MaxKBPS: 9000}
+	full.Video.Preset = "slow"
+	raw, err = json.Marshal(full)
+	require.NoError(t, err)
+	back, err := ParseTarget(raw)
+	require.NoError(t, err)
+	require.Equal(t, full, back, "scale, rate and preset round trip")
+}
+
+// TestTargetValidateTuningFields: a Target's scale, rate and preset are checked
+// the same as the step params.
+func TestTargetValidateTuningFields(t *testing.T) {
+	bad := []func(*Target){
+		func(tg *Target) { tg.Video.Scale = &ScaleTarget{Height: 1000} },
+		func(tg *Target) { tg.Video.Preset = "ultrafast" },
+		func(tg *Target) { tg.Video.Rate = &RateTarget{Mode: RateModeCRF} },
+		func(tg *Target) { tg.Video.Rate = &RateTarget{Mode: RateModeBitrate} },
+		func(tg *Target) { tg.Video.Rate = &RateTarget{Mode: RateModeQuality, MaxKBPS: 5000} },
+		func(tg *Target) { tg.Video.Rate = &RateTarget{Mode: "vbr"} },
+	}
+	for i, mutate := range bad {
+		tg := Default()
+		mutate(&tg)
+		require.Error(t, tg.Validate(), "case %d", i)
+	}
+	good := Default()
+	good.Video.Scale = &ScaleTarget{Height: 480, OnlyIfLarger: true}
+	good.Video.Rate = &RateTarget{Mode: RateModeBitrate, BitrateKBPS: 4000, MaxKBPS: 6000}
+	good.Video.Preset = "veryslow"
+	require.NoError(t, good.Validate())
+}

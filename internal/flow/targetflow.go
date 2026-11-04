@@ -23,6 +23,10 @@ import (
 //     a condition: encode only when the video is not already the target
 //     codec. ReencodeIfSameCodec true omits the guard, so the encode always
 //     runs;
+//   - rate control, speed preset and scale (task 54) are written only when
+//     set, so a Target without them generates the same graph as before. A
+//     scale step follows the encode and repeats its guard, so a file whose
+//     encode is skipped is not scaled either;
 //   - remux_container is always present: the container decides the output
 //     file type, and every valid flow states it;
 //   - audio and subtitle policies always present.
@@ -38,7 +42,8 @@ func TargetToFlow(t Target) (Graph, error) {
 	steps := []Step{{ID: "probe", Type: StepProbe}}
 	edges := []Edge{}
 
-	if t.Video.Codec != CodecCopy && !t.Video.ReencodeIfSameCodec {
+	guarded := t.Video.Codec != CodecCopy && !t.Video.ReencodeIfSameCodec
+	if guarded {
 		guard, err := marshalStep(StepIfCodecNot, ifCodecNotParams{Codec: t.Video.Codec})
 		if err != nil {
 			return Graph{}, err
@@ -46,14 +51,42 @@ func TargetToFlow(t Target) (Graph, error) {
 		steps = append(steps, guard)
 	}
 	if t.Video.Codec != CodecCopy {
-		transcode, err := marshalStep(StepTranscodeVideo, transcodeVideoParams{
+		params := transcodeVideoParams{
 			Codec:   t.Video.Codec,
 			Quality: t.Video.Quality,
-		})
+			Preset:  t.Video.Preset,
+		}
+		if r := t.Video.Rate; r != nil && r.Mode != RateModeQuality {
+			params.RateMode = r.Mode
+			params.CRF = r.CRF
+			params.BitrateKBPS = r.BitrateKBPS
+			params.MaxKBPS = r.MaxKBPS
+		}
+		transcode, err := marshalStep(StepTranscodeVideo, params)
 		if err != nil {
 			return Graph{}, err
 		}
 		steps = append(steps, transcode)
+	}
+	if sc := t.Video.Scale; sc != nil {
+		if guarded {
+			// The scale must not outlive a skipped encode: repeat the guard.
+			guard, err := marshalStepID("if_codec_not_scale", StepIfCodecNot, ifCodecNotParams{Codec: t.Video.Codec})
+			if err != nil {
+				return Graph{}, err
+			}
+			steps = append(steps, guard)
+		}
+		onlyIfLarger := sc.OnlyIfLarger
+		scale, err := marshalStep(StepScale, scaleParams{
+			Height:       scaleHeight(sc.Height),
+			OnlyIfLarger: &onlyIfLarger,
+			AllowUpscale: sc.AllowUpscale,
+		})
+		if err != nil {
+			return Graph{}, err
+		}
+		steps = append(steps, scale)
 	}
 	container, err := marshalStep(StepRemuxContainer, remuxContainerParams{Container: t.Container})
 	if err != nil {
@@ -89,11 +122,17 @@ func TargetToFlow(t Target) (Graph, error) {
 
 // marshalStep builds one step with canonical JSON params.
 func marshalStep(typ string, params any) (Step, error) {
+	return marshalStepID(stepIDFor(typ), typ, params)
+}
+
+// marshalStepID is marshalStep with an explicit id, for a generated step
+// whose type repeats (the scale guard) and needs its own id.
+func marshalStepID(id, typ string, params any) (Step, error) {
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return Step{}, fmt.Errorf("flow: marshal %s params: %w", typ, err)
 	}
-	return Step{ID: stepIDFor(typ), Type: typ, Params: raw}, nil
+	return Step{ID: id, Type: typ, Params: raw}, nil
 }
 
 // stepIDFor gives generated steps stable, readable ids: "transcode_video"

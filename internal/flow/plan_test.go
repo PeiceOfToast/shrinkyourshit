@@ -138,3 +138,152 @@ func TestStepTypesIncludeNewSteps(t *testing.T) {
 	require.Equal(t, "destination", mv.Params[0].Name)
 	require.Equal(t, "keep_tree", mv.Params[1].Name)
 }
+
+/* ------------------------------------------------------------------ */
+/* Scale, rate and preset through the plan (task 54)                   */
+/* ------------------------------------------------------------------ */
+
+// tuningGraph is probe → if_codec_not hevc → scale → transcode → remux. The
+// guard attaches to the scale (the next action), so the transcode line of
+// Describe carries no guard prefix.
+func tuningGraph(scaleParams, transcodeParams string) Graph {
+	return Graph{
+		Schema: FlowSchema,
+		Nodes: []Step{
+			{ID: "probe", Type: StepProbe},
+			{ID: "ifc", Type: StepIfCodecNot, Params: json.RawMessage(`{"codec":"hevc"}`)},
+			{ID: "sc", Type: StepScale, Params: json.RawMessage(scaleParams)},
+			{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(transcodeParams)},
+			{ID: "remux", Type: StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		},
+		Edges: []Edge{
+			{From: "probe", To: "ifc"}, {From: "ifc", To: "sc"}, {From: "sc", To: "tv"}, {From: "tv", To: "remux"},
+		},
+	}
+}
+
+// TestResolvePlanCarriesScaleRateAndPreset: a scale placed before the encode
+// survives the transcode (which owns codec, quality, rate and preset), and
+// the resolved Target carries all of it.
+func TestResolvePlanCarriesScaleRateAndPreset(t *testing.T) {
+	g := tuningGraph(`{"height":1080}`, `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":22,"max_kbps":9000,"preset":"slow"}`)
+	plan, err := Compile(g)
+	require.NoError(t, err)
+	eff, err := ResolvePlan(plan, infoH264TwoAudioOneSubtitle(), probe.KindVideo)
+	require.NoError(t, err)
+	v := eff.Target.Video
+	require.Equal(t, CodecHEVC, v.Codec)
+	require.Equal(t, &ScaleTarget{Height: 1080, OnlyIfLarger: true, AllowUpscale: false}, v.Scale)
+	require.Equal(t, &RateTarget{Mode: RateModeCRF, CRF: 22, MaxKBPS: 9000}, v.Rate)
+	require.Equal(t, "slow", v.Preset)
+	require.Equal(t, plan.Target(), eff.Target, "Plan.Target reports the same thing as a resolved file")
+}
+
+// TestScaleDefaultsWhenOmitted: only_if_larger defaults to true and
+// allow_upscale to false, both on the scale step and in the resolved Target.
+func TestScaleDefaultsWhenOmitted(t *testing.T) {
+	plan, err := Compile(tuningGraph(`{"height":720}`, `{"codec":"hevc","quality":3}`))
+	require.NoError(t, err)
+	eff, err := ResolvePlan(plan, infoH264TwoAudioOneSubtitle(), probe.KindVideo)
+	require.NoError(t, err)
+	require.Equal(t, &ScaleTarget{Height: 720, OnlyIfLarger: true, AllowUpscale: false}, eff.Target.Video.Scale)
+
+	plan, err = Compile(tuningGraph(`{"height":720,"only_if_larger":false,"allow_upscale":true}`, `{"codec":"hevc","quality":3}`))
+	require.NoError(t, err)
+	eff, err = ResolvePlan(plan, infoH264TwoAudioOneSubtitle(), probe.KindVideo)
+	require.NoError(t, err)
+	require.Equal(t, &ScaleTarget{Height: 720, OnlyIfLarger: false, AllowUpscale: true}, eff.Target.Video.Scale)
+}
+
+// TestScaleSkippedWhenEncodeSkipped: the guard that skips the encode also
+// skips a scale placed behind the guard. A file already in the target codec
+// keeps no scale.
+func TestScaleSkippedWhenEncodeSkipped(t *testing.T) {
+	g, err := TargetToFlow(withTuning(Default()))
+	require.NoError(t, err)
+	plan, err := Compile(g)
+	require.NoError(t, err)
+	eff, err := ResolvePlan(plan, infoHEVC(), probe.KindVideo)
+	require.NoError(t, err)
+	require.Equal(t, CodecCopy, eff.Target.Video.Codec, "already HEVC: the encode is skipped")
+	require.Nil(t, eff.Target.Video.Scale, "a skipped encode is never scaled")
+	require.Empty(t, eff.Target.Video.Preset)
+	require.Nil(t, eff.Target.Video.Rate)
+}
+
+// withTuning is Default() with scale, rate and preset set.
+func withTuning(t Target) Target {
+	t.Video.Scale = &ScaleTarget{Height: 1080, OnlyIfLarger: true}
+	t.Video.Rate = &RateTarget{Mode: RateModeBitrate, BitrateKBPS: 4000, MaxKBPS: 6000}
+	t.Video.Preset = "fast"
+	return t
+}
+
+// TestTargetToFlowRoundTripsTuning: a Target with scale, rate and preset
+// compiles to a graph and back to the same Target, guarded and unguarded.
+func TestTargetToFlowRoundTripsTuning(t *testing.T) {
+	for _, guarded := range []bool{true, false} {
+		target := withTuning(Default())
+		target.Video.ReencodeIfSameCodec = !guarded
+		g, err := TargetToFlow(target)
+		require.NoError(t, err)
+		plan, err := Compile(g)
+		require.NoError(t, err)
+		require.Equal(t, target, plan.Target(), "guarded=%v", guarded)
+	}
+}
+
+// TestTargetToFlowRepeatsGuardBeforeScale: when the encode is guarded, the
+// scale step gets the same guard, so it never runs on its own.
+func TestTargetToFlowRepeatsGuardBeforeScale(t *testing.T) {
+	g, err := TargetToFlow(withTuning(Default()))
+	require.NoError(t, err)
+	types := make([]string, 0, len(g.Nodes))
+	for _, n := range g.Nodes {
+		types = append(types, n.Type)
+	}
+	require.Equal(t, []string{StepProbe, StepIfCodecNot, StepTranscodeVideo, StepIfCodecNot, StepScale, StepRemuxContainer, StepConvertAudio, StepSubtitles}, types)
+	require.Empty(t, Validate(g))
+}
+
+// TestTargetToFlowDefaultUnchanged: a Target without the new fields generates
+// the same graph JSON as before task 54 (no empty new keys on the step).
+func TestTargetToFlowDefaultUnchanged(t *testing.T) {
+	g, err := TargetToFlow(Default())
+	require.NoError(t, err)
+	raw, err := json.Marshal(g.Nodes[2])
+	require.NoError(t, err)
+	require.Equal(t, `{"id":"transcode_video","type":"transcode_video","params":{"codec":"hevc","quality":3}}`, string(raw))
+}
+
+// TestDescribeScaleAndTranscodeTuning: the new fields are described in plain
+// language, one line per step, and the old two field line is unchanged.
+func TestDescribeScaleAndTranscodeTuning(t *testing.T) {
+	plan, err := Compile(tuningGraph(`{"height":1080}`, `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":22,"max_kbps":9000,"preset":"slow","hardware":"qsv"}`))
+	require.NoError(t, err)
+	lines := plan.Describe()
+	require.Equal(t, "Only when the video is not HEVC: Scale the video down to 1080p when it is taller; a smaller video is left as it is.", lines[1])
+	require.Equal(t, "Encode the video as HEVC at a constant quality of CRF 22 (lower is better quality and a bigger file). Never more than 9000 kbps. Speed preset slow (slower presets save more space and take longer). Hardware: qsv.", lines[2])
+
+	up := describeScale(&ScaleTarget{Height: 720, OnlyIfLarger: false, AllowUpscale: true})
+	require.Equal(t, "Scale the video to 720p, enlarging it when it is smaller.", up)
+	require.Equal(t, "Scale the video to 480p; a smaller video is not enlarged.", describeScale(&ScaleTarget{Height: 480}))
+
+	plain, err := Compile(tuningGraph(`{"height":1080}`, `{"codec":"hevc","quality":3,"hardware":"auto"}`))
+	require.NoError(t, err)
+	require.Equal(t, "Encode the video as HEVC at quality 3 of 5 (lower saves more space).", plain.Describe()[2])
+}
+
+// TestStepTypesScaleIsPaletteEntry: the scale step is an action (not a guard)
+// and carries no encoder terms on its face.
+func TestStepTypesScaleIsPaletteEntry(t *testing.T) {
+	for _, st := range StepTypes() {
+		if st.Type != StepScale {
+			continue
+		}
+		require.False(t, st.Condition)
+		require.Equal(t, "Scale the video", st.Label)
+		return
+	}
+	require.Fail(t, "scale is missing from StepTypes")
+}
