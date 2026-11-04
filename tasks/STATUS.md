@@ -56,7 +56,7 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
 | 36 | 36-design-tokens-font-motion.md | done | PR #39, v1.9 |
-| 37 | 37-control-classes-format-helpers.md | todo |  |
+| 37 | 37-control-classes-format-helpers.md | done | PR #40 https://github.com/PeiceOfToast/shrinkyourshit/pull/40, v1.9, CI green, checklist ticked |
 | 38 | 38-layout-primitives.md | todo |  |
 | 39 | 39-control-primitives.md | todo |  |
 | 40 | 40-app-shell-encoding-status.md | todo |  |
