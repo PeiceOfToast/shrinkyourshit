@@ -13,9 +13,9 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] `npm run lint` fails on a sample `text-slate-500` (prove it in a throwaway commit, then revert).
-- [ ] The audit covers `/`, `/libraries`, `/libraries/new`, `/libraries/:id`, `/libraries/:id/edit`, `/libraries/:id/rules`, `/libraries/:id/flow`, `/nodes`, `/encode`, `/app` and `/integrations` at 320, 390, 414 and 768.
-- [ ] Zero raw palette classes remain outside `index.css` and the `App.tsx` mirror.
+- [x] `npm run lint` fails on a sample `text-slate-500` (prove it in a throwaway commit, then revert). Proof: `fa5d9cf` fails lint, `f94e5be` reverts it.
+- [x] The audit covers `/`, `/libraries`, `/libraries/new`, `/libraries/:id`, `/libraries/:id/edit`, `/libraries/:id/rules`, `/libraries/:id/flow`, `/nodes`, `/encode`, `/app` and `/integrations` at 320, 390, 414 and 768. `e2e/mobile.spec.ts` passed at all four widths.
+- [x] Zero raw palette classes remain outside `index.css` and the `App.tsx` mirror. Grep is in `tasks/53-notes.md`.
 
 Order rationale:
 - Tokens (36) and classes (37) change nothing structural but make every later diff small.

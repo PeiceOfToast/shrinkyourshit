@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Layout regression suite (tasks 12 and 19). For each of the five pages
+ * Layout regression suite (tasks 12 and 19). For each of the static pages
  * plus the library detail page, at each of the three viewports: no
  * horizontal overflow, the shell covers the viewport (no unpainted region
- * below or beside it), and the nav is reachable — drawer under `md`, left
- * rail at `md` and up. Plus the file-table card assertion at phone width.
+ * below or beside it), exactly one h1 (task 53), and the nav is reachable —
+ * drawer under `md`, left rail at `md` and up. Plus the file-table card
+ * assertion at phone width.
  * A failure leaves a screenshot per page per viewport in web/test-results
  * (the CI artifact). The detail page joins when the global setup seeded a
  * library; it skips cleanly when ffmpeg was unavailable.
@@ -16,9 +17,11 @@ import { expect, test, type Page } from '@playwright/test'
 const PAGES: Array<{ path: string; ready: string }> = [
   { path: '/', ready: 'dashboard' },
   { path: '/libraries', ready: 'libraries-page' },
+  { path: '/libraries/new', ready: 'new-library-page' },
   { path: '/nodes', ready: 'nodes-page' },
   { path: '/encode', ready: 'encode-settings-page' },
   { path: '/app', ready: 'app-settings-page' },
+  { path: '/integrations', ready: 'integrations-page' },
 ]
 
 const NAV_LABELS = [
@@ -95,6 +98,13 @@ function layoutSuite(path: string, ready: string): void {
           `${path}: unpainted region beside the shell (${(s.shell.right - s.viewportW).toFixed(1)}px)`,
         ).toBeGreaterThanOrEqual(s.viewportW - 1)
       }
+    })
+
+    // Spec 6, Headings: each route has exactly one h1 (the page title).
+    test('exactly one h1', async ({ page }) => {
+      await open(page, path, ready)
+      const count = await page.locator('h1').count()
+      expect(count, `${path}: expected exactly one h1, found ${count}`).toBe(1)
     })
 
     test('nav is reachable', async ({ page }) => {
