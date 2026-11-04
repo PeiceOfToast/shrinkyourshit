@@ -13,12 +13,12 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] Tabs component under the header (test ids and `?tab=` kept).
-- [ ] Primary action in the Card header.
-- [ ] EmptyStates for all three tabs.
-- [ ] Rows with state Badges.
-- [ ] The secret panel uses CodeBlock plus a warning Banner.
-- [ ] Dialogs restyled.
+- [x] Tabs component under the header (test ids and `?tab=` kept).
+- [x] Primary action in the Card header.
+- [x] EmptyStates for all three tabs.
+- [x] Rows with state Badges.
+- [x] The secret panel uses CodeBlock plus a warning Banner.
+- [x] Dialogs restyled.
 
 ## Rules for this wave
 

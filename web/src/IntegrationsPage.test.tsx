@@ -485,3 +485,217 @@ describe('IntegrationsPage webhooks tab (task 25)', () => {
     ])
   })
 })
+
+/* Task 50 (spec 5.12): the restyled page structure. */
+describe('IntegrationsPage layout (task 50)', () => {
+  const hooks = [
+    {
+      id: 'hook-1',
+      name: 'Discord',
+      url: 'https://discord.com/api/webhooks/1/abc',
+      events: ['job.done'],
+      enabled: true,
+      secret_set: true,
+      created_at: '2026-10-30T10:00:00Z',
+      updated_at: '2026-10-30T10:00:00Z',
+    },
+  ]
+
+  beforeEach(() => {
+    stubEventSource()
+  })
+
+  afterEach(() => {
+    mock.restore()
+    vi.unstubAllGlobals()
+  })
+
+  function renderAt(path: string) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    return render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <IntegrationsPage />
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  it('puts the three tabs under the header and answers ?tab= for the first tab', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/plugins$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderAt('/integrations?tab=plugins')
+    const tabs = screen.getByTestId('integrations-tabs')
+    expect(tabs.querySelectorAll('[role="tab"]')).toHaveLength(3)
+    expect(screen.getByTestId('integrations-tab-plugins')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByTestId('integrations-tab-servers')).toHaveAttribute(
+      'aria-selected',
+      'false',
+    )
+    // The header is the page's only h1 and comes before the tabs.
+    const h1 = screen.getByRole('heading', { level: 1 })
+    expect(h1).toHaveTextContent('Integrations')
+    expect(
+      h1.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    // The plugins tab answers with its own empty state.
+    expect(await screen.findByTestId('plugins-empty')).toBeInTheDocument()
+  })
+
+  it('puts the primary action in the Card header of the servers tab', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+    ])
+    renderAt('/integrations')
+    await screen.findByRole('table')
+    const card = screen.getByTestId('integrations-add').closest('section')
+    expect(card).not.toBeNull()
+    expect(card?.querySelector('h2')).toHaveTextContent('Media servers')
+    // Only one primary button sits in the header.
+    expect(card?.querySelectorAll('button.bg-accent')).toHaveLength(1)
+  })
+
+  it('shows an EmptyState with an add action when there are no servers', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderAt('/integrations')
+    const empty = await screen.findByTestId('integrations-empty')
+    expect(empty).toHaveTextContent('No media servers yet')
+    expect(empty).toHaveTextContent('Add Plex, Jellyfin or Emby')
+    expect(empty.querySelector('button')).toHaveTextContent('Add server')
+  })
+
+  it('shows an EmptyState on the webhooks tab when there are none', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/webhooks$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderAt('/integrations?tab=webhooks')
+    const empty = await screen.findByTestId('webhooks-empty')
+    expect(empty).toHaveTextContent('No webhooks yet')
+  })
+
+  it('shows state badges: Disabled when off, Not tested when on and untested, Connected after a good test', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/integrations\/int-1\/test$/,
+        status: 200,
+        body: { ok: true, status: 204 },
+      },
+    ])
+    renderAt('/integrations')
+    const enabledRow = await screen.findByTestId('integration-row-int-1')
+    const disabledRow = screen.getByTestId('integration-row-int-2')
+    expect(enabledRow).toHaveTextContent('Not tested')
+    expect(disabledRow).toHaveTextContent('Disabled')
+
+    fireEvent.click(screen.getByTestId('integration-test-int-1'))
+    await screen.findByTestId('integration-test-result')
+    expect(screen.getByTestId('integration-row-int-1')).toHaveTextContent(
+      'Connected',
+    )
+  })
+
+  it('webhook rows carry a state badge, and the add form is a dialog', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/webhooks$/,
+        body: { items: hooks, total: hooks.length },
+      },
+    ])
+    renderAt('/integrations?tab=webhooks')
+    expect(await screen.findByTestId('webhook-row-hook-1')).toHaveTextContent(
+      'Not tested',
+    )
+    fireEvent.click(screen.getByTestId('webhooks-add'))
+    const form = screen.getByTestId('webhook-form')
+    expect(form.tagName).toBe('DIALOG')
+    expect(form).toHaveTextContent('Add a webhook')
+  })
+
+  it('the secret dialog shows the secret in a CodeBlock with copy and a warning Banner', async () => {
+    stubEventSource()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/integrations$/,
+        body: { items: rows, total: rows.length },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/webhooks$/,
+        body: { items: hooks, total: hooks.length },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/webhooks$/,
+        status: 201,
+        body: {
+          ...hooks[0],
+          id: 'hook-9',
+          secret: 'whsec-layout-check-7c1e',
+        },
+      },
+    ])
+    renderAt('/integrations?tab=webhooks')
+    await screen.findByTestId('webhook-row-hook-1')
+    fireEvent.click(screen.getByTestId('webhooks-add'))
+    fireEvent.click(screen.getByTestId('webhook-save'))
+
+    const box = await screen.findByTestId('webhook-secret-box')
+    expect(box.tagName).toBe('DIALOG')
+    expect(box).toHaveTextContent('You will not see this again.')
+    const value = screen.getByTestId('webhook-secret-value')
+    expect(value.querySelector('pre')).toHaveTextContent(
+      'whsec-layout-check-7c1e',
+    )
+    expect(value.querySelector('pre')).toHaveClass('whitespace-pre-wrap')
+    expect(screen.getByTestId('webhook-secret-copy')).toBeInTheDocument()
+  })
+})
