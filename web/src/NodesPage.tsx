@@ -17,6 +17,7 @@
  * behind a ConfirmDialog, FFmpeg details in a Disclosure, and the join
  * commands as CodeBlocks with copy.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -772,6 +773,7 @@ function NodeRow({
 }
 
 export default function NodesPage() {
+  useDocumentTitle(['Nodes'])
   const client = useQueryClient()
   // SSE (node.updated / job.updated) invalidates both caches; the 5s
   // refetch is the fallback for a missed or stalled event stream. Last

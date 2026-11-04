@@ -10,6 +10,7 @@
  * never re-sorts a page. The pager and the retry action only appear when
  * they have something to do.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
@@ -302,6 +303,7 @@ export default function LibraryDetailPage() {
   }, [files.data, page])
 
   const lib = library.data
+  useDocumentTitle([lib?.name, 'Libraries'])
   const headerActions = lib ? (
     <>
       <Link

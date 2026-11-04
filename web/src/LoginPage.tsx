@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /** Login page (task 06). */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
@@ -13,6 +14,7 @@ import { Field } from './FormSection'
 import { btnBlock, btnPrimary, card, input } from './uiControls'
 
 export default function LoginPage() {
+  useDocumentTitle(['Log in'])
   const status = useSetupStatus()
   const navigate = useNavigate()
   const location = useLocation()

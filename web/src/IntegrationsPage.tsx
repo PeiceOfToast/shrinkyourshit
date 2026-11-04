@@ -15,6 +15,7 @@
  * shown once, with a copy button, in a dialog that says it will not show
  * again.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -173,6 +174,7 @@ const TABS: TabItem[] = [
 ]
 
 export default function IntegrationsPage() {
+  useDocumentTitle(['Integrations'])
   // The tab also answers a ?tab= deep link (the flow palette's
   // "install a plugin" hint links to the plugins tab).
   const [search] = useSearchParams()

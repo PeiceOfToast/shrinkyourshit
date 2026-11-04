@@ -7,6 +7,7 @@
  * and the recent history. Creating a library happens only at /libraries/new,
  * which the empty state links to.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -274,6 +275,7 @@ function HistoryRow({
 }
 
 export default function DashboardPage() {
+  useDocumentTitle(['Dashboard'])
   const stats = useQuery({ queryKey: ['stats'], queryFn: getStats })
   const libraries = useQuery({ queryKey: ['libraries'], queryFn: getLibraries })
   const jobs = useQuery({
@@ -434,7 +436,7 @@ export default function DashboardPage() {
         {history.length === 0 ? (
           <EmptyState
             testId="history-empty"
-            title="Nothing here yet"
+            title="No activity yet"
             body="Finished files show up here with their sizes before and after."
           />
         ) : (
