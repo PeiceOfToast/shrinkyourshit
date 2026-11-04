@@ -84,7 +84,7 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 | 54 | 54-target-scale-and-rate.md | done | PR #58 https://github.com/PeiceOfToast/shrinkyourshit/pull/58, v1.10, CI green (9 checks incl. e2e, docker-arm64), checklist ticked |
 | 55 | 55-encoder-rate-and-scale-args.md | done | PR #59 https://github.com/PeiceOfToast/shrinkyourshit/pull/59, v1.10, CI green (9 checks incl. e2e, docker-arm64), checklist 3/3 ticked |
 | 56 | 56-condition-steps.md | done | PR #60 https://github.com/PeiceOfToast/shrinkyourshit/pull/60, v1.10, CI green (9 checks), make test and make lint green, checklist 4/4 ticked |
-| 57 | 57-per-step-hardware.md | todo | |
+| 57 | 57-per-step-hardware.md | in_progress | branch task/57-per-step-hardware, v1.10, make test/lint/test-integration green, checklist 4/4 ticked, PR not opened |
 | 58 | 58-raw-args-escape-hatch.md | todo | |
 | 59 | 59-tier-storage-and-representability.md | todo | |
 | 60 | 60-moderate-tree-editor.md | todo | |
