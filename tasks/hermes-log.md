@@ -254,3 +254,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 2026-11-04T01:46:13Z PM idle: no todo tasks (v1.8 complete through 35), no open PRs, no live session
 - 2026-11-04T02:05:00Z pm: found docs/design/ui-redesign-2026-11-04.md (1137 lines, written 01:52Z from the 22 screenshots in /home/mb/ui-shots) untracked on the VM; used its section 7 to create tasks 36 to 53, added the v1.9 queue to STATUS.md and a v1.9 section to ROADMAP.md, committed fbe4cca and pushed to main
 - 2026-11-04T02:05:00Z task 36: started build run 20261104-020240-9e806a90 (haiku), design tokens, Inter via @fontsource, motion and focus rules; note the launcher ssh call hit its 120s local timeout while the run itself started fine under nohup
+- 2026-11-04T02:31:10Z task 36: verified PR #39 (9/9 checks green, make test 245 web tests plus go suites, make lint, npm run build emits one latin Inter woff2, checklist ticked), merged squash, main at 9bf7ff1
+- 2026-11-04T02:31:10Z task 36: PM decision, deviation 1 accepted: latin @font-face in index.css instead of main.tsx wght.css import, because the acceptance item requires exactly one Inter woff2; recorded in tasks/36-notes.md
+- 2026-11-04T02:31:10Z pm: v1.9 next task is 37 (control classes and format helpers), starts next tick
