@@ -256,6 +256,13 @@ type Effective struct {
 	// 34, NotMediaReason); empty for media files, which report through the
 	// satisfied rule instead.
 	Reason string
+	// Hardware is the encoder choice of the transcode step that ran
+	// (task 57): "" or HardwareAuto means the global policy, any other
+	// value names one encoder the step requires. HardwareStep is that
+	// step's ID, so a failure can name the step. Both are empty when no
+	// transcode ran.
+	Hardware     string
+	HardwareStep string
 }
 
 // FreshEffective is the Effective a resolution starts from (task 32):
@@ -301,6 +308,8 @@ func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo, kind probe.Kind
 		// codec" — exactly the default satisfied rule (DECISIONS.md B2),
 		// so the flag stays off.
 		applyTranscode(&eff.Target.Video, par, !allCodecNot(s.When))
+		eff.Hardware = par.Hardware
+		eff.HardwareStep = s.ID
 	case StepScale:
 		var par scaleParams
 		if err := decodeParams(s.Params, &par); err != nil {

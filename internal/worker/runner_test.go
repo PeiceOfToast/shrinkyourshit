@@ -1207,3 +1207,116 @@ func TestRunnerPassesScaleAndRateToEncode(t *testing.T) {
 	require.Len(t, seen, 1, "one encode ran")
 	require.Contains(t, seen[0], "-c:v libx265 -crf 22 -preset medium -vf scale=-2:720 ")
 }
+
+// hardwareGraph is probe → transcode (hevc, the given hardware) → remux, the
+// smallest flow whose encode carries a per step hardware choice (task 57).
+func hardwareGraph(hardware string) *flow.Graph {
+	return &flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "encode", Type: flow.StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"hardware":"` + hardware + `"}`)},
+			{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		},
+		Edges: []flow.Edge{{From: "probe", To: "encode"}, {From: "encode", To: "remux"}},
+	}
+}
+
+// fakeHW is a stand-in hardware backend with a real name (qsv, vaapi, ...)
+// so a step's explicit hardware choice can select it. Its args name the
+// backend so the fake run can recognize it.
+type fakeHW struct{ name string }
+
+func (f fakeHW) Name() string                   { return f.name }
+func (f fakeHW) Codecs() []string               { return []string{"hevc"} }
+func (f fakeHW) SelfTest(context.Context) error { return nil }
+func (f fakeHW) Detect(context.Context, string) (encoders.Capability, error) {
+	return encoders.Capability{Encoders: []encoders.EncoderInfo{{Name: f.name, Codecs: []string{"hevc"}}}}, nil
+}
+func (f fakeHW) BuildArgs(spec encoders.Spec) []string {
+	return []string{"-c:v", f.name + "_codec", "-i", spec.Input, spec.Output}
+}
+
+// logText joins every job log message the fake API recorded for one job.
+func logText(api *fakeAPI, jobID string) string {
+	var b strings.Builder
+	for _, l := range collectJobLog(api, jobID) {
+		b.WriteString(l.Message)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// TestRunnerHardwareQSVOnNodeWithoutQSVFailsNamingStep: a step that asks for
+// qsv on a node with only cpu fails the job before any encode runs, with an
+// error that names the step and the missing encoder.
+func TestRunnerHardwareQSVOnNodeWithoutQSVFailsNamingStep(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	_, spec := defaultSpec(t, dir, "job1")
+	spec.Flow = hardwareGraph(flow.HardwareQSV)
+	api.enqueue("job1", spec)
+
+	ran := 0
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		run: func(context.Context, []string) error { ran++; return nil },
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	rep, ok := api.failOf("job1")
+	require.True(t, ok, "the job must fail, not fall back to software")
+	require.Contains(t, rep.Error, "step encode")
+	require.Contains(t, rep.Error, "qsv")
+	require.Zero(t, ran, "no encode may run when the requested encoder is missing")
+}
+
+// TestRunnerHardwareSoftwareOnQSVNodeUsesLibx265: software on a node that has
+// QSV encodes with libx265 on the cpu, and the job log says the step chose it.
+func TestRunnerHardwareSoftwareOnQSVNodeUsesLibx265(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	_, spec := defaultSpec(t, dir, "job1")
+	spec.Flow = hardwareGraph(flow.HardwareSoftware)
+	api.enqueue("job1", spec)
+
+	var seen []string
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		encs: []encoders.Encoder{fakeHW{name: "qsv"}, encoders.CPU},
+		run:  writeRun("OUTPUT-DATA", &seen),
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	require.Len(t, seen, 1, "one encode ran, on the cpu")
+	require.Contains(t, seen[0], "libx265")
+	require.NotContains(t, seen[0], "qsv_codec")
+
+	in := api.completeOf("job1")
+	require.Equal(t, "cpu", in.Encoder)
+	require.Contains(t, logText(api, "job1"), "encoder chosen: cpu (step encode set hardware to software)")
+}
+
+// TestRunnerHardwareExplicitQSVNeverFallsBackToSoftware: when the requested
+// qsv encode fails, the job fails. It does not retry on the cpu.
+func TestRunnerHardwareExplicitQSVNeverFallsBackToSoftware(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	_, spec := defaultSpec(t, dir, "job1")
+	spec.Flow = hardwareGraph(flow.HardwareQSV)
+	api.enqueue("job1", spec)
+
+	var seen []string
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		encs: []encoders.Encoder{fakeHW{name: "qsv"}, encoders.CPU},
+		run: func(_ context.Context, args []string) error {
+			seen = append(seen, strings.Join(args, " "))
+			return errors.New("qsv exploded")
+		},
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	rep, ok := api.failOf("job1")
+	require.True(t, ok)
+	require.Contains(t, rep.Error, "encode failed")
+	require.Len(t, seen, 1, "only the qsv attempt ran, no cpu fallback")
+	require.Contains(t, seen[0], "qsv_codec")
+}
