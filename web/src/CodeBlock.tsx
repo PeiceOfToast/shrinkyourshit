@@ -13,10 +13,13 @@ export default function CodeBlock({
   children,
   copy = false,
   testId,
+  copyTestId,
 }: {
   children: string
   copy?: boolean
   testId?: string
+  /** The copy button's test id. Defaults to `${testId}-copy`. */
+  copyTestId?: string
 }) {
   return (
     <div
@@ -27,7 +30,7 @@ export default function CodeBlock({
         <div className="flex justify-end p-2 pb-0">
           <CopyButton
             text={children}
-            testId={testId ? `${testId}-copy` : undefined}
+            testId={copyTestId ?? (testId ? `${testId}-copy` : undefined)}
           />
         </div>
       )}
