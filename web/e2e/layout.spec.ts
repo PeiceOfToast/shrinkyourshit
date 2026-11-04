@@ -22,8 +22,8 @@ const PAGES: Array<{ path: string; ready: string }> = [
 ]
 
 const NAV_LABELS = [
-  'Dash',
-  'Library',
+  'Dashboard',
+  'Libraries',
   'Nodes',
   'Encode settings',
   'App settings',

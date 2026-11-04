@@ -59,7 +59,7 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 37 | 37-control-classes-format-helpers.md | done | PR #40 https://github.com/PeiceOfToast/shrinkyourshit/pull/40, v1.9, CI green, checklist ticked |
 | 38 | 38-layout-primitives.md | done | PR #41 https://github.com/PeiceOfToast/shrinkyourshit/pull/41 |
 | 39 | 39-control-primitives.md | done | PR #42 https://github.com/PeiceOfToast/shrinkyourshit/pull/42 |
-| 40 | 40-app-shell-encoding-status.md | todo |  |
+| 40 | 40-app-shell-encoding-status.md | done | PR pending, v1.9, checklist ticked |
 | 41 | 41-library-forms.md | todo |  |
 | 42 | 42-dashboard.md | todo |  |
 | 43 | 43-libraries-list.md | todo |  |
