@@ -4,8 +4,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 	"github.com/stretchr/testify/assert"
@@ -163,4 +165,43 @@ func TestSettingsPasswordChangeRequiresCurrent(t *testing.T) {
 	require.NoError(t, s.Update(ctx, h.auth, Update{CurrentPassword: "old", Password: "new"}))
 	_, err = h.auth.Login(ctx, "admin", "new")
 	require.NoError(t, err)
+}
+
+// TestSettingsAllowRawArgs (task 58): the raw arguments switch defaults on,
+// round-trips off and on, and refuses only graphs that hold a raw_args step.
+func TestSettingsAllowRawArgs(t *testing.T) {
+	h := newAuthHarness(t)
+	ctx := context.Background()
+	s := NewSettings(h.st, nil)
+
+	vals, err := s.Get(ctx)
+	require.NoError(t, err)
+	assert.True(t, vals.AllowRawArgs, "raw arguments are on by default")
+
+	off := false
+	require.NoError(t, s.Update(ctx, h.auth, Update{AllowRawArgs: &off}))
+	vals, err = s.Get(ctx)
+	require.NoError(t, err)
+	assert.False(t, vals.AllowRawArgs)
+
+	raw := flow.Graph{Schema: flow.FlowSchema, Nodes: []flow.Step{
+		{ID: "probe", Type: flow.StepProbe},
+		{ID: "raw", Type: flow.StepRawArgs, Params: json.RawMessage(`{"stage":"output","args":"-preset fast"}`)},
+		{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+	}, Edges: []flow.Edge{{From: "probe", To: "raw"}, {From: "raw", To: "remux"}}}
+	refused, err := s.RefusedRawArgs(ctx, raw)
+	require.NoError(t, err)
+	require.Len(t, refused, 1)
+	assert.Equal(t, "nodes[1].type", refused[0].Path)
+
+	plain := flow.Graph{Schema: flow.FlowSchema, Nodes: []flow.Step{{ID: "probe", Type: flow.StepProbe}}}
+	refused, err = s.RefusedRawArgs(ctx, plain)
+	require.NoError(t, err)
+	assert.Empty(t, refused, "a graph without the step is never refused by the switch")
+
+	on := true
+	require.NoError(t, s.Update(ctx, h.auth, Update{AllowRawArgs: &on}))
+	refused, err = s.RefusedRawArgs(ctx, raw)
+	require.NoError(t, err)
+	assert.Empty(t, refused)
 }

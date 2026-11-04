@@ -53,6 +53,9 @@ type LibraryManager struct {
 	// plugin service's CheckGraph, set by the server wiring; nil-safe
 	// (tests without a plugin service).
 	pluginCheck func(ctx context.Context, g flow.Graph) error
+	// settings carries the allow_raw_args switch (task 58); nil-safe in
+	// tests, where no switch is consulted.
+	settings *Settings
 }
 
 // NewLibraryManager builds the manager. watcher may be nil (watch state is
@@ -81,6 +84,10 @@ func (m *LibraryManager) SetScanHook(scan func(libraryID string)) { m.scan = sca
 func (m *LibraryManager) SetPluginCheck(check func(ctx context.Context, g flow.Graph) error) {
 	m.pluginCheck = check
 }
+
+// SetSettings wires the app settings, so a saved flow with a raw_args step
+// is refused while allow_raw_args is off (task 58).
+func (m *LibraryManager) SetSettings(s *Settings) { m.settings = s }
 
 // Create validates and stores a new library.
 func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Library, error) {

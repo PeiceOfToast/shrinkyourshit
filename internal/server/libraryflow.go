@@ -226,6 +226,16 @@ func (m *LibraryManager) UpdateFlow(ctx context.Context, id, source string, g fl
 	if errs := flow.Validate(g); len(errs) > 0 {
 		return nil, &ErrInvalidFlow{Errors: errs}
 	}
+	// The raw arguments switch (task 58): refused, not dropped, while off.
+	if m.settings != nil {
+		refused, err := m.settings.RefusedRawArgs(ctx, g)
+		if err != nil {
+			return nil, err
+		}
+		if len(refused) > 0 {
+			return nil, &ErrInvalidFlow{Errors: refused}
+		}
+	}
 	lib, err := m.st.GetLibrary(ctx, id)
 	if err != nil {
 		return nil, err

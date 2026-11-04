@@ -166,6 +166,7 @@ func New(cfg Config) *Server {
 	nodes.SetQueue(queue)
 	auth := NewAuth(cfg.Store, cfg.Log)
 	settings := NewSettings(cfg.Store, cfg.Log)
+	libs.SetSettings(settings)
 	stats := NewStats(cfg.Store)
 	queue.SetInspector(cfg.Inspect, cfg.FFprobePath)
 	transfer := NewTransfer(cfg.Store, cfg.ScratchDir)
