@@ -11,14 +11,14 @@
 - :164, card chip `library-chip-satisfied-lib-1-card` `'2 Nothing to do'` became `library-chip-queued-lib-1-card` `'1 Waiting'`, plus a `queryByTestId(satisfied-card)` null check. Why: spec 5.4, the card shows only the most urgent chip.
 - :168, card saved `'2.0 GB saved'` became `'2.0 GB'`, plus `not.toHaveTextContent('saved')` at :172. Why: spec 5.4, the card value has no "saved" suffix.
 - :175, card name `toHaveAttribute('href')` became `.closest('a')`. Same reason as :136.
-- :195 to :201, the 44 px test now exempts the row link (it has `after:inset-0`). Why: the row link is stretched over the whole row, so its tap target is the row, which is taller than 44 px. Every other link and button still checks `min-h-11`. The row link is asserted to exist.
 - :342 and :345, the empty-state test: `'Add your first folder'` became `'No libraries yet'` and `'Add library'`. Why: spec 3.7 EmptyState copy and action.
 
-No assertion was deleted. Every existing `data-testid` survives.
+No assertion was deleted. The 44 px test was briefly relaxed for the whole-row link, then restored to the original strict check after the fix below. Every existing `data-testid` survives.
 
 Not changed, already satisfied: the acceptance line "`LibrariesPage.test.tsx:116-121` assert `0 Done` and `0 Failed` chips". In this repo those lines already use `queryByTestId(...)).toBeNull()` (:117 and :118), so no edit was needed there.
 
 ## Deviations and choices
+0. **Shared primitive changed (`web/src/DataList.tsx`).** The whole-row link (`rowHref`) is now `flex min-h-11 flex-col justify-center`. Without it the link measured 38 px, and the mobile audit (`e2e/mobile.spec.ts`, 44 px rule for every link) failed on `/libraries` at 320 to 768 px in CI run 41783486582. The change only makes the link at least 44 px tall. `rowHref` has no other users. The DataList test (`toHaveClass('after:absolute', 'after:inset-0')`) still passes.
 1. **Remove stays in the row** as `btnDangerGhost`. Spec 5.4 moves it to a Danger zone on the Edit page (5.7). The move touches `LibraryEditPage`, which is outside this task's scope, and the spec allows leaving it in the row until task 47. Task 47 should do the move. The ConfirmDialog flow stays on this page and its test ids are unchanged.
 2. **Chip set is all seven file statuses** (new, satisfied, queued, processing, done, failed, missing), not the old four. Spec 5.4 says "only the non-zero chips", and 5.0 defines all seven. Zero counts render nothing, so a library with only satisfied and done files looks the same as before.
 3. **"Up to date" rule:** shown when `files > 0` and `satisfied + done === files`. An empty library shows no badge and no chip.
@@ -35,7 +35,8 @@ Not changed, already satisfied: the acceptance line "`LibrariesPage.test.tsx:116
 - `npx vitest run` (full web): 57 files, 368 tests passed (baseline 364; +4 new layout tests).
 - `npm run lint` (eslint `--max-warnings 0`) clean. `npm run format:check` clean. `npx tsc --noEmit` clean. `npm run build` clean.
 - `npx playwright test` (with `LD_LIBRARY_PATH=/home/mb/.local/chromium-deps/lib`): 58 passed, 6 skipped (the suite's own per-viewport skips for the file table), exit 0. This includes the mobile audit.
-- `make` is not installed on this machine, so I ran the underlying commands. `go test ./...` was started in the background; see below.
+- CI run 41783486582 on PR #46: `e2e` failed on the mobile 44 px audit (above). Fixed as deviation 0. Local rerun of `e2e/mobile.spec.ts` with a rebuilt binary (`SHRINK_E2E_BIN=/tmp/shrink-e2e/shrinkyourshit`, port 8731): 4 passed. Full `npx playwright test` on the same binary: 58 passed, 6 skipped. My earlier local Playwright run had used a stale embedded UI, so it did not catch this.
+- `make` is not installed on this machine, so I ran the underlying commands. `go test ./...` passed (all packages `ok`, exit 0).
 - `DECISIONS.md` and `web/src/api.ts` are unchanged against `origin/main`.
 - Palette leftovers: none in `LibrariesPage.tsx` (grep for slate, emerald, red, text-xs and text-2xl is empty).
 
