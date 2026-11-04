@@ -13,8 +13,8 @@ any page with leftover copy from 6 (Naming, Empty copy) and `useDocumentTitle` c
 
 ## Acceptance
 
-- [ ] A grep for `Add folder`, `job {`, `Back to files` and `Back to rules` in `web/src/*.tsx` (non-test) returns nothing.
-- [ ] Every route sets the document title.
+- [x] A grep for `Add folder`, `job {`, `Back to files` and `Back to rules` in `web/src/*.tsx` (non-test) returns nothing.
+- [x] Every route sets the document title.
 
 ## Rules for this wave
 
