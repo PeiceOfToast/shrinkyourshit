@@ -258,3 +258,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T02:31:10Z task 36: PM decision, deviation 1 accepted: latin @font-face in index.css instead of main.tsx wght.css import, because the acceptance item requires exactly one Inter woff2; recorded in tasks/36-notes.md
 - 2026-11-04T02:31:10Z pm: v1.9 next task is 37 (control classes and format helpers), starts next tick
 - 2026-11-04T02:48:35Z started task 37 (control classes + format helpers), run 20261104-024618-10bd43cf, claude haiku build
+- 2026-11-04T03:08:57Z task 37: build run 20261104-024618-10bd43cf finished; verified checklist ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, make test 262 web tests green, make lint clean, PR #40 CI green incl docker-arm64
+- 2026-11-04T03:08:57Z task 37: merged PR #40 squash (main at 1f43472), remote branch deleted, main pulled on VM
+- 2026-11-04T03:08:57Z pm: v1.9 next task is 38 (layout primitives), starts next tick
