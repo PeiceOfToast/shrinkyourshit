@@ -272,7 +272,7 @@ describe('DashboardPage', () => {
     for (const id of ids) {
       const card = screen.getByTestId(id)
       expect(card.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
-      expect(card.querySelector('p.font-bold')?.className).toContain(
+      expect(card.querySelector('p.font-semibold')?.className).toContain(
         'text-[clamp(',
       )
     }

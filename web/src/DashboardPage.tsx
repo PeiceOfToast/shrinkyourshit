@@ -248,25 +248,25 @@ export default function DashboardPage() {
             label="Space saved"
             tone="good"
             value={formatBytes(stats.data?.bytes_saved ?? 0)}
-            icon="M4 17l6-6 4 4 6-6"
+            icon="encode"
           />
           <StatCard
             testid="stat-files"
             label="Files"
             value={stats.data?.files ?? 0}
-            icon="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"
+            icon="library"
           />
           <StatCard
             testid="stat-satisfied"
             label="Nothing to do"
             value={stats.data?.satisfied ?? 0}
-            icon="M20 6 9 17l-5-5"
+            icon="check"
           />
           <StatCard
             testid="stat-queued"
             label="Waiting"
             value={stats.data?.queued ?? 0}
-            icon="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+            icon="clock"
           />
         </div>
       )}

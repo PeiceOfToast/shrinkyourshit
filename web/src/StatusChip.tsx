@@ -1,27 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * StatusChip (task 19): one file-status count as a small colored pill —
- * the count plus its plain-language label, dimmed when zero. Shared by the
- * libraries list and the library detail header so both read the same way.
+ * StatusChip (task 19, restyled and rebuilt on Badge in task 39): one
+ * file-status count as a small pill, "3 Waiting" or "2 Shrunk".
+ *
+ * It renders nothing when `count` is 0 (spec 2.1, "hide zero"). A zero
+ * count is not a status worth a chip, and a page that wants to say "none"
+ * writes that in a sentence instead.
+ *
+ * `satisfied` files read "Shrunk" when `bytesSaved` is above 0 (the file
+ * was made smaller by this app), and "Nothing to do" when it is 0 or not
+ * given. The UI derives this from `bytes_saved`; the API has no separate
+ * "shrunk" status.
  */
+import Badge, { type BadgeTone } from './Badge'
 import { statusLabel } from './easyModel'
 
-function chipColor(status: string): string {
+function toneFor(status: string, shrunk: boolean): BadgeTone {
+  if (status === 'satisfied') return shrunk ? 'success' : 'neutral'
   switch (status) {
-    case 'satisfied':
     case 'done':
-      return 'bg-emerald-900/60 text-emerald-300 ring-emerald-800'
+      return 'success'
     case 'failed':
-      return 'bg-red-900/60 text-red-300 ring-red-800'
-    case 'queued':
-      return 'bg-amber-900/60 text-amber-300 ring-amber-800'
-    case 'processing':
-      return 'bg-sky-900/60 text-sky-300 ring-sky-800'
+      return 'danger'
     case 'missing':
-      return 'bg-slate-800 text-slate-400 ring-slate-700'
+      return 'warning'
+    case 'processing':
+      return 'info'
     default:
-      return 'bg-slate-800 text-slate-300 ring-slate-700'
+      return 'neutral'
   }
 }
 
@@ -29,19 +36,25 @@ export default function StatusChip({
   status,
   count,
   testId,
+  bytesSaved,
 }: {
   status: string
   count: number
   testId: string
+  /** Bytes this library saved; used only to read `satisfied` as "Shrunk". */
+  bytesSaved?: number
 }) {
+  if (count === 0) return null
+  const shrunk = status === 'satisfied' && (bytesSaved ?? 0) > 0
+  const label = shrunk ? 'Shrunk' : statusLabel(status)
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${chipColor(status)} ${
-        count === 0 ? 'opacity-50' : ''
-      }`}
-      data-testid={testId}
+    <Badge
+      tone={toneFor(status, shrunk)}
+      dot={status === 'processing'}
+      pulse={status === 'processing'}
+      testId={testId}
     >
-      {count} {statusLabel(status)}
-    </span>
+      {count} {label}
+    </Badge>
   )
 }

@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * ConfirmDialog (task 13): the one confirmation for every destructive
- * action. Built on ModalDialog (native <dialog>), so Escape closes it and
- * focus returns to the trigger. The confirm button always names the action
- * ("Remove library", "Stop node") — never "OK" — and the body is expected
- * to say exactly what is and is not affected.
+ * ConfirmDialog (task 13, restyled in task 39): the one confirmation for
+ * every destructive action. Built on ModalDialog (native <dialog>), so Escape
+ * closes it and focus returns to the trigger. The confirm button always
+ * names the action ("Remove library", "Stop node"), never "OK", and the
+ * body is expected to say exactly what is and is not affected.
+ *
+ * The footer order is Cancel, then confirm (spec 4.1). On a phone both
+ * buttons take the full width, and the confirm sits on top, where the
+ * thumb lands first.
  */
-import ModalDialog from './dialog'
+import type { ReactNode } from 'react'
+import ModalDialog, { DialogBody, DialogFooter, DialogHeader } from './dialog'
+import { btnDanger, btnGhost, btnPrimary } from './uiControls'
 
 export default function ConfirmDialog({
   title,
@@ -32,7 +38,7 @@ export default function ConfirmDialog({
   testId?: string
   confirmTestId?: string
   cancelTestId?: string
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <ModalDialog
@@ -41,32 +47,30 @@ export default function ConfirmDialog({
       testId={testId}
       dismissOnBackdrop
     >
-      <h2 className="text-lg font-semibold">{title}</h2>
-      <div className="mt-2 space-y-2 text-sm text-slate-300">{children}</div>
-      <div className="mt-4 flex gap-2">
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={busy}
-          className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${
-            danger
-              ? 'bg-red-600 hover:bg-red-500'
-              : 'bg-emerald-600 hover:bg-emerald-500'
-          }`}
-          data-testid={confirmTestId}
-        >
-          {busy ? `${confirmLabel}…` : confirmLabel}
-        </button>
+      <DialogHeader title={title} />
+      <DialogBody>
+        <div className="flex flex-col gap-2">{children}</div>
+      </DialogBody>
+      <DialogFooter>
         <button
           type="button"
           onClick={onClose}
           disabled={busy}
-          className="rounded-lg px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+          className={`${btnGhost} w-full sm:w-auto`}
           data-testid={cancelTestId}
         >
           {cancelLabel}
         </button>
-      </div>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className={`${danger ? btnDanger : btnPrimary} order-first w-full sm:order-none sm:w-auto`}
+          data-testid={confirmTestId}
+        >
+          {busy ? `${confirmLabel}…` : confirmLabel}
+        </button>
+      </DialogFooter>
     </ModalDialog>
   )
 }

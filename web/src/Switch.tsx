@@ -1,51 +1,64 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * An accessible on/off switch (task 18): renders as a pill with a sliding
- * knob, announces itself with role="switch" and aria-checked (not a
- * checkbox), and keeps a 44px touch target (the UI review's touch rule).
+ * An accessible on/off switch (task 18, restyled task 39): renders as a
+ * role="switch" with aria-checked. The button keeps a 44 px hit area; the
+ * visible track is 44x24 with a 20 px knob that slides on `duration-base`.
+ * The state is conveyed by the track colour and the knob position, not by
+ * an On/Off word inside the knob.
+ *
+ * Pass `visibleLabel` to show the name beside the switch. The name then
+ * comes from that text (aria-labelledby) instead of `label`.
  */
+import { useId } from 'react'
+
 export default function Switch({
   checked,
   onChange,
   label,
+  visibleLabel,
   testId,
   disabled = false,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
-  /** Accessible name, announced instead of the visual state. */
+  /** Accessible name, used when there is no `visibleLabel`. */
   label: string
+  /** Text shown beside the switch. It becomes the accessible name. */
+  visibleLabel?: string
   testId: string
   disabled?: boolean
 }) {
+  const labelId = useId()
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={label}
+      aria-label={visibleLabel ? undefined : label}
+      aria-labelledby={visibleLabel ? labelId : undefined}
       data-testid={testId}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-11 w-20 flex-none items-center rounded-full px-1 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? 'bg-emerald-600' : 'bg-slate-700'
-      }`}
+      className="inline-flex h-11 flex-none items-center gap-3 rounded-full transition-colors duration-fast ease-standard disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span
         aria-hidden="true"
-        className={`h-9 w-9 rounded-full bg-white shadow transition-transform ${
-          checked ? 'translate-x-9' : 'translate-x-0'
-        }`}
-      />
-      <span
-        aria-hidden="true"
-        className={`absolute inset-y-0 flex w-1/2 items-center justify-center text-[10px] font-bold uppercase tracking-wide ${
-          checked ? 'left-0 text-white/80' : 'right-0 text-slate-400'
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-fast ease-standard ${
+          checked ? 'bg-accent' : 'bg-raised ring-1 ring-inset ring-line-strong'
         }`}
       >
-        {checked ? 'On' : 'Off'}
+        <span
+          className={`absolute left-0.5 h-5 w-5 rounded-full bg-fg transition-transform duration-base ease-standard ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
       </span>
+      {visibleLabel && (
+        <span id={labelId} className="text-body text-fg">
+          {visibleLabel}
+        </span>
+      )}
     </button>
   )
 }

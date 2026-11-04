@@ -16,12 +16,28 @@
  * wrong for dialogs that hold form state.
  */
 import { useEffect, useRef, type MouseEvent, type ReactNode } from 'react'
+import Icon from './Icon'
+import { btnIcon } from './uiControls'
+
+export type DialogSize = 'sm' | 'md' | 'lg'
+
+/** Width per size (spec 4.1): sm 28rem, md 36rem, lg 48rem. */
+const SIZE: Record<DialogSize, string> = {
+  sm: 'max-w-md',
+  md: 'max-w-xl',
+  lg: 'max-w-3xl',
+}
+
+/** The default look of every dialog: overlay level (spec 2.6). */
+const BASE =
+  'm-auto w-[calc(100%-2rem)] rounded-overlay bg-surface p-0 text-fg shadow-overlay ring-1 ring-line-strong/40'
 
 export default function ModalDialog({
   onClose,
   label,
   testId,
-  className = 'm-auto w-full max-w-md rounded-2xl bg-slate-900 p-6 text-slate-100 shadow-xl ring-1 ring-slate-800',
+  size = 'sm',
+  className,
   dismissOnBackdrop = false,
   children,
 }: {
@@ -29,6 +45,9 @@ export default function ModalDialog({
   /** Accessible name of the dialog, shown to assistive technology. */
   label: string
   testId?: string
+  /** Panel width. Ignored when `className` replaces the default look. */
+  size?: DialogSize
+  /** Replaces the default panel classes for a dialog with its own layout. */
   className?: string
   dismissOnBackdrop?: boolean
   children: ReactNode
@@ -86,10 +105,58 @@ export default function ModalDialog({
       ref={ref}
       aria-label={label}
       data-testid={testId}
-      className={className}
+      className={className ?? `${BASE} ${SIZE[size]}`}
       onClick={onDialogClick}
     >
       {children}
     </dialog>
+  )
+}
+
+/**
+ * The title row of a dialog: an h2 and, when `onClose` is given, a close
+ * button. Padding is `px-6 pt-6` so it lines up with DialogBody.
+ */
+export function DialogHeader({
+  title,
+  onClose,
+  titleTestId,
+}: {
+  title: ReactNode
+  onClose?: () => void
+  titleTestId?: string
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-6 pt-6">
+      <h2 className="text-heading text-fg" data-testid={titleTestId}>
+        {title}
+      </h2>
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className={`${btnIcon} -mr-2 -mt-2`}
+        >
+          <Icon name="close" className="h-5 w-5" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** The scrolling middle of a dialog. */
+export function DialogBody({ children }: { children: ReactNode }) {
+  return (
+    <div className="max-h-[70dvh] overflow-y-auto px-6 py-4 text-body text-fg">
+      {children}
+    </div>
+  )
+}
+
+/** The action row of a dialog: right-aligned, wraps on a narrow screen. */
+export function DialogFooter({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-2 px-6 pb-6">{children}</div>
   )
 }

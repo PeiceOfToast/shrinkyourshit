@@ -84,3 +84,28 @@ describe('ConfirmDialog', () => {
     )
   })
 })
+
+describe('ConfirmDialog footer (task 39)', () => {
+  it('puts Cancel before the confirm button in the DOM', () => {
+    render(
+      <ConfirmDialog
+        title="Revoke node?"
+        confirmLabel="Revoke node"
+        onConfirm={() => {}}
+        onClose={() => {}}
+      >
+        <p>The node stops taking work.</p>
+      </ConfirmDialog>,
+    )
+    const cancel = screen.getByTestId('confirm-dialog-cancel')
+    const confirm = screen.getByTestId('confirm-dialog-confirm')
+    // DOCUMENT_POSITION_FOLLOWING: confirm comes after cancel.
+    expect(
+      cancel.compareDocumentPosition(confirm) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    // On a phone the confirm sits on top: it is first in the visual order.
+    expect(confirm.className).toContain('order-first')
+    expect(confirm.className).toContain('sm:order-none')
+  })
+})
