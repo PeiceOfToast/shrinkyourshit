@@ -113,12 +113,9 @@ describe('LibrariesPage', () => {
     expect(screen.getByTestId('library-chip-queued-lib-1')).toHaveTextContent(
       '1 Waiting',
     )
-    expect(screen.getByTestId('library-chip-done-lib-1')).toHaveTextContent(
-      '0 Done',
-    )
-    expect(screen.getByTestId('library-chip-failed-lib-1')).toHaveTextContent(
-      '0 Failed',
-    )
+    // Zero counts render no chip (task 39, spec 2.1 "hide zero").
+    expect(screen.queryByTestId('library-chip-done-lib-1')).toBeNull()
+    expect(screen.queryByTestId('library-chip-failed-lib-1')).toBeNull()
     expect(screen.getByTestId('library-files-lib-1')).toHaveTextContent('3')
     expect(screen.getByTestId('library-files-lib-2')).toHaveTextContent('2')
     expect(screen.getByTestId('library-saved-lib-1')).toHaveTextContent(

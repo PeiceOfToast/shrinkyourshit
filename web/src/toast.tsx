@@ -8,6 +8,8 @@
  */
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ToastContext, describeFailure, type ToastApi } from './toastContext'
+import Icon from './Icon'
+import { btnIcon } from './uiControls'
 
 type ToastKind = 'success' | 'error'
 
@@ -52,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div
-        className="pointer-events-none fixed inset-x-4 top-4 z-[70] flex flex-col items-stretch gap-2 sm:items-end"
+        className="pointer-events-none fixed inset-x-4 bottom-4 z-toast flex flex-col items-stretch gap-2 sm:bottom-auto sm:top-4 sm:items-end"
         aria-live="polite"
         data-testid="toast-region"
       >
@@ -60,22 +62,25 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             role={toast.kind === 'error' ? 'alert' : 'status'}
-            className={`pointer-events-auto flex w-full max-w-sm items-start gap-2 self-end rounded-xl px-4 py-3 text-sm shadow-lg ring-1 ${
-              toast.kind === 'error'
-                ? 'bg-red-950/95 text-red-100 ring-red-800'
-                : 'bg-emerald-950/95 text-emerald-100 ring-emerald-800'
+            className={`pointer-events-auto flex w-full max-w-sm items-start gap-3 self-end rounded-overlay border-l-[3px] bg-surface p-4 text-body text-fg shadow-overlay ring-1 ring-line-strong/40 ${
+              toast.kind === 'error' ? 'border-danger' : 'border-success'
             }`}
             data-testid="toast"
           >
-            <span aria-hidden="true">{toast.kind === 'error' ? '✕' : '✓'}</span>
-            <span className="min-w-0 break-words">{toast.message}</span>
+            <Icon
+              name={toast.kind === 'error' ? 'alert' : 'check'}
+              className={`mt-0.5 h-5 w-5 shrink-0 ${
+                toast.kind === 'error' ? 'text-danger' : 'text-success'
+              }`}
+            />
+            <span className="min-w-0 flex-1 break-words">{toast.message}</span>
             <button
               type="button"
               onClick={() => dismiss(toast.id)}
               aria-label="Dismiss notification"
-              className="ml-auto shrink-0 rounded px-1 opacity-70 hover:opacity-100"
+              className={`${btnIcon} -mr-2 -mt-2`}
             >
-              ✕
+              <Icon name="close" className="h-5 w-5" />
             </button>
           </div>
         ))}

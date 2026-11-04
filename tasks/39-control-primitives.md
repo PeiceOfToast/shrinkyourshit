@@ -13,15 +13,15 @@ new `Badge.tsx`, `Checkbox.tsx`, `Tabs.tsx`, `SegmentedControl.tsx`, `CopyButton
 
 ## Acceptance
 
-- [ ] The Checkbox input's bounding box is 44x44 (asserted through its classes `h-11 w-11`) and the visible box is 20 px.
-- [ ] Tabs arrow-key navigation works.
-- [ ] SegmentedControl keeps `aria-pressed`.
-- [ ] Switch has no "On"/"Off" text node and keeps `role=switch` and `aria-checked`.
-- [ ] StatusChip renders null for 0.
-- [ ] DataList `cardsBelow="md"` emits `md:hidden` and `hidden md:block`.
-- [ ] ConfirmDialog order is Cancel then confirm.
-- [ ] Toast sits at the bottom under `sm`.
-- [ ] Test updates: `StatCard.test.tsx:34,49` (to the tokens); any test asserting a zero StatusChip is noted, and fixed in the page task that changes it.
+- [x] The Checkbox input's bounding box is 44x44 (asserted through its classes `h-11 w-11`) and the visible box is 20 px.
+- [x] Tabs arrow-key navigation works.
+- [x] SegmentedControl keeps `aria-pressed`.
+- [x] Switch has no "On"/"Off" text node and keeps `role=switch` and `aria-checked`.
+- [x] StatusChip renders null for 0.
+- [x] DataList `cardsBelow="md"` emits `md:hidden` and `hidden md:block`.
+- [x] ConfirmDialog order is Cancel then confirm.
+- [x] Toast sits at the bottom under `sm`.
+- [x] Test updates: `StatCard.test.tsx:34,49` (to the tokens); any test asserting a zero StatusChip is noted, and fixed in the page task that changes it.
 
 ## Rules for this wave
 

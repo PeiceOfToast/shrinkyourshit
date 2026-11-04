@@ -210,9 +210,8 @@ describe('LibraryDetailPage', () => {
     expect(screen.getByTestId('library-summary-processing')).toHaveTextContent(
       '1 Working',
     )
-    expect(screen.getByTestId('library-summary-failed')).toHaveTextContent(
-      '0 Failed',
-    )
+    // A zero count renders no chip (task 39, spec 2.1 "hide zero").
+    expect(screen.queryByTestId('library-summary-failed')).toBeNull()
     // Bytes saved.
     expect(screen.getByTestId('library-summary-saved')).toHaveTextContent(
       '700 MB saved',

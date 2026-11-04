@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Skeletons (task 13): loading placeholders for tables and stat cards, so
- * a slow server looks busy rather than broken. Pure shapes — the pages
- * compose them with their own layout.
+ * Skeletons (task 13, restyled in task 39): loading placeholders for tables
+ * and stat cards, so a slow server looks busy rather than broken. Pure
+ * shapes; the pages compose them with their own layout. The pulse stops
+ * under reduced motion (spec 2.7), and the colour is the raised surface.
  */
+import { card, cardPad } from './uiControls'
+
 export function Skeleton({ className = '' }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse rounded bg-slate-800 ${className}`}
+      className={`animate-pulse rounded bg-raised motion-reduce:animate-none ${className}`}
     />
   )
 }
@@ -20,7 +23,7 @@ export function SkeletonCard({ className = 'h-16' }: { className?: string }) {
     <div
       role="status"
       aria-label="Loading"
-      className={`rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800 ${className}`}
+      className={`${card} p-4 ${className}`}
     >
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="mt-3 h-6 w-1/2" />
@@ -48,12 +51,14 @@ export function SkeletonRows({ rows = 4 }: { rows?: number }) {
     <div
       role="status"
       aria-label="Loading"
-      className="space-y-2 rounded-2xl bg-slate-900/50 p-4 ring-1 ring-slate-800"
+      className={`${card} ${cardPad}`}
       data-testid="rows-skeleton"
     >
-      {Array.from({ length: rows }, (_, i) => (
-        <Skeleton key={i} className="h-5 w-full" />
-      ))}
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: rows }, (_, i) => (
+          <Skeleton key={i} className="h-5 w-full" />
+        ))}
+      </div>
     </div>
   )
 }
