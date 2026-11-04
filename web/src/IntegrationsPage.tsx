@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Integrations page (task 23, 25 and 31): three tabs. "Servers" holds the media
- * servers and download clients that hear about every shrunk file, so the
- * library at home updates itself. "Webhooks" holds the outbound hooks that
- * tell something else what happened: a posted event summary, signed with
- * the hook's secret. "Plugins" holds the hook plugins (task 31), installed
- * from a git URL or a directory and enabled one by one. Rows are DataList
- * cards (task 20) with the shared 44px control classes; the add/edit form
- * keeps the key secret — a saved key shows "(unchanged)" in its field and
- * never travels back out of the API, and the webhook secret is shown once
- * with a copy button.
+ * Integrations page (task 23, 25 and 31, restyled task 50, spec 5.12): three
+ * tabs under the page header. "Servers" holds the media servers and download
+ * clients that hear about every shrunk file. "Webhooks" holds the outbound
+ * hooks that tell something else what happened, signed with the hook's
+ * secret. "Plugins" holds the hook plugins (see PluginsPage). Each tab is one
+ * Card: the primary action sits in the Card header, the rows are a DataList
+ * with a state Badge, and an empty tab gets an EmptyState.
+ *
+ * The add/edit forms, the deliveries list and the one-time secret are
+ * dialogs. A saved API key never appears in the form: a blank key field
+ * keeps the stored key, and the placeholder says so. The webhook secret is
+ * shown once, with a copy button, in a dialog that says it will not show
+ * again.
  */
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -34,16 +37,31 @@ import {
   type WebhookEvent,
   WEBHOOK_EVENTS,
 } from './api'
+import Badge from './Badge'
+import Banner from './Banner'
+import Card from './Card'
+import Checkbox from './Checkbox'
+import CodeBlock from './CodeBlock'
 import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
+import EmptyState from './EmptyState'
 import ErrorBox from './ErrorBox'
-import ModalDialog from './dialog'
-import PluginsPage from './PluginsPage'
+import ModalDialog, { DialogBody, DialogFooter, DialogHeader } from './dialog'
+import { Field } from './FormSection'
 import PageContainer from './PageContainer'
-import { SkeletonRows } from './skeleton'
+import PageHeader from './PageHeader'
+import PluginsPage from './PluginsPage'
 import Switch from './Switch'
+import Tabs, { type TabItem } from './Tabs'
+import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
-import { btn, btnGhost, btnPrimary, input } from './uiControls'
+import {
+  btnDangerGhost,
+  btnGhost,
+  btnPrimary,
+  input,
+  select,
+} from './uiControls'
 
 const KINDS = [
   { id: 'jellyfin', label: 'Jellyfin' },
@@ -120,8 +138,39 @@ function eventLabel(id: string): string {
   return WEBHOOK_EVENTS.find((e) => e.id === id)?.label ?? id
 }
 
+/**
+ * The result of the last Test press on a row, kept for this page visit only.
+ * The API has no connection state, so "Connected" and "Not connected" only
+ * appear after a Test in this session; an untested row says so.
+ */
+type Health = 'ok' | 'failed'
+
+/** The state Badge for a server or hook row. */
+function stateBadge(enabled: boolean, health: Health | undefined) {
+  if (!enabled) return <Badge>Disabled</Badge>
+  if (health === 'ok')
+    return (
+      <Badge tone="success" dot>
+        Connected
+      </Badge>
+    )
+  if (health === 'failed')
+    return (
+      <Badge tone="danger" dot>
+        Not connected
+      </Badge>
+    )
+  return <Badge>Not tested</Badge>
+}
+
 /** The tab: the three halves of the page. */
 type Tab = 'servers' | 'webhooks' | 'plugins'
+
+const TABS: TabItem[] = [
+  { id: 'servers', label: 'Servers', testId: 'integrations-tab-servers' },
+  { id: 'webhooks', label: 'Webhooks', testId: 'integrations-tab-webhooks' },
+  { id: 'plugins', label: 'Plugins', testId: 'integrations-tab-plugins' },
+]
 
 export default function IntegrationsPage() {
   // The tab also answers a ?tab= deep link (the flow palette's
@@ -133,46 +182,19 @@ export default function IntegrationsPage() {
   )
 
   return (
-    <PageContainer className="space-y-6" data-testid="integrations-page">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Integrations</h1>
-        <div
-          className="flex gap-2"
-          role="tablist"
-          aria-label="Integrations"
-          data-testid="integrations-tabs"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'servers'}
-            className={tab === 'servers' ? btnPrimary : btnGhost}
-            data-testid="integrations-tab-servers"
-            onClick={() => setTab('servers')}
-          >
-            Servers
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'webhooks'}
-            className={tab === 'webhooks' ? btnPrimary : btnGhost}
-            data-testid="integrations-tab-webhooks"
-            onClick={() => setTab('webhooks')}
-          >
-            Webhooks
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'plugins'}
-            className={tab === 'plugins' ? btnPrimary : btnGhost}
-            data-testid="integrations-tab-plugins"
-            onClick={() => setTab('plugins')}
-          >
-            Plugins
-          </button>
-        </div>
+    <PageContainer data-testid="integrations-page">
+      <PageHeader
+        title="Integrations"
+        subtitle="Tell other apps when files change, and add new steps."
+      />
+
+      <div data-testid="integrations-tabs">
+        <Tabs
+          label="Integrations"
+          tabs={TABS}
+          value={tab}
+          onChange={(id) => setTab(id as Tab)}
+        />
       </div>
 
       {tab === 'servers' ? (
@@ -200,9 +222,11 @@ function ServersTab() {
 
   const [form, setForm] = useState<FormState | null>(null)
   const [deleting, setDeleting] = useState<Integration | null>(null)
+  const [health, setHealth] = useState<Record<string, Health>>({})
   const [testResult, setTestResult] = useState<{
     id: string
     text: string
+    ok: boolean
   } | null>(null)
 
   const invalidate = () => {
@@ -255,8 +279,10 @@ function ServersTab() {
     mutationFn: (id: string) => testIntegration(id),
     onSuccess: (result, id) => {
       const name = list.data?.items.find((row) => row.id === id)?.name ?? ''
+      setHealth((prev) => ({ ...prev, [id]: result.ok ? 'ok' : 'failed' }))
       setTestResult({
         id,
+        ok: result.ok,
         text: result.ok
           ? `Reached ${name} — it is listening.`
           : result.error
@@ -297,10 +323,10 @@ function ServersTab() {
   )
 
   const rowActions = (row: Integration, onCard: boolean) => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex justify-end gap-2">
       <button
         type="button"
-        className={btn}
+        className={btnGhost}
         disabled={test.isPending}
         data-testid={`integration-test-${row.id}${onCard ? '-card' : ''}`}
         onClick={() => test.mutate(row.id)}
@@ -317,24 +343,39 @@ function ServersTab() {
       </button>
       <button
         type="button"
-        className={btnGhost}
+        className={btnDangerGhost}
         data-testid={`integration-delete-${row.id}${onCard ? '-card' : ''}`}
         onClick={() => setDeleting(row)}
       >
-        Delete
+        Remove
       </button>
     </div>
   )
 
   const columns: Column<Integration>[] = [
-    { key: 'kind', header: 'Kind', cell: (r) => kindLabel(r.kind) },
-    { key: 'name', header: 'Name', cell: (r) => r.name, primary: true },
     {
-      key: 'base_url',
-      header: 'Address',
+      key: 'name',
+      header: 'Name',
+      primary: true,
       cell: (r) => (
-        <span className="break-all text-slate-300">{r.base_url}</span>
+        <div className="min-w-0">
+          <p className="font-semibold text-fg">{r.name}</p>
+          <p
+            className="mt-0.5 truncate font-mono text-caption font-normal text-fg-muted"
+            title={`${kindLabel(r.kind)} · ${r.base_url}`}
+          >
+            <span>{kindLabel(r.kind)}</span>
+            <span aria-hidden="true"> · </span>
+            <span>{r.base_url}</span>
+          </p>
+        </div>
       ),
+    },
+    {
+      key: 'state',
+      header: 'Status',
+      cell: (r) => stateBadge(r.enabled, health[r.id]),
+      cardPlacement: 'badge',
     },
     {
       key: 'enabled',
@@ -353,142 +394,168 @@ function ServersTab() {
       header: '',
       cell: (r) => rowActions(r, false),
       cardCell: (r) => rowActions(r, true),
-      cardNoLabel: true,
+      actions: true,
     },
   ]
 
   return (
-    <div className="space-y-6">
-      <p className="max-w-2xl text-sm text-slate-400">
-        After a file is shrunk, your media server or download client can be told
-        to rescan — without anyone clicking Scan. Each entry here is one server
-        to notify.
-      </p>
-
+    <div className="flex flex-col gap-6">
       {testResult && (
-        <p
-          role="status"
-          className="rounded-2xl bg-slate-800/60 p-4 text-sm ring-1 ring-slate-700"
-          data-testid="integration-test-result"
+        <Banner
+          tone={testResult.ok ? 'success' : 'warning'}
+          testId="integration-test-result"
         >
           {testResult.text}
-        </p>
+        </Banner>
       )}
 
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">Configured servers</h2>
-        <button
-          type="button"
-          className={btnPrimary}
-          data-testid="integrations-add"
-          onClick={() => setForm(blankForm())}
-        >
-          Add server
-        </button>
-      </div>
-
-      {list.isPending && <SkeletonRows rows={3} />}
-      {list.isError && (
-        <ErrorBox title="Cannot load the servers." error={list.error} />
-      )}
-      {list.data && list.data.items.length === 0 && (
-        <p className="text-sm text-slate-500" data-testid="integrations-empty">
-          No servers configured yet.
-        </p>
-      )}
-      {list.data && list.data.items.length > 0 && (
-        <DataList
-          rows={list.data.items}
-          columns={columns}
-          testid="integrations-list"
-          rowTestId={(r) => `integration-row-${r.id}`}
-          cardRowTestId={(r) => `integration-card-${r.id}`}
-        />
-      )}
-
-      {form && (
-        <section
-          className="rounded-2xl bg-slate-800/40 p-6"
-          data-testid="integration-form"
-        >
-          <h3 className="text-lg font-semibold">
-            {editing ? 'Edit server' : 'Add a server'}
-          </h3>
-          <div className="mt-4 space-y-4">
-            <label className="block">
-              <span className="text-sm text-slate-300">Kind</span>
-              <select
-                className={input}
-                value={form.kind}
-                data-testid="integration-kind"
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    kind: e.target.value as Integration['kind'],
-                  })
-                }
-              >
-                {KINDS.map((k) => (
-                  <option key={k.id} value={k.id}>
-                    {k.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-sm text-slate-300">Name</span>
-              <input
-                className={input}
-                value={form.name}
-                data-testid="integration-name"
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Living room Jellyfin"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm text-slate-300">Address (URL)</span>
-              <input
-                className={input}
-                value={form.base_url}
-                data-testid="integration-base-url"
-                onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                placeholder="http://192.168.1.10:8096"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm text-slate-300">API key</span>
-              <input
-                className={input}
-                type="password"
-                value={form.api_key}
-                data-testid="integration-api-key"
-                onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                placeholder={editing ? '(unchanged)' : ''}
-              />
-            </label>
-            <Switch
-              checked={form.enabled}
-              label="Enabled"
-              testId="integration-enabled"
-              onChange={(next) => setForm({ ...form, enabled: next })}
-            />
-            <Switch
-              checked={form.refresh_on_done}
-              label="Tell it to rescan when a file is shrunk"
-              testId="integration-refresh-on-done"
-              onChange={(next) => setForm({ ...form, refresh_on_done: next })}
+      <Card
+        as="section"
+        padding="none"
+        title="Media servers"
+        description="After a file is shrunk, your media server or download client can be told to rescan — without anyone clicking Scan. Each entry here is one server to notify."
+        actions={
+          <button
+            type="button"
+            className={btnPrimary}
+            data-testid="integrations-add"
+            onClick={() => setForm(blankForm())}
+          >
+            Add server
+          </button>
+        }
+      >
+        {list.isPending && <SkeletonRows rows={3} />}
+        {list.isError && (
+          <div className="p-4 sm:p-6">
+            <ErrorBox
+              title="Cannot load the servers."
+              error={list.error}
+              onRetry={() => void list.refetch()}
             />
           </div>
-          <div className="mt-6 flex gap-2">
-            <button
-              type="button"
-              className={btnPrimary}
-              disabled={save.isPending}
-              data-testid="integration-save"
-              onClick={submit}
-            >
-              Save
-            </button>
+        )}
+        {list.data && list.data.items.length === 0 && (
+          <EmptyState
+            icon="integrations"
+            title="No media servers yet"
+            body="Add Plex, Jellyfin or Emby and it rescans by itself after a file is shrunk."
+            action={
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => setForm(blankForm())}
+              >
+                Add server
+              </button>
+            }
+            testId="integrations-empty"
+          />
+        )}
+        {list.data && list.data.items.length > 0 && (
+          <DataList
+            rows={list.data.items}
+            columns={columns}
+            testid="integrations-list"
+            rowTestId={(r) => `integration-row-${r.id}`}
+            cardRowTestId={(r) => `integration-card-${r.id}`}
+          />
+        )}
+      </Card>
+
+      {form && (
+        <ModalDialog
+          label={editing ? 'Edit server' : 'Add a server'}
+          testId="integration-form"
+          size="md"
+          onClose={() => setForm(null)}
+        >
+          <DialogHeader
+            title={editing ? 'Edit server' : 'Add a server'}
+            onClose={() => setForm(null)}
+          />
+          <DialogBody>
+            <div className="flex flex-col gap-4">
+              <Field label="Kind" htmlFor="integration-kind">
+                <select
+                  id="integration-kind"
+                  className={select}
+                  value={form.kind}
+                  data-testid="integration-kind"
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      kind: e.target.value as Integration['kind'],
+                    })
+                  }
+                >
+                  {KINDS.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Name" htmlFor="integration-name">
+                <input
+                  id="integration-name"
+                  className={input}
+                  value={form.name}
+                  data-testid="integration-name"
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Living room Jellyfin"
+                />
+              </Field>
+              <Field label="Address (URL)" htmlFor="integration-base-url">
+                <input
+                  id="integration-base-url"
+                  className={input}
+                  value={form.base_url}
+                  data-testid="integration-base-url"
+                  onChange={(e) =>
+                    setForm({ ...form, base_url: e.target.value })
+                  }
+                  placeholder="http://192.168.1.10:8096"
+                />
+              </Field>
+              <Field
+                label="API key"
+                htmlFor="integration-api-key"
+                help={
+                  editing
+                    ? 'Leave this blank to keep the saved key.'
+                    : undefined
+                }
+              >
+                <input
+                  id="integration-api-key"
+                  className={input}
+                  type="password"
+                  value={form.api_key}
+                  data-testid="integration-api-key"
+                  onChange={(e) =>
+                    setForm({ ...form, api_key: e.target.value })
+                  }
+                  placeholder={editing ? '(unchanged)' : ''}
+                />
+              </Field>
+              <Switch
+                checked={form.enabled}
+                label="Enabled"
+                visibleLabel="Enabled"
+                testId="integration-enabled"
+                onChange={(next) => setForm({ ...form, enabled: next })}
+              />
+              <Switch
+                checked={form.refresh_on_done}
+                label="Tell it to rescan when a file is shrunk"
+                visibleLabel="Tell it to rescan when a file is shrunk"
+                testId="integration-refresh-on-done"
+                onChange={(next) => setForm({ ...form, refresh_on_done: next })}
+              />
+            </div>
+          </DialogBody>
+          <DialogFooter>
             <button
               type="button"
               className={btnGhost}
@@ -497,15 +564,28 @@ function ServersTab() {
             >
               Cancel
             </button>
-          </div>
-        </section>
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={save.isPending}
+              data-testid="integration-save"
+              onClick={submit}
+            >
+              {save.isPending
+                ? 'Saving…'
+                : editing
+                  ? 'Save changes'
+                  : 'Add server'}
+            </button>
+          </DialogFooter>
+        </ModalDialog>
       )}
 
       {deleting && (
         <ConfirmDialog
-          title="Delete integration"
+          title="Remove this server?"
           danger
-          confirmLabel="Delete"
+          confirmLabel="Remove"
           confirmTestId="integration-delete-confirm"
           cancelTestId="integration-delete-cancel"
           busy={remove.isPending}
@@ -513,7 +593,7 @@ function ServersTab() {
           onClose={() => setDeleting(null)}
         >
           <p>
-            Delete “{deleting.name}”? The server stops telling it about finished
+            Remove “{deleting.name}”? The server stops telling it about finished
             files, and the saved API key is removed.
           </p>
         </ConfirmDialog>
@@ -543,69 +623,80 @@ function DeliveriesDialog({
     <ModalDialog
       label="Deliveries"
       testId="webhook-deliveries-dialog"
+      size="lg"
       onClose={onClose}
-      className="max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-slate-800/40 p-6 shadow-xl"
     >
-      <h3 className="text-lg font-semibold">Deliveries — {webhook.name}</h3>
-      <p className="mt-1 text-sm text-slate-400">
-        The last attempts, newest first. Status 0 means the request never got an
-        answer.
-      </p>
-      {list.isPending && <SkeletonRows rows={2} />}
-      {list.isError && (
-        <ErrorBox title="Cannot load the deliveries." error={list.error} />
-      )}
-      {list.data && list.data.items.length === 0 && (
-        <p
-          className="mt-4 text-sm text-slate-500"
-          data-testid="webhook-deliveries-empty"
-        >
-          Nothing delivered yet.
+      <DialogHeader title={`Deliveries — ${webhook.name}`} onClose={onClose} />
+      <DialogBody>
+        <p className="text-body text-fg-muted">
+          The last attempts, newest first. Status 0 means the request never got
+          an answer.
         </p>
-      )}
-      {list.data && list.data.items.length > 0 && (
-        <table
-          className="mt-4 w-full text-sm"
-          data-testid="webhook-deliveries-table"
-        >
-          <thead>
-            <tr className="text-left text-slate-400">
-              <th className="py-1 pr-3 font-medium">When</th>
-              <th className="py-1 pr-3 font-medium">Event</th>
-              <th className="py-1 pr-3 font-medium">Status</th>
-              <th className="py-1 font-medium">Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.data.items.map((d) => (
-              <tr key={d.id} data-testid={`webhook-delivery-${d.id}`}>
-                <td className="py-1 pr-3" data-testid={`delivery-at-${d.id}`}>
-                  {new Date(d.at).toLocaleString()}
-                </td>
-                <td
-                  className="py-1 pr-3"
-                  data-testid={`delivery-event-${d.id}`}
-                >
-                  {eventLabel(d.event)}
-                </td>
-                <td
-                  className="py-1 pr-3"
-                  data-testid={`delivery-status-${d.id}`}
-                >
-                  {d.status === 0 ? 'No answer' : d.status}
-                </td>
-                <td
-                  className="py-1 pr-3"
-                  data-testid={`delivery-error-${d.id}`}
-                >
-                  {d.error ?? ''}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <div className="mt-6">
+        <div className="mt-4">
+          {list.isPending && <SkeletonRows rows={2} />}
+          {list.isError && (
+            <ErrorBox
+              title="Cannot load the deliveries."
+              error={list.error}
+              onRetry={() => void list.refetch()}
+            />
+          )}
+          {list.data && list.data.items.length === 0 && (
+            <p
+              className="text-body text-fg-muted"
+              data-testid="webhook-deliveries-empty"
+            >
+              Nothing delivered yet.
+            </p>
+          )}
+          {list.data && list.data.items.length > 0 && (
+            <table
+              className="w-full text-left text-body"
+              data-testid="webhook-deliveries-table"
+            >
+              <thead>
+                <tr className="text-caption font-medium uppercase tracking-wider text-fg-muted">
+                  <th className="py-2 pr-3 font-medium">When</th>
+                  <th className="py-2 pr-3 font-medium">Event</th>
+                  <th className="py-2 pr-3 font-medium">Status</th>
+                  <th className="py-2 font-medium">Error</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {list.data.items.map((d) => (
+                  <tr key={d.id} data-testid={`webhook-delivery-${d.id}`}>
+                    <td
+                      className="py-2 pr-3"
+                      data-testid={`delivery-at-${d.id}`}
+                    >
+                      {new Date(d.at).toLocaleString()}
+                    </td>
+                    <td
+                      className="py-2 pr-3"
+                      data-testid={`delivery-event-${d.id}`}
+                    >
+                      {eventLabel(d.event)}
+                    </td>
+                    <td
+                      className="py-2 pr-3 tabular-nums"
+                      data-testid={`delivery-status-${d.id}`}
+                    >
+                      {d.status === 0 ? 'No answer' : d.status}
+                    </td>
+                    <td
+                      className="py-2 text-fg-muted"
+                      data-testid={`delivery-error-${d.id}`}
+                    >
+                      {d.error ?? ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </DialogBody>
+      <DialogFooter>
         <button
           type="button"
           className={btnGhost}
@@ -614,7 +705,7 @@ function DeliveriesDialog({
         >
           Close
         </button>
-      </div>
+      </DialogFooter>
     </ModalDialog>
   )
 }
@@ -630,13 +721,14 @@ function WebhooksTab() {
   const [form, setForm] = useState<WebhookFormState | null>(null)
   const [deleting, setDeleting] = useState<Webhook | null>(null)
   const [deliveries, setDeliveries] = useState<Webhook | null>(null)
+  const [health, setHealth] = useState<Record<string, Health>>({})
   const [testResult, setTestResult] = useState<{
     id: string
     text: string
+    ok: boolean
   } | null>(null)
   /** The secret, shown once, right after create. */
   const [secret, setSecret] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const invalidate = () => {
     void client.invalidateQueries({ queryKey: ['webhooks'] })
@@ -685,8 +777,10 @@ function WebhooksTab() {
     mutationFn: (id: string) => testWebhook(id),
     onSuccess: (result, id) => {
       const name = list.data?.items.find((row) => row.id === id)?.name ?? ''
+      setHealth((prev) => ({ ...prev, [id]: result.ok ? 'ok' : 'failed' }))
       setTestResult({
         id,
+        ok: result.ok,
         text: result.ok
           ? `Delivered the sample to ${name}.`
           : result.error
@@ -724,10 +818,10 @@ function WebhooksTab() {
   )
 
   const rowActions = (row: Webhook, onCard: boolean) => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex justify-end gap-2">
       <button
         type="button"
-        className={btn}
+        className={btnGhost}
         disabled={test.isPending}
         data-testid={`webhook-test-${row.id}${onCard ? '-card' : ''}`}
         onClick={() => test.mutate(row.id)}
@@ -752,26 +846,41 @@ function WebhooksTab() {
       </button>
       <button
         type="button"
-        className={btnGhost}
+        className={btnDangerGhost}
         data-testid={`webhook-delete-${row.id}${onCard ? '-card' : ''}`}
         onClick={() => setDeleting(row)}
       >
-        Delete
+        Remove
       </button>
     </div>
   )
 
   const columns: Column<Webhook>[] = [
-    { key: 'name', header: 'Name', cell: (r) => r.name, primary: true },
+    {
+      key: 'name',
+      header: 'Name',
+      primary: true,
+      cell: (r) => <span className="font-semibold text-fg">{r.name}</span>,
+    },
     {
       key: 'url',
       header: 'URL',
-      cell: (r) => <span className="break-all text-slate-300">{r.url}</span>,
+      cell: (r) => (
+        <span className="break-all font-mono text-caption text-fg-muted">
+          {r.url}
+        </span>
+      ),
     },
     {
       key: 'events',
       header: 'Events',
       cell: (r) => r.events.map((e) => eventLabel(e)).join(', '),
+    },
+    {
+      key: 'state',
+      header: 'Status',
+      cell: (r) => stateBadge(r.enabled, health[r.id]),
+      cardPlacement: 'badge',
     },
     {
       key: 'enabled',
@@ -781,9 +890,10 @@ function WebhooksTab() {
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: '',
       cell: (r) => rowActions(r, false),
       cardCell: (r) => rowActions(r, true),
+      actions: true,
     },
   ]
 
@@ -795,153 +905,168 @@ function WebhooksTab() {
     setForm({ ...form, events: next })
   }
 
-  const copySecret = () => {
-    if (!secret) return
-    void navigator.clipboard?.writeText(secret).then(
-      () => setCopied(true),
-      () => setCopied(false),
-    )
-  }
-
   return (
-    <div className="space-y-6">
-      <p className="max-w-2xl text-sm text-slate-400">
-        A webhook is a place outside this server that wants to hear what
-        happened: the URL receives a one-line message every time the chosen
-        thing occurs. Discord and Slack work out of the box.
-      </p>
-
+    <div className="flex flex-col gap-6">
       {testResult && (
-        <p
-          role="status"
-          className="rounded-2xl bg-slate-800/60 p-4 text-sm ring-1 ring-slate-700"
-          data-testid="webhook-test-result"
+        <Banner
+          tone={testResult.ok ? 'success' : 'warning'}
+          testId="webhook-test-result"
         >
           {testResult.text}
-        </p>
+        </Banner>
       )}
 
-      {secret && (
-        <section
-          className="rounded-2xl bg-emerald-950/40 p-6 ring-1 ring-emerald-800"
-          data-testid="webhook-secret-box"
-        >
-          <h3 className="text-lg font-semibold">Save this secret now</h3>
-          <p className="mt-1 text-sm text-emerald-200/80">
-            Every message is signed with it. You will not see this again — the
-            server keeps it and never shows it again.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <code
-              className="break-all rounded bg-slate-900 px-3 py-2 text-xs text-emerald-200"
-              data-testid="webhook-secret-value"
-            >
-              {secret}
-            </code>
-            <button
-              type="button"
-              className={btn}
-              data-testid="webhook-secret-copy"
-              onClick={copySecret}
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-        </section>
-      )}
-
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">Configured webhooks</h2>
-        <button
-          type="button"
-          className={btnPrimary}
-          data-testid="webhooks-add"
-          onClick={() => setForm(blankWebhookForm())}
-        >
-          Add webhook
-        </button>
-      </div>
-
-      {list.isPending && <SkeletonRows rows={3} />}
-      {list.isError && (
-        <ErrorBox title="Cannot load the webhooks." error={list.error} />
-      )}
-      {list.data && list.data.items.length === 0 && (
-        <p className="text-sm text-slate-500" data-testid="webhooks-empty">
-          No webhooks configured yet.
-        </p>
-      )}
-      {list.data && list.data.items.length > 0 && (
-        <DataList
-          rows={list.data.items}
-          columns={columns}
-          testid="webhooks-list"
-          rowTestId={(r) => `webhook-row-${r.id}`}
-          cardRowTestId={(r) => `webhook-card-${r.id}`}
-        />
-      )}
-
-      {form && (
-        <section
-          className="rounded-2xl bg-slate-800/40 p-6"
-          data-testid="webhook-form"
-        >
-          <h3 className="text-lg font-semibold">
-            {editing ? 'Edit webhook' : 'Add a webhook'}
-          </h3>
-          <div className="mt-4 space-y-4">
-            <label className="block">
-              <span className="text-sm text-slate-300">Name</span>
-              <input
-                className={input}
-                value={form.name}
-                data-testid="webhook-name"
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Discord #media"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm text-slate-300">URL</span>
-              <input
-                className={input}
-                value={form.url}
-                data-testid="webhook-url"
-                onChange={(e) => setForm({ ...form, url: e.target.value })}
-                placeholder="https://discord.com/api/webhooks/…"
-              />
-            </label>
-            <fieldset className="space-y-2">
-              <legend className="text-sm text-slate-300">Tell it about</legend>
-              {WEBHOOK_EVENTS.map((e) => (
-                <label key={e.id} className="flex items-center gap-3 text-sm">
-                  <input
-                    type="checkbox"
-                    className="size-5 accent-emerald-600"
-                    checked={form.events.includes(e.id)}
-                    data-testid={`webhook-event-${e.id}`}
-                    onChange={() => toggleEvent(e.id)}
-                  />
-                  {e.label}
-                </label>
-              ))}
-            </fieldset>
-            <Switch
-              checked={form.enabled}
-              label="Enabled"
-              testId="webhook-enabled"
-              onChange={(next) => setForm({ ...form, enabled: next })}
+      <Card
+        as="section"
+        padding="none"
+        title="Webhooks"
+        description="A webhook is a place outside this server that wants to hear what happened: the URL receives a one-line message every time the chosen thing occurs. Discord and Slack work out of the box."
+        actions={
+          <button
+            type="button"
+            className={btnPrimary}
+            data-testid="webhooks-add"
+            onClick={() => setForm(blankWebhookForm())}
+          >
+            Add webhook
+          </button>
+        }
+      >
+        {list.isPending && <SkeletonRows rows={3} />}
+        {list.isError && (
+          <div className="p-4 sm:p-6">
+            <ErrorBox
+              title="Cannot load the webhooks."
+              error={list.error}
+              onRetry={() => void list.refetch()}
             />
           </div>
-          <div className="mt-6 flex gap-2">
+        )}
+        {list.data && list.data.items.length === 0 && (
+          <EmptyState
+            icon="integrations"
+            title="No webhooks yet"
+            body="Add one and the events you choose are sent to it as they happen, one line each."
+            action={
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => setForm(blankWebhookForm())}
+              >
+                Add webhook
+              </button>
+            }
+            testId="webhooks-empty"
+          />
+        )}
+        {list.data && list.data.items.length > 0 && (
+          <DataList
+            rows={list.data.items}
+            columns={columns}
+            testid="webhooks-list"
+            rowTestId={(r) => `webhook-row-${r.id}`}
+            cardRowTestId={(r) => `webhook-card-${r.id}`}
+          />
+        )}
+      </Card>
+
+      {secret && (
+        <ModalDialog
+          label="Save this secret now"
+          testId="webhook-secret-box"
+          size="md"
+          onClose={() => setSecret(null)}
+        >
+          <DialogHeader
+            title="Save this secret now"
+            onClose={() => setSecret(null)}
+          />
+          <DialogBody>
+            <div className="flex flex-col gap-4">
+              <p className="text-body text-fg-muted">
+                Every message is signed with it. The server keeps it and never
+                shows it again.
+              </p>
+              <Banner tone="warning">You will not see this again.</Banner>
+              <CodeBlock
+                copy
+                testId="webhook-secret-value"
+                copyTestId="webhook-secret-copy"
+              >
+                {secret}
+              </CodeBlock>
+            </div>
+          </DialogBody>
+          <DialogFooter>
             <button
               type="button"
               className={btnPrimary}
-              disabled={save.isPending}
-              data-testid="webhook-save"
-              onClick={submit}
+              data-testid="webhook-secret-done"
+              onClick={() => setSecret(null)}
             >
-              Save
+              Done
             </button>
+          </DialogFooter>
+        </ModalDialog>
+      )}
+
+      {form && (
+        <ModalDialog
+          label={editing ? 'Edit webhook' : 'Add a webhook'}
+          testId="webhook-form"
+          size="md"
+          onClose={() => setForm(null)}
+        >
+          <DialogHeader
+            title={editing ? 'Edit webhook' : 'Add a webhook'}
+            onClose={() => setForm(null)}
+          />
+          <DialogBody>
+            <div className="flex flex-col gap-4">
+              <Field label="Name" htmlFor="webhook-name">
+                <input
+                  id="webhook-name"
+                  className={input}
+                  value={form.name}
+                  data-testid="webhook-name"
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Discord #media"
+                />
+              </Field>
+              <Field label="URL" htmlFor="webhook-url">
+                <input
+                  id="webhook-url"
+                  className={input}
+                  value={form.url}
+                  data-testid="webhook-url"
+                  onChange={(e) => setForm({ ...form, url: e.target.value })}
+                  placeholder="https://discord.com/api/webhooks/…"
+                />
+              </Field>
+              <fieldset className="flex flex-col gap-1">
+                <legend className="mb-1 text-body font-medium text-fg">
+                  Tell it about
+                </legend>
+                {WEBHOOK_EVENTS.map((e) => (
+                  <Checkbox
+                    key={e.id}
+                    checked={form.events.includes(e.id)}
+                    label={e.label}
+                    testId={`webhook-event-${e.id}`}
+                    onChange={() => toggleEvent(e.id)}
+                  />
+                ))}
+              </fieldset>
+              <Switch
+                checked={form.enabled}
+                label="Enabled"
+                visibleLabel="Enabled"
+                testId="webhook-enabled"
+                onChange={(next) => setForm({ ...form, enabled: next })}
+              />
+            </div>
+          </DialogBody>
+          <DialogFooter>
             <button
               type="button"
               className={btnGhost}
@@ -950,8 +1075,21 @@ function WebhooksTab() {
             >
               Cancel
             </button>
-          </div>
-        </section>
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={save.isPending}
+              data-testid="webhook-save"
+              onClick={submit}
+            >
+              {save.isPending
+                ? 'Saving…'
+                : editing
+                  ? 'Save changes'
+                  : 'Add webhook'}
+            </button>
+          </DialogFooter>
+        </ModalDialog>
       )}
 
       {deliveries && (
@@ -964,7 +1102,7 @@ function WebhooksTab() {
       {deleting && (
         <ConfirmDialog
           title="Delete this webhook?"
-          confirmLabel="Delete"
+          confirmLabel="Remove"
           busy={remove.isPending}
           onConfirm={() => remove.mutate(deleting.id)}
           onClose={() => setDeleting(null)}

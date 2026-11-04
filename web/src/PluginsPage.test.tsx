@@ -220,3 +220,49 @@ describe('the plugins tab', () => {
     })
   })
 })
+
+describe('the plugins tab layout (task 50)', () => {
+  it('shows an EmptyState with an install action when no plugins are installed', async () => {
+    stubEventSource()
+    mock.restore()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/plugins$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderPage()
+    const empty = await screen.findByTestId('plugins-empty')
+    expect(empty).toHaveTextContent('No plugins yet')
+    expect(empty.querySelector('button')).toHaveTextContent('Install plugin')
+  })
+
+  it('shows Enabled or Disabled as a state badge on each row', async () => {
+    renderPage()
+    await screen.findByTestId('plugins-list')
+    expect(screen.getByTestId('plugin-row-pl-1')).toHaveTextContent('Disabled')
+    mock.routes.push({
+      method: 'PUT',
+      match: /\/api\/v1\/plugins\/pl-1$/,
+      body: { ...plugin, enabled: true },
+    })
+    // The refetch after the PUT must return the enabled row.
+    mock.routes.unshift({
+      method: 'GET',
+      match: /\/api\/v1\/plugins$/,
+      body: { items: [{ ...plugin, enabled: true }], total: 1 },
+    })
+    fireEvent.click(screen.getByTestId('plugin-switch-pl-1'))
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-row-pl-1')).toHaveTextContent('Enabled')
+    })
+  })
+
+  it('puts Install plugin in the Card header', async () => {
+    renderPage()
+    await screen.findByTestId('plugins-list')
+    const card = screen.getByTestId('plugins-add').closest('section')
+    expect(card?.querySelector('h2')).toHaveTextContent('Plugins')
+  })
+})

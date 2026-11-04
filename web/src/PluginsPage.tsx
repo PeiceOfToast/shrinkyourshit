@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Plugins tab (task 31): the hook plugins installed from a git URL or a
- * directory. Each row shows the plugin's identity and a Switch that is
- * the only thing that makes it run — installed plugins are disabled
- * until enabled on purpose. The settings form is generated from the
- * plugin's manifest; Test runs it once against a synthetic job and shows
- * the output. The security statement is plain: a plugin runs as this
- * server's user, with the same access to the media folders, and there is
- * no sandbox.
+ * Plugins tab (task 31, restyled task 50, spec 5.12): the hook plugins
+ * installed from a git URL or a directory. Each row shows the plugin's
+ * identity, a state Badge and a Switch that is the only thing that makes it
+ * run — installed plugins are disabled until enabled on purpose. The settings
+ * form is generated from the plugin's manifest; Test runs it once against a
+ * synthetic job and shows the output. The security statement is plain: a
+ * plugin runs as this server's user, with the same access to the media
+ * folders, and there is no sandbox.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -22,14 +22,21 @@ import {
   type PluginTestResult,
   type PluginType,
 } from './api'
+import Badge from './Badge'
+import Banner from './Banner'
+import Card from './Card'
+import CodeBlock from './CodeBlock'
 import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
+import EmptyState from './EmptyState'
 import ErrorBox from './ErrorBox'
-import ModalDialog from './dialog'
-import { SkeletonRows } from './skeleton'
+import ModalDialog, { DialogBody, DialogFooter, DialogHeader } from './dialog'
+import { Field } from './FormSection'
 import Switch from './Switch'
+import Tabs from './Tabs'
+import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
-import { btn, btnGhost, btnPrimary, input } from './uiControls'
+import { btnDangerGhost, btnGhost, btnPrimary, input, link } from './uiControls'
 
 /** The plugin's type: the moment it runs. */
 const PLUGIN_TYPES: { id: PluginType; label: string }[] = [
@@ -52,6 +59,23 @@ interface InstallForm {
 
 function blankInstall(): InstallForm {
   return { mode: 'git', git_url: '', ref: '', path: '' }
+}
+
+/** The state Badge: a broken manifest first, then on or off. */
+function pluginBadge(row: Plugin) {
+  if (row.manifest_error)
+    return (
+      <Badge tone="danger" dot>
+        Manifest error
+      </Badge>
+    )
+  if (row.enabled)
+    return (
+      <Badge tone="success" dot>
+        Enabled
+      </Badge>
+    )
+  return <Badge>Disabled</Badge>
 }
 
 export default function PluginsPage() {
@@ -141,10 +165,10 @@ export function PluginsTab() {
   )
 
   const rowActions = (row: Plugin, onCard: boolean) => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex justify-end gap-2">
       <button
         type="button"
-        className={btn}
+        className={btnGhost}
         disabled={test.isPending}
         data-testid={`plugin-test-${row.id}${onCard ? '-card' : ''}`}
         onClick={() => test.mutate(row.id)}
@@ -161,7 +185,7 @@ export function PluginsTab() {
       </button>
       <button
         type="button"
-        className={btnGhost}
+        className={btnDangerGhost}
         data-testid={`plugin-delete-${row.id}${onCard ? '-card' : ''}`}
         onClick={() => setDeleting(row)}
       >
@@ -177,10 +201,10 @@ export function PluginsTab() {
       primary: true,
       cell: (r) => (
         <div className="min-w-0">
-          <span>{r.name}</span>
+          <p className="font-semibold text-fg">{r.name}</p>
           {r.manifest_error && (
             <p
-              className="mt-1 text-xs text-amber-400"
+              className="mt-1 text-caption font-normal text-warning"
               data-testid={`plugin-manifest-error-${r.id}`}
             >
               The manifest could not be read: {r.manifest_error}
@@ -188,6 +212,12 @@ export function PluginsTab() {
           )}
         </div>
       ),
+    },
+    {
+      key: 'state',
+      header: 'Status',
+      cell: (r) => pluginBadge(r),
+      cardPlacement: 'badge',
     },
     { key: 'version', header: 'Version', cell: (r) => r.version },
     {
@@ -198,7 +228,11 @@ export function PluginsTab() {
     {
       key: 'source',
       header: 'From',
-      cell: (r) => <span className="break-all text-slate-300">{r.source}</span>,
+      cell: (r) => (
+        <span className="block max-w-xs truncate font-mono text-caption text-fg-muted">
+          {r.source}
+        </span>
+      ),
     },
     {
       key: 'enabled',
@@ -211,7 +245,7 @@ export function PluginsTab() {
       header: '',
       cell: (r) => rowActions(r, false),
       cardCell: (r) => rowActions(r, true),
-      cardNoLabel: true,
+      actions: true,
     },
   ]
 
@@ -221,178 +255,195 @@ export function PluginsTab() {
   }
 
   return (
-    <div className="space-y-6" data-testid="plugins-page">
-      <p className="max-w-2xl text-sm text-slate-400">
-        A plugin is a small program the server runs at a moment you choose —
-        before encoding, after it, or when a job ends. Install one from a git
-        repository or a folder. Nothing runs until you turn it on. A plugin runs
-        as this server's user, with the same access to your media folders —
-        install only plugins you trust; there is no sandbox (see{' '}
-        <a
-          className="underline hover:text-slate-200"
-          href="https://github.com/PeiceOfToast/shrinkyourshit/blob/main/docs/plugins.md"
-          target="_blank"
-          rel="noreferrer"
-          data-testid="plugins-docs-link"
-        >
-          the plugin docs
-        </a>
-        ).
-      </p>
-
+    <div className="flex flex-col gap-6" data-testid="plugins-page">
       {testResult && (
-        <section
-          className="rounded-2xl bg-slate-800/60 p-4 text-sm ring-1 ring-slate-700"
-          data-testid="plugin-test-result"
+        <Banner
+          tone={
+            testResult.result.skipped
+              ? 'warning'
+              : testResult.result.ok
+                ? 'success'
+                : 'danger'
+          }
+          title="Test run"
+          testId="plugin-test-result"
         >
-          <h3 className="font-semibold">Test run</h3>
-          {testResult.result.skipped ? (
-            <p className="mt-1 text-amber-300">
-              The plugin did not run: {testResult.result.skip_reason}
-            </p>
-          ) : testResult.result.ok ? (
-            <p className="mt-1 text-emerald-300">The plugin exited 0.</p>
-          ) : (
-            <p className="mt-1 text-red-300">
-              The plugin failed: {testResult.result.error}
-            </p>
-          )}
-          {(testResult.result.output?.length ?? 0) > 0 && (
-            <pre
-              className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-xl bg-black/40 p-3 font-mono text-xs text-slate-300"
-              data-testid="plugin-test-output"
+          <div className="flex flex-col gap-2">
+            {testResult.result.skipped ? (
+              <p>The plugin did not run: {testResult.result.skip_reason}</p>
+            ) : testResult.result.ok ? (
+              <p>The plugin exited 0.</p>
+            ) : (
+              <p>The plugin failed: {testResult.result.error}</p>
+            )}
+            {(testResult.result.output?.length ?? 0) > 0 && (
+              <CodeBlock testId="plugin-test-output">
+                {testResult.result.output?.join('\n') ?? ''}
+              </CodeBlock>
+            )}
+          </div>
+        </Banner>
+      )}
+
+      <Card
+        as="section"
+        padding="none"
+        title="Plugins"
+        description={
+          <>
+            A plugin is a small program the server runs at a moment you choose —
+            before encoding, after it, or when a job ends. Install one from a
+            git repository or a folder. Nothing runs until you turn it on. A
+            plugin runs as this server&apos;s user, with the same access to your
+            media folders — install only plugins you trust; there is no sandbox
+            (see{' '}
+            <a
+              className={link}
+              href="https://github.com/PeiceOfToast/shrinkyourshit/blob/main/docs/plugins.md"
+              target="_blank"
+              rel="noreferrer"
+              data-testid="plugins-docs-link"
             >
-              {testResult.result.output?.join('\n')}
-            </pre>
-          )}
-        </section>
-      )}
-
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">Installed plugins</h2>
-        <button
-          type="button"
-          className={btnPrimary}
-          data-testid="plugins-add"
-          onClick={() => setInstall(blankInstall())}
-        >
-          Install plugin
-        </button>
-      </div>
-
-      {list.isPending && <SkeletonRows rows={2} />}
-      {list.isError && (
-        <ErrorBox title="Cannot load the plugins." error={list.error} />
-      )}
-      {list.data && list.data.items.length === 0 && (
-        <p className="text-sm text-slate-500" data-testid="plugins-empty">
-          No plugins installed yet.
-        </p>
-      )}
-      {list.data && list.data.items.length > 0 && (
-        <DataList
-          rows={list.data.items}
-          columns={columns}
-          testid="plugins-list"
-          rowTestId={(r) => `plugin-row-${r.id}`}
-          cardRowTestId={(r) => `plugin-card-${r.id}`}
-        />
-      )}
+              the plugin docs
+            </a>
+            ).
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            className={btnPrimary}
+            data-testid="plugins-add"
+            onClick={() => setInstall(blankInstall())}
+          >
+            Install plugin
+          </button>
+        }
+      >
+        {list.isPending && <SkeletonRows rows={2} />}
+        {list.isError && (
+          <div className="p-4 sm:p-6">
+            <ErrorBox
+              title="Cannot load the plugins."
+              error={list.error}
+              onRetry={() => void list.refetch()}
+            />
+          </div>
+        )}
+        {list.data && list.data.items.length === 0 && (
+          <EmptyState
+            icon="integrations"
+            title="No plugins yet"
+            body="A plugin adds a step that runs before encoding, after it, or when a job ends. Install one from a git repository or a folder."
+            action={
+              <button
+                type="button"
+                className={btnPrimary}
+                onClick={() => setInstall(blankInstall())}
+              >
+                Install plugin
+              </button>
+            }
+            testId="plugins-empty"
+          />
+        )}
+        {list.data && list.data.items.length > 0 && (
+          <DataList
+            rows={list.data.items}
+            columns={columns}
+            testid="plugins-list"
+            rowTestId={(r) => `plugin-row-${r.id}`}
+            cardRowTestId={(r) => `plugin-card-${r.id}`}
+          />
+        )}
+      </Card>
 
       {install && (
-        <section
-          className="rounded-2xl bg-slate-800/40 p-6"
-          data-testid="plugin-install-form"
+        <ModalDialog
+          label="Install a plugin"
+          testId="plugin-install-form"
+          size="md"
+          onClose={() => setInstall(null)}
         >
-          <h3 className="text-lg font-semibold">Install a plugin</h3>
-          <div className="mt-4 space-y-4">
-            <div
-              className="flex gap-2"
-              role="tablist"
-              aria-label="Install source"
-              data-testid="plugin-install-mode"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={install.mode === 'git'}
-                className={install.mode === 'git' ? btnPrimary : btnGhost}
-                data-testid="plugin-install-mode-git"
-                onClick={() => setInstall({ ...install, mode: 'git' })}
-              >
-                From a git URL
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={install.mode === 'path'}
-                className={install.mode === 'path' ? btnPrimary : btnGhost}
-                data-testid="plugin-install-mode-path"
-                onClick={() => setInstall({ ...install, mode: 'path' })}
-              >
-                From a folder
-              </button>
-            </div>
-            {install.mode === 'git' ? (
-              <>
-                <label className="block">
-                  <span className="text-sm text-slate-300">Repository URL</span>
-                  <input
-                    className={input}
-                    value={install.git_url}
-                    data-testid="plugin-git-url"
-                    onChange={(e) =>
-                      setInstall({ ...install, git_url: e.target.value })
-                    }
-                    placeholder="https://github.com/you/your-plugin"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm text-slate-300">
-                    Branch or tag (optional)
-                  </span>
-                  <input
-                    className={input}
-                    value={install.ref}
-                    data-testid="plugin-git-ref"
-                    onChange={(e) =>
-                      setInstall({ ...install, ref: e.target.value })
-                    }
-                    placeholder="main"
-                  />
-                </label>
-              </>
-            ) : (
-              <label className="block">
-                <span className="text-sm text-slate-300">
-                  Folder the server can see
-                </span>
-                <input
-                  className={input}
-                  value={install.path}
-                  data-testid="plugin-path"
-                  onChange={(e) =>
-                    setInstall({ ...install, path: e.target.value })
+          <DialogHeader
+            title="Install a plugin"
+            onClose={() => setInstall(null)}
+          />
+          <DialogBody>
+            <div className="flex flex-col gap-4">
+              <div data-testid="plugin-install-mode">
+                <Tabs
+                  label="Install source"
+                  tabs={[
+                    {
+                      id: 'git',
+                      label: 'From a git URL',
+                      testId: 'plugin-install-mode-git',
+                    },
+                    {
+                      id: 'path',
+                      label: 'From a folder',
+                      testId: 'plugin-install-mode-path',
+                    },
+                  ]}
+                  value={install.mode}
+                  onChange={(id) =>
+                    setInstall({ ...install, mode: id as 'git' | 'path' })
                   }
-                  placeholder="/path/to/your-plugin"
                 />
-              </label>
-            )}
-            <p className="text-xs text-slate-500">
-              The plugin is installed off. Turn it on after you have filled in
-              its settings.
-            </p>
-          </div>
-          <div className="mt-6 flex gap-2">
-            <button
-              type="button"
-              className={btnPrimary}
-              disabled={add.isPending}
-              data-testid="plugin-install-submit"
-              onClick={submitInstall}
-            >
-              Install
-            </button>
+              </div>
+              {install.mode === 'git' ? (
+                <>
+                  <Field label="Repository URL" htmlFor="plugin-git-url">
+                    <input
+                      id="plugin-git-url"
+                      className={input}
+                      value={install.git_url}
+                      data-testid="plugin-git-url"
+                      onChange={(e) =>
+                        setInstall({ ...install, git_url: e.target.value })
+                      }
+                      placeholder="https://github.com/you/your-plugin"
+                    />
+                  </Field>
+                  <Field
+                    label="Branch or tag"
+                    optional
+                    htmlFor="plugin-git-ref"
+                  >
+                    <input
+                      id="plugin-git-ref"
+                      className={input}
+                      value={install.ref}
+                      data-testid="plugin-git-ref"
+                      onChange={(e) =>
+                        setInstall({ ...install, ref: e.target.value })
+                      }
+                      placeholder="main"
+                    />
+                  </Field>
+                </>
+              ) : (
+                <Field label="Folder the server can see" htmlFor="plugin-path">
+                  <input
+                    id="plugin-path"
+                    className={input}
+                    value={install.path}
+                    data-testid="plugin-path"
+                    onChange={(e) =>
+                      setInstall({ ...install, path: e.target.value })
+                    }
+                    placeholder="/path/to/your-plugin"
+                  />
+                </Field>
+              )}
+              <p className="text-caption text-fg-muted">
+                The plugin is installed off. Turn it on after you have filled in
+                its settings.
+              </p>
+            </div>
+          </DialogBody>
+          <DialogFooter>
             <button
               type="button"
               className={btnGhost}
@@ -401,47 +452,61 @@ export function PluginsTab() {
             >
               Cancel
             </button>
-          </div>
-        </section>
+            <button
+              type="button"
+              className={btnPrimary}
+              disabled={add.isPending}
+              data-testid="plugin-install-submit"
+              onClick={submitInstall}
+            >
+              {add.isPending ? 'Installing…' : 'Install'}
+            </button>
+          </DialogFooter>
+        </ModalDialog>
       )}
 
       {settings && (
         <ModalDialog
           label={`Settings for ${settings.name}`}
           testId="plugin-settings-dialog"
+          size="md"
           onClose={() => setSettings(null)}
-          className="max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-slate-800/40 p-6 shadow-xl"
         >
-          <h3 className="text-lg font-semibold">Settings — {settings.name}</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            The values the plugin receives when it runs.
-          </p>
+          <DialogHeader
+            title={`Settings — ${settings.name}`}
+            onClose={() => setSettings(null)}
+          />
           {(settings.settings?.length ?? 0) === 0 ? (
-            <p
-              className="mt-4 text-sm text-slate-500"
-              data-testid="plugin-settings-empty"
-            >
-              This plugin takes no settings.
-            </p>
+            <>
+              <DialogBody>
+                <p
+                  className="text-body text-fg-muted"
+                  data-testid="plugin-settings-empty"
+                >
+                  This plugin takes no settings.
+                </p>
+              </DialogBody>
+              <DialogFooter>
+                <button
+                  type="button"
+                  className={btnGhost}
+                  data-testid="plugin-settings-close"
+                  onClick={() => setSettings(null)}
+                >
+                  Close
+                </button>
+              </DialogFooter>
+            </>
           ) : (
             <PluginSettingsForm
               plugin={settings}
               busy={saveSettings.isPending}
+              onClose={() => setSettings(null)}
               onSave={(values) =>
                 saveSettings.mutate({ row: settings, values })
               }
             />
           )}
-          <div className="mt-6">
-            <button
-              type="button"
-              className={btnGhost}
-              data-testid="plugin-settings-close"
-              onClick={() => setSettings(null)}
-            >
-              Close
-            </button>
-          </div>
         </ModalDialog>
       )}
 
@@ -469,10 +534,12 @@ function PluginSettingsForm({
   plugin,
   busy,
   onSave,
+  onClose,
 }: {
   plugin: Plugin
   busy: boolean
   onSave: (values: Record<string, string>) => void
+  onClose: () => void
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {}
@@ -483,31 +550,53 @@ function PluginSettingsForm({
   })
 
   return (
-    <div className="mt-4 space-y-4" data-testid="plugin-settings-form">
-      {(plugin.settings ?? []).map((s) => (
-        <label key={s.key} className="block">
-          <span className="text-sm text-slate-300">
-            {s.label}
-            {s.required ? <span className="text-red-400"> *</span> : null}
-          </span>
-          <input
-            className={input}
-            value={values[s.key] ?? ''}
-            required={s.required}
-            data-testid={`plugin-setting-${s.key}`}
-            onChange={(e) => setValues({ ...values, [s.key]: e.target.value })}
-          />
-        </label>
-      ))}
-      <button
-        type="button"
-        className={btnPrimary}
-        disabled={busy}
-        data-testid="plugin-settings-save"
-        onClick={() => onSave(values)}
-      >
-        Save settings
-      </button>
-    </div>
+    <>
+      <DialogBody>
+        <div className="flex flex-col gap-4" data-testid="plugin-settings-form">
+          {(plugin.settings ?? []).map((s) => (
+            <Field
+              key={s.key}
+              htmlFor={`plugin-setting-${s.key}`}
+              label={
+                <>
+                  {s.label}
+                  {s.required ? <span className="text-danger"> *</span> : null}
+                </>
+              }
+            >
+              <input
+                id={`plugin-setting-${s.key}`}
+                className={input}
+                value={values[s.key] ?? ''}
+                required={s.required}
+                data-testid={`plugin-setting-${s.key}`}
+                onChange={(e) =>
+                  setValues({ ...values, [s.key]: e.target.value })
+                }
+              />
+            </Field>
+          ))}
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <button
+          type="button"
+          className={btnGhost}
+          data-testid="plugin-settings-close"
+          onClick={onClose}
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          className={btnPrimary}
+          disabled={busy}
+          data-testid="plugin-settings-save"
+          onClick={() => onSave(values)}
+        >
+          {busy ? 'Saving…' : 'Save settings'}
+        </button>
+      </DialogFooter>
+    </>
   )
 }
