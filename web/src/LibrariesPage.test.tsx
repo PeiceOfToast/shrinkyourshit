@@ -189,16 +189,12 @@ describe('LibrariesPage', () => {
     ])
     renderPage()
     await screen.findByTestId('libraries-table')
-    // The row link is stretched over the whole row (DataList rowHref), so its
-    // tap target is the row, which is taller than 44 px. Every other control
-    // keeps the 44 px height itself.
-    const rowLinks = screen
-      .getAllByRole('link')
-      .filter((el) => el.className.includes('after:inset-0'))
-    expect(rowLinks.length).toBeGreaterThan(0)
+    // Every link and button keeps the 44 px height, including the whole-row
+    // link (DataList rowHref), which is a 44 px block with the row stretched
+    // over it.
     for (const el of [
       ...screen.getAllByRole('button'),
-      ...screen.getAllByRole('link').filter((el) => !rowLinks.includes(el)),
+      ...screen.getAllByRole('link'),
     ]) {
       expect(el.className).toContain('min-h-11')
     }

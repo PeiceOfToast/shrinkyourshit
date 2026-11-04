@@ -110,7 +110,7 @@ export default function DataList<T extends { id: string }>({
     rowHref ? (
       <Link
         to={rowHref(row)}
-        className="font-semibold text-fg after:absolute after:inset-0 focus-visible:outline-none"
+        className="flex min-h-11 flex-col justify-center font-semibold text-fg after:absolute after:inset-0 focus-visible:outline-none"
       >
         {content}
       </Link>
