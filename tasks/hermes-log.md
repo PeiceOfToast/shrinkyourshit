@@ -266,3 +266,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T03:40:44Z pm: v1.9 next task is 39 (control primitives), starts next tick
 - 2026-11-04T03:48:00Z task 39: started Claude Code build (haiku) run 20261104-034627-bbd03e77 on branch task/39-control-primitives, session 7e1826ca; launcher ssh call hit its 120s local timeout again but out.jsonl is growing so the run is live
 - 2026-11-04T03:46:30Z pm: killed a lingering task 38 claude process (pid 1390558) that had already emitted its final result and been merged; it was idle, cleared before starting 39
+- 2026-11-04T04:11:33Z task 39: verified PR #42 (9/9 CI checks green including docker-arm64, acceptance checklist 9/9 ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, make test 54 files / 325 web tests plus go suites green, make lint 0 issues), merged squash, main at dbabf08, remote branch deleted, main pulled on VM
+- 2026-11-04T04:11:33Z pm: killed lingering task 39 claude process (pid 1401988) after its final result; run 20261104-034627-bbd03e77 state done, cost $0.9163
+- 2026-11-04T04:11:33Z pm: v1.9 next task is 40 (app shell and encoding status), starts next tick
