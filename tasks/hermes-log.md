@@ -338,3 +338,7 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T14:24:00Z pm: PR #57 squash-merged as 10c299f, branch task/53-guardrail-lint-audit deleted; v1.9 UI redesign wave complete, no tasks left in the queue
 - 2026-11-04T14:33:00Z pm: queue empty, no todo tasks, no open PRs, no stray branches; main CI green on 1963437 (push runs 41847163207 and 41847225767 success); loop idle pending owner direction, reported once
 - 2026-11-04T20:05:00Z pm: v1.10 wave authored from the owner's five decisions (spec section 2): engine vocabulary first (tasks 54 to 58), then tier storage and the representability rule (59), then the three editors (60 to 62), then real media verification (63); task 54 dispatched
+- 2026-11-04T20:29:27Z pm: task 54 build run 20261104-200220 done; e2e needed LD_LIBRARY_PATH=/home/mb/.local/pwlibs for missing libatk, no system files changed; playwright 104 passed 6 skipped
+- 2026-11-04T20:29:27Z pm: task 54 verified on VM 201: checklist 6/6, go test ./... exit 0, make test green (444 web tests), make lint exit 0 (spdx + prettier clean), DECISIONS.md unchanged vs origin/main
+- 2026-11-04T20:29:27Z pm: PR #58 opened, CI run 41905138339 green 9/9 (go, e2e, web, docker, docker-arm64, cross, installer, installer-powershell, report)
+- 2026-11-04T20:29:27Z pm: PR #58 squash-merged as 2981f6e, branch task/54-target-scale-and-rate deleted; STATUS.md 54 done; task 55 dispatched

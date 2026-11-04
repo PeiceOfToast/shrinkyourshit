@@ -81,7 +81,7 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 54 | 54-target-scale-and-rate.md | in_progress | branch task/54-target-scale-and-rate, pushed; go test ./..., web vitest/build/lint, playwright 104 passed 6 skipped; PR opened by supervisor |
+| 54 | 54-target-scale-and-rate.md | done | PR #58 https://github.com/PeiceOfToast/shrinkyourshit/pull/58, v1.10, CI green (9 checks incl. e2e, docker-arm64), checklist ticked |
 | 55 | 55-encoder-rate-and-scale-args.md | todo | |
 | 56 | 56-condition-steps.md | todo | |
 | 57 | 57-per-step-hardware.md | todo | |
