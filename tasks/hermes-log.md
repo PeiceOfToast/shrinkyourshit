@@ -306,3 +306,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T09:48:30Z pm: verified task 48 run 20261104-093122-9ca45489: all 8 acceptance boxes ticked, STATUS.md set done, DECISIONS.md unchanged vs origin/main, make test 399 passed (58 web files) and make lint clean on the VM, diff limited to NodesPage/EncodingStatus/tests/notes/STATUS
 - 2026-11-04T09:48:30Z pm: PR #51 CI green (run 41809123935, all 9 checks incl docker-arm64), merged squash 6666536, branch deleted, main pulled on VM, STATUS row 48 annotated with the PR
 - 2026-11-04T09:48:30Z pm: VM 201 ssh key to github.com now returns Permission denied (publickey); git pull/push on the VM works via `git -c url.https://github.com/.insteadOf=git@github.com:` using the stored PAT. Use that form until the key is restored
+- 2026-11-04T10:03:20Z pm: run 20261104-093122-9ca45489 left a stale running state after task 48 merged; no claude process on VM 201, PR and log already landed, treated as closed
+- 2026-11-04T10:03:20Z pm: started task 49 run 20261104-100249-429a6fc4 (build/haiku) from main d4ece27
