@@ -298,3 +298,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T07:32:15Z start task 45 (rules page) build run 20261104-073146-c4ea6e4e
 - 2026-11-04T08:00:12Z pm: verified task 45 run 20261104-073146-c4ea6e4e (done, 3 turns): 6/6 acceptance boxes ticked, STATUS.md done with PR #48, DECISIONS.md unchanged vs origin/main, make test 383 passed and make lint clean on the VM
 - 2026-11-04T08:00:12Z pm: PR #48 CI green on final commit 862b9c2 (run 41794962729, all 9 checks incl docker-arm64), merged squash 6006e50, branch deleted, main pulled on VM
+- 2026-11-04T08:41:00Z pm: verified task 46 run 20261104-080110-7ad8b602 (done): 8/8 acceptance boxes ticked, STATUS.md done with PR #49, DECISIONS.md unchanged vs origin/main, make test 389 passed and make lint clean on the VM
+- 2026-11-04T08:41:00Z pm: PR #49 CI green (run 41799689155, all 9 checks incl docker-arm64), merged squash 7b4e146, branch deleted, main pulled on VM
