@@ -72,4 +72,4 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 50 | 50-integrations-plugins.md | done | PR #53 https://github.com/PeiceOfToast/shrinkyourshit/pull/53, v1.9, CI green (9 checks), checklist ticked |
 | 51 | 51-setup-login.md | done | PR #54 https://github.com/PeiceOfToast/shrinkyourshit/pull/54, v1.9, CI green (9 checks incl. e2e), checklist ticked |
 | 52 | 52-copy-sweep.md | done | PR #56 https://github.com/PeiceOfToast/shrinkyourshit/pull/56, v1.9, CI green (8 checks), checklist ticked |
-| 53 | 53-guardrail-lint-audit.md | in_progress | branch `task/53-guardrail-lint-audit` pushed; PR not opened (no `gh` in this run). make test, make lint, npm run build, make e2e (107 passed, 3 skipped) green locally. Set `done` with the PR link once CI is green. |
+| 53 | 53-guardrail-lint-audit.md | done | PR #57 https://github.com/PeiceOfToast/shrinkyourshit/pull/57, v1.9, CI green (9 checks), checklist 3/3 ticked; wave complete |
