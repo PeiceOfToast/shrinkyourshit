@@ -57,7 +57,7 @@ Every rejection returns one `FieldError` at `nodes[i].params.args` (or `params.s
   not a process `config` flag. The spec (section 5.3, section 7) describes it as an app setting,
   so `internal/config` is untouched.
 - The setting is enforced at save time and on the validate and preview endpoints. Stored graphs
-  are not re-checked at dispatch here (see gap below).
+  are not re-checked at dispatch (see the wiring section below for why).
 - `StepTypeInfo.Unsafe` is `json:"unsafe,omitempty"`, so the other palette entries keep their
   current JSON.
 - No TypeScript change: no UI in this task.
@@ -67,19 +67,59 @@ Every rejection returns one `FieldError` at `nodes[i].params.args` (or `params.s
 None added. The tokeniser is hand written; nothing in `go.mod` covers POSIX word splitting
 with the rules above (`github.com/google/shlex` is not in STACK.md and was not needed).
 
-## Gap for the next tasks (important)
+## Wiring: raw_args reach ffmpeg (follow-up on this branch)
 
-`ApplyStep` now puts the tokens in `Effective.RawArgs`, but nothing feeds them into the
-ffmpeg argument vector. `internal/encoders` builds args from `encoders.Spec`, which has no
-raw-args field, and the worker (`internal/worker/runner.go`) never reads `eff.RawArgs`. So
-today a saved `raw_args` step is accepted, shown in the preview, and silently not applied to
-the encode. Task 63 requires a raw_args argument in the ffmpeg log, so the wiring is needed
-before that. It was out of this task's scope ("Modify" list), so it is not built here.
-Before the step is reachable by users, the worker or the encoder spec must consume
-`Effective.RawArgs`, and the dispatch path should refuse stored graphs with raw_args while the
-setting is off (today only save-time is enforced).
+`ApplyStep` collects `Effective.RawArgs`; the worker now applies them to the encode.
+
+- `internal/encoders/encoders.go`: `Spec.InputArgs` and `Spec.OutputArgs` ([]string).
+- `internal/encoders/build.go` `buildCommand`: `InputArgs` goes right before `-i` (after the
+  backend's pre-input flags such as `-vaapi_device`); `OutputArgs` goes right before the output
+  path (last argument). Every backend builds through `buildCommand`, so cpu, nvenc, qsv and vaapi
+  get them with no per encoder change. The video copy path (remux) gets them too. videotoolbox
+  off darwin returns no arguments at all, so it never reaches an encode (unchanged).
+- `internal/worker/runner.go`: the flow walk keeps `eff.RawArgs` in a local `rawArgs`;
+  `splitRawArgsByStage` splits it by stage into the spec, in chain order, and `logRawArgs`
+  writes the log lines before the encode.
+- Log line format, one per raw_args step, in chain order:
+
+  ```
+  raw_args step <step id> (<input|output> stage): "<token 1>" "<token 2>" ...
+  ```
+
+  Each token is Go quoted (`strconv.Quote`), so a token with a space stays one unambiguous
+  item, e.g. `raw_args step out_arg (output stage): "-metadata" "comment=shrink me"`.
+  It is an info level sys line in the job log. Task 63 should assert on this text.
+
+Tests:
+- `internal/encoders/rawargs_build_test.go`: in the real argv for cpu, nvenc, qsv and vaapi, an
+  input token is before `-i` and an output token is before the output path, which stays last;
+  the copy (remux) path too; an empty spec adds nothing.
+- `internal/worker/rawargs_test.go`: a compiled flow's raw_args reach the encoder spec
+  (`InputArgs`, `OutputArgs`) and the ffmpeg argv they run; one log line per step with the exact
+  tokens; no raw_args means no line and no tokens.
+
+Limits (recorded, not built):
+- The stored-graph dispatch refusal is NOT built. The worker never reads the settings table: it
+  only gets a `JobSpec` from the server. Reading `allow_raw_args` would need a new `JobSpec`
+  field (a schema or API change) or a settings call from the worker, so it is skipped. Today the
+  switch is enforced at save, validate and preview only, so nothing checks a stored graph at
+  dispatch: a graph saved while the switch was on still runs after the switch is turned off.
+  Owner call: add a `JobSpec` field, or a server side check in the dispatch path.
+- Subtitle extract commands (`ExtractCommands`) and the health check decode do not get raw
+  tokens. Only the main encode does.
+- Stage placement is fixed by the engine: input tokens go before `-i`, output tokens go after the
+  maps, codec and container options, right before the output path. A token that needs to sit
+  before a specific map or codec option cannot be placed there by the user.
+- A token that is not a valid option for the chosen encoder makes ffmpeg fail the encode; the
+  job then reports `encode failed` and the fallback chain tries the next encoder with the same
+  tokens. The tokens are not validated against the encoder.
+- `gofmt -l` already lists several files on `main` (for example `internal/worker/runner.go`
+  struct field alignment); it is not part of `make lint` and was not touched here.
 
 ## Test evidence
+
+- Wiring follow-up: `make test` and `make lint` exit 0 (Go packages `encoders`, `worker`
+  and `flow` ok; web 62 files, 444 tests; lint 0 issues).
 
 - `go test ./...` passes (all packages). `make lint` passes (go vet, golangci-lint 0 issues,
   SPDX check, eslint, prettier). `npm run test` passes (62 files, 444 tests).
@@ -98,11 +138,12 @@ setting is off (today only save-time is enforced).
    with a field error per rule, `Effective.RawArgs`, verbatim `UNSAFE` line in `Describe`,
    `StepTypeInfo.Unsafe`, and the `allow_raw_args` app setting (default on) enforced on save,
    validate and preview with 400 `invalid_flow`.
-2. Skipped: any change to the encoder spec or worker, so the arguments are NOT applied to
-   ffmpeg yet (see the gap above). No UI, no TypeScript change, no `internal/config` change.
-3. Skipped: a dispatch-time check for stored graphs while the switch is off.
-4. Next task (59) should not assume raw arguments reach the encode. Task 63's "raw_args
-   argument in the log" needs the wiring first; it is the most important open item here.
+2. Wired (follow-up): `Spec.InputArgs`/`OutputArgs` in `buildCommand`, the worker splits
+   the raw_args by stage into the spec, one log line per step. The arguments reach ffmpeg.
+   No UI, no TypeScript change, no `internal/config` change.
+3. Skipped: a dispatch-time check for stored graphs while the switch is off (the worker has no
+   access to the setting; see the wiring section).
+4. Task 63 can assert on the `raw_args step ...` log line and on the argv.
 5. Owner calls: `;` is refused even inside quotes (spec wording), more than one `raw_args`
    step is allowed per graph, and the 2000-byte and 200-character limits are my numbers.
 

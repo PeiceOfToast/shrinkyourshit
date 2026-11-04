@@ -85,7 +85,7 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 | 55 | 55-encoder-rate-and-scale-args.md | done | PR #59 https://github.com/PeiceOfToast/shrinkyourshit/pull/59, v1.10, CI green (9 checks incl. e2e, docker-arm64), checklist 3/3 ticked |
 | 56 | 56-condition-steps.md | done | PR #60 https://github.com/PeiceOfToast/shrinkyourshit/pull/60, v1.10, CI green (9 checks), make test and make lint green, checklist 4/4 ticked |
 | 57 | 57-per-step-hardware.md | done | PR #61 https://github.com/PeiceOfToast/shrinkyourshit/pull/61, v1.10, CI green (9 checks incl. e2e, docker-arm64), make test and make lint green, checklist 4/4 ticked |
-| 58 | 58-raw-args-escape-hatch.md | in_progress | branch task/58-raw-args-escape-hatch, v1.10, make test and make lint green, checklist 5/5 ticked; raw args not yet applied to ffmpeg (see notes gap) |
+| 58 | 58-raw-args-escape-hatch.md | done | branch task/58-raw-args-escape-hatch, v1.10, make test and make lint green, checklist 6/6 ticked; raw args applied to ffmpeg by stage and logged per step (see notes wiring section); dispatch-time refusal skipped (worker cannot read the setting) |
 | 59 | 59-tier-storage-and-representability.md | todo | |
 | 60 | 60-moderate-tree-editor.md | todo | |
 | 61 | 61-advanced-palette.md | todo | |

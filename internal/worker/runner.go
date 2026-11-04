@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -152,6 +154,9 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	// hardware and hardwareStep are the transcode step's encoder choice
 	// (task 57); empty means the global policy, the same as auto.
 	hardware, hardwareStep := "", ""
+	// rawArgs are the raw_args steps that ran (task 58), in chain order; they
+	// are appended to the encode's argument vector by stage.
+	var rawArgs []flow.RawArg
 	working := local // the working file the chain operates on
 	cur := srcInfo   // the current probe of the working file
 	if spec.Flow == nil {
@@ -212,6 +217,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		rename = eff.Rename
 		hc = eff.HealthCheck
 		hardware, hardwareStep = eff.Hardware, eff.HardwareStep
+		rawArgs = eff.RawArgs
 	}
 	sink.sysf("target: %s container, %s video, %s audio", target.Container,
 		target.Video.Codec, target.Audio.Mode)
@@ -222,6 +228,8 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	// step may have replaced it, task 32) with the re-probed view.
 	output := filepath.Join(dir, "output."+containerExt(target.Container))
 	sp := encoders.NewSpec(working, output, cur, target)
+	sp.InputArgs, sp.OutputArgs = splitRawArgsByStage(rawArgs)
+	logRawArgs(sink, rawArgs)
 	encs, err := r.registryFor(target, hardware, hardwareStep)
 	if err != nil {
 		return fail("%v", err)
@@ -680,6 +688,34 @@ func jobTerminal(status string) bool {
 		return true
 	}
 	return false
+}
+
+// splitRawArgsByStage returns the raw_args tokens of the input stage and of the
+// output stage, each in chain order (task 58, spec 5.3). The tokens are the
+// already split words; nothing here joins them into a shell string.
+func splitRawArgsByStage(raw []flow.RawArg) (input, output []string) {
+	for _, ra := range raw {
+		switch ra.Stage {
+		case flow.RawArgsStageInput:
+			input = append(input, ra.Args...)
+		case flow.RawArgsStageOutput:
+			output = append(output, ra.Args...)
+		}
+	}
+	return input, output
+}
+
+// logRawArgs writes one job log line per raw_args step, before the encode: the
+// step id, its stage and the exact tokens, each Go quoted so an argument with
+// spaces stays unambiguous (task 63 asserts on these lines).
+func logRawArgs(sink *jobLogSink, raw []flow.RawArg) {
+	for _, ra := range raw {
+		quoted := make([]string, 0, len(ra.Args))
+		for _, tok := range ra.Args {
+			quoted = append(quoted, strconv.Quote(tok))
+		}
+		sink.sysf("raw_args step %s (%s stage): %s", ra.StepID, ra.Stage, strings.Join(quoted, " "))
+	}
 }
 
 // execEncode runs one ffmpeg attempt with live progress parsing. The

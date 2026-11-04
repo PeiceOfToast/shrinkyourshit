@@ -109,6 +109,13 @@ type Spec struct {
 	Scale  *flow.ScaleTarget
 	Rate   *flow.RateTarget
 	Preset string
+	// InputArgs and OutputArgs are the raw_args tokens (task 58, spec 5.3)
+	// for the input and output stage. buildCommand places InputArgs right
+	// before "-i" and OutputArgs right before the output path, so every
+	// backend and the fallback path get them. Tokens are already split and
+	// are never passed to a shell. Empty means none.
+	InputArgs  []string
+	OutputArgs []string
 }
 
 // NewSpec fills a Spec from a probe result, using the flow selection

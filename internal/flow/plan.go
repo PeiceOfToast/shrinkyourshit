@@ -264,8 +264,8 @@ type Effective struct {
 	Hardware     string
 	HardwareStep string
 	// RawArgs are the raw_args steps that ran (task 58), in chain order.
-	// Each names its stage (input or output). Nothing consumes them yet:
-	// the encoder spec does not carry them (tasks/58-notes.md, the gap).
+	// Each names its stage (input or output). The worker splits them by
+	// stage into the encoder spec (InputArgs, OutputArgs) and logs them.
 	RawArgs []RawArg
 }
 
