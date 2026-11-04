@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * App settings (task 10): server-level settings — files processed at once,
- * the scratch folder, and the login toggle with confirmation and password
- * change. Split out of the old SettingsPage; the encode defaults live at
- * /encode.
+ * App settings (task 10, restyled task 49, spec 5.11): server-level settings —
+ * files processed at once, the scratch folder, and the login toggle with
+ * confirmation and password change — then the About and updates section. The
+ * Save action sits directly under the Server section because it only saves
+ * Server. The encode defaults live at /encode.
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings, updateSettings, type SettingsUpdate } from './api'
 import AboutCard from './AboutCard'
 import ErrorBox from './ErrorBox'
+import { Field, FormActions, FormSection } from './FormSection'
 import PageContainer from './PageContainer'
+import PageHeader from './PageHeader'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
-import { SkeletonRows } from './skeleton'
+import { SkeletonCard } from './skeleton'
 import { useToast } from './toastContext'
-import { btn, btnPrimary, input } from './uiControls'
+import { btn, btnDanger, btnPrimary, input } from './uiControls'
 
 export default function AppSettingsPage() {
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
@@ -47,27 +50,33 @@ export default function AppSettingsPage() {
     onError: (err: unknown) => toast.failure('Saving settings failed', err),
   })
 
+  const header = <PageHeader title="App settings" />
+
   if (query.isPending) {
     return (
-      <PageContainer className="space-y-6" data-testid="app-settings-page">
-        <h1 className="text-2xl font-bold">App settings</h1>
-        <SkeletonRows rows={3} />
+      <PageContainer data-testid="app-settings-page">
+        {header}
+        <SkeletonCard className="h-48" />
       </PageContainer>
     )
   }
   if (query.isError || !query.data) {
     return (
-      <PageContainer className="space-y-6" data-testid="app-settings-page">
-        <h1 className="text-2xl font-bold">App settings</h1>
-        <ErrorBox title="Cannot load the settings." error={query.error} />
+      <PageContainer data-testid="app-settings-page">
+        {header}
+        <ErrorBox
+          title="Cannot load the settings."
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
       </PageContainer>
     )
   }
   if (form === null) {
     return (
-      <PageContainer className="space-y-6" data-testid="app-settings-page">
-        <h1 className="text-2xl font-bold">App settings</h1>
-        <SkeletonRows rows={3} />
+      <PageContainer data-testid="app-settings-page">
+        {header}
+        <SkeletonCard className="h-48" />
       </PageContainer>
     )
   }
@@ -99,8 +108,39 @@ export default function AppSettingsPage() {
   const turningOff = query.data.login_enabled
 
   return (
-    <PageContainer className="space-y-6" data-testid="app-settings-page">
-      <h1 className="text-2xl font-bold">App settings</h1>
+    <PageContainer data-testid="app-settings-page">
+      {header}
+
+      <FormSection title="Server" description="How this machine runs the work.">
+        <Field label="Files processed at once" htmlFor="worker-concurrency">
+          <input
+            id="worker-concurrency"
+            type="number"
+            min={1}
+            max={16}
+            value={form.worker_concurrency}
+            onChange={(e) => set({ worker_concurrency: e.target.value })}
+            className={`${input} w-32`}
+            data-testid="worker-concurrency"
+          />
+        </Field>
+        <Field
+          label="Scratch folder"
+          htmlFor="scratch-dir"
+          help="Where copies are made before they replace the original. Leave empty to use the default."
+        >
+          <input
+            id="scratch-dir"
+            type="text"
+            value={form.scratch_dir}
+            onChange={(e) => set({ scratch_dir: e.target.value })}
+            placeholder="Default scratch folder"
+            className={`${input} font-mono`}
+            data-testid="scratch-dir"
+          />
+        </Field>
+      </FormSection>
+
       {save.isError && (
         <ErrorBox
           title="Saving the settings failed."
@@ -108,50 +148,30 @@ export default function AppSettingsPage() {
           testId="settings-error"
         />
       )}
+      <FormActions>
+        <button
+          type="button"
+          onClick={savePlain}
+          disabled={save.isPending}
+          className={btnPrimary}
+          data-testid="save-settings"
+        >
+          {save.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+      </FormActions>
 
-      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="font-semibold">Server</h2>
-        <label className="mt-4 grid gap-1">
-          <span className="text-sm text-slate-300">
-            Files processed at once
-          </span>
-          <input
-            type="number"
-            min={1}
-            max={16}
-            value={form.worker_concurrency}
-            onChange={(e) => set({ worker_concurrency: e.target.value })}
-            className={input}
-            data-testid="worker-concurrency"
-          />
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">
-            Scratch folder for temporary work
-          </span>
-          <input
-            type="text"
-            value={form.scratch_dir}
-            onChange={(e) => set({ scratch_dir: e.target.value })}
-            className={input}
-            data-testid="scratch-dir"
-          />
-        </label>
-      </section>
-
-      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="font-semibold">Login</h2>
-        <p className="mt-1 text-sm text-slate-400" data-testid="login-state">
+      <FormSection title="Login">
+        <p className="text-body text-fg-muted" data-testid="login-state">
           {query.data.login_enabled
             ? `A login is required. You are signed in as ${query.data.admin_username}.`
             : 'No login is required; anyone who can reach this server can use it.'}
         </p>
 
         {query.data.login_enabled && (
-          <div className="mt-4 grid gap-3">
-            <label className="grid gap-1">
-              <span className="text-sm text-slate-300">Current password</span>
+          <>
+            <Field label="Current password" htmlFor="current-password">
               <input
+                id="current-password"
                 type="password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
@@ -159,10 +179,10 @@ export default function AppSettingsPage() {
                 className={input}
                 data-testid="current-password"
               />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-sm text-slate-300">New password</span>
+            </Field>
+            <Field label="New password" htmlFor="new-password">
               <input
+                id="new-password"
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -170,44 +190,47 @@ export default function AppSettingsPage() {
                 className={input}
                 data-testid="new-password"
               />
-            </label>
+            </Field>
             <button
               type="button"
               onClick={changePassword}
               disabled={
                 newPassword === '' || currentPassword === '' || save.isPending
               }
-              className={`${btn} justify-self-start`}
+              className={`${btn} self-start`}
               data-testid="change-password"
             >
               Change password
             </button>
-          </div>
+          </>
         )}
 
-        <div className="mt-6 border-t border-slate-800 pt-4">
+        <div className="flex flex-col gap-4">
           {turningOff && !confirmingOff && (
             <button
               type="button"
               onClick={() => setConfirmingOff(true)}
-              className={btn}
+              className={`${btn} self-start`}
               data-testid="turn-login-off"
             >
               Turn login off
             </button>
           )}
           {turningOff && confirmingOff && (
-            <div data-testid="confirm-login-off">
-              <p className="text-sm text-slate-300">
+            <div
+              className="flex flex-col gap-3"
+              data-testid="confirm-login-off"
+            >
+              <p className="text-body text-fg">
                 Anyone who can reach this server will be able to use it without
                 logging in. Turn login off?
               </p>
-              <div className="mt-2 flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={confirmLoginOff}
                   disabled={save.isPending}
-                  className={`${btnPrimary} !bg-red-600 hover:!bg-red-500`}
+                  className={btnDanger}
                   data-testid="confirm-off"
                 >
                   Yes, turn it off
@@ -227,27 +250,27 @@ export default function AppSettingsPage() {
             <button
               type="button"
               onClick={() => setEnablingLogin(true)}
-              className={btn}
+              className={`${btn} self-start`}
               data-testid="turn-login-on"
             >
               Turn login on
             </button>
           )}
           {turningOn && enablingLogin && (
-            <div className="grid gap-3" data-testid="confirm-login-on">
-              <label className="grid gap-1">
-                <span className="text-sm text-slate-300">Username</span>
+            <div className="flex flex-col gap-4" data-testid="confirm-login-on">
+              <Field label="Username" htmlFor="enable-username">
                 <input
+                  id="enable-username"
                   type="text"
                   value={form.admin_username}
                   onChange={(e) => set({ admin_username: e.target.value })}
                   className={input}
                   data-testid="enable-username"
                 />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-sm text-slate-300">Password</span>
+              </Field>
+              <Field label="Password" htmlFor="enable-password">
                 <input
+                  id="enable-password"
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
@@ -255,8 +278,8 @@ export default function AppSettingsPage() {
                   className={input}
                   data-testid="enable-password"
                 />
-              </label>
-              <div className="flex gap-2">
+              </Field>
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={confirmLoginOn}
@@ -281,17 +304,7 @@ export default function AppSettingsPage() {
             </div>
           )}
         </div>
-      </section>
-
-      <button
-        type="button"
-        onClick={savePlain}
-        disabled={save.isPending}
-        className={btnPrimary}
-        data-testid="save-settings"
-      >
-        {save.isPending ? 'Saving…' : 'Save settings'}
-      </button>
+      </FormSection>
 
       <AboutCard />
     </PageContainer>

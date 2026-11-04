@@ -170,10 +170,60 @@ describe('AppSettingsPage', () => {
       ...screen.getAllByRole('combobox'),
       ...screen.getAllByRole('textbox'),
       ...screen.getAllByRole('spinbutton'),
-      ...screen.getAllByRole('checkbox'),
       ...screen.getAllByRole('button'),
     ]) {
       expect(el.className).toContain('min-h-11')
     }
+    // The update toggle is a Checkbox (task 49): its 44 px input replaces
+    // the min-h-11 check above.
+    for (const box of screen.getAllByRole('checkbox')) {
+      expect(box.className).toContain('h-11')
+      expect(box.className).toContain('w-11')
+    }
+  })
+
+  it('orders the sections as spec 5.11 and puts Save directly under Server (task 49)', async () => {
+    mock = installFetchMock([
+      ...aboutRoutes,
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderPage()
+    await screen.findByTestId('update-channel')
+
+    const headings = screen
+      .getAllByRole('heading', { level: 2 })
+      .map((h) => h.textContent)
+    expect(headings).toEqual(['Server', 'Login', 'About and updates'])
+
+    const server = screen
+      .getByRole('heading', { name: 'Server' })
+      .closest('section')!
+    const save = screen.getByTestId('save-settings')
+    const login = screen.getByRole('heading', { name: 'Login' })
+    expect(
+      server.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      save.compareDocumentPosition(login) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(save).toHaveTextContent('Save changes')
+  })
+
+  it('sizes the files-at-once number input to w-32 and gives the scratch folder its help (task 49)', async () => {
+    mock = installFetchMock([
+      ...aboutRoutes,
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderPage()
+    expect(await screen.findByTestId('worker-concurrency')).toHaveClass('w-32')
+    expect(screen.getByTestId('scratch-dir')).toHaveAttribute(
+      'placeholder',
+      'Default scratch folder',
+    )
+    expect(
+      screen.getByText(
+        /Where copies are made before they replace the original/,
+      ),
+    ).toBeInTheDocument()
   })
 })

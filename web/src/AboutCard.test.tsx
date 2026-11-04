@@ -11,6 +11,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AboutCard from './AboutCard'
+import { formatDateTime } from './format'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
 import { ToastProvider } from './toast'
 
@@ -88,7 +89,7 @@ describe('AboutCard', () => {
     )
     expect(screen.getByTestId('about-commit')).toHaveTextContent('abc1234')
     expect(screen.getByTestId('about-date')).toHaveTextContent(
-      '2026-01-02T03:04:05Z',
+      formatDateTime('2026-01-02T03:04:05Z'),
     )
     expect(screen.getByTestId('about-runtime')).toHaveTextContent(
       'App on this machine',
@@ -354,5 +355,66 @@ describe('AboutCard', () => {
     expect(puts[1]).toMatchObject({ update_channel: 'prerelease' })
     // Two saves, two success toasts.
     await screen.findAllByTestId('toast')
+  })
+
+  it('shows the short commit with the full hash as its title (task 49)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/version$/,
+        body: { ...version, commit: 'abc1234def5678901234' },
+      },
+      { method: 'GET', match: /\/api\/v1\/update\/status$/, body: upToDate },
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderCard()
+
+    const commit = await screen.findByTestId('about-commit')
+    await waitFor(() => expect(commit).toHaveTextContent('abc1234'))
+    expect(commit).not.toHaveTextContent('abc1234def5678901234')
+    expect(commit).toHaveAttribute('title', 'abc1234def5678901234')
+  })
+
+  it('renders the update toggle as a Checkbox (task 49)', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/version$/, body: version },
+      { method: 'GET', match: /\/api\/v1\/update\/status$/, body: upToDate },
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderCard()
+
+    const toggle = await screen.findByTestId('update-check-toggle')
+    expect(toggle).toHaveAttribute('type', 'checkbox')
+    // The 44 px transparent input from the shared Checkbox (task 39).
+    expect(toggle).toHaveClass('h-11', 'w-11')
+  })
+
+  it('puts the container commands in a wrapping code block (task 49)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/version$/,
+        body: { ...version, runtime: 'container' },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/update\/status$/,
+        body: {
+          current: 'v1.2.0',
+          update_available: false,
+          self_update_supported: false,
+          reason:
+            'Update from the host:\ndocker compose pull\ndocker compose up -d',
+        },
+      },
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+    ])
+    renderCard()
+
+    const block = await screen.findByTestId('container-instructions')
+    const pre = block.querySelector('pre')
+    expect(pre).not.toBeNull()
+    expect(pre).toHaveClass('whitespace-pre-wrap')
+    expect(pre).toHaveTextContent('docker compose up -d')
   })
 })

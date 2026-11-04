@@ -259,3 +259,28 @@ test.describe('mobile audit', () => {
     })
   }
 })
+
+// Task 49: code blocks wrap instead of clipping at phone width. Only a
+// container install renders the update commands on App settings, and the
+// e2e server is a binary, so this checks every `pre` on both settings pages:
+// any code block added there later is covered too. The unit test in
+// AboutCard.test.tsx checks the wrapping class on the container commands.
+test.describe('code blocks at phone width', () => {
+  test('no pre on the settings pages clips at 390px', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    for (const [path, ready] of [
+      ['/encode', 'encode-settings-page'],
+      ['/app', 'app-settings-page'],
+    ] as const) {
+      await open(page, path, ready)
+      const clipped = await page
+        .locator('main pre')
+        .evaluateAll((els) =>
+          els
+            .filter((el) => el.scrollWidth > el.clientWidth)
+            .map((el) => el.textContent?.slice(0, 40)),
+        )
+      expect(clipped, `${path} at 390px: clipped code blocks`).toEqual([])
+    }
+  })
+})

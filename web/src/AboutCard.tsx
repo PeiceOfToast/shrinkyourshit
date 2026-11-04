@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * About card (task 17): what this install is, whether a newer version
- * exists, and the action that matches how the app runs. A container gets
- * the exact host commands in a copyable block; a binary gets an update
- * button that restarts the app when it finishes. Automatic checks are on
- * by default and nothing applies an update without an explicit click. A
- * failed check is a quiet note in this card — never a toast, never a
+ * About card (task 17, restyled task 49): what this install is, whether a
+ * newer version exists, and the action that matches how the app runs. It is
+ * the "About and updates" FormSection on App settings (spec 5.11). A
+ * container gets the exact host commands in a copyable block; a binary gets
+ * an update button that restarts the app when it finishes. Automatic checks
+ * are on by default and nothing applies an update without an explicit click.
+ * A failed check is a quiet note in this card — never a toast, never a
  * warning anywhere else.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,6 +18,11 @@ import {
   getVersion,
   updateSettings,
 } from './api'
+import Banner from './Banner'
+import Checkbox from './Checkbox'
+import CodeBlock from './CodeBlock'
+import { FormSection, Field } from './FormSection'
+import { formatDateTime, shortHash } from './format'
 import { updateStatusKey, useUpdateStatus } from './queries'
 import { useToast } from './toastContext'
 import {
@@ -25,7 +31,7 @@ import {
   runtimeLabel,
   stageLabel,
 } from './updateModel'
-import { btn, btnPrimary, input } from './uiControls'
+import { btn, btnPrimary, linkTouch, select } from './uiControls'
 
 function Row({
   label,
@@ -35,10 +41,10 @@ function Row({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex justify-between gap-4 py-1 text-sm">
-      <span className="text-slate-400">{label}</span>
-      <span className="truncate text-slate-200">{children}</span>
-    </div>
+    <>
+      <dt className="text-fg-muted">{label}</dt>
+      <dd className="min-w-0 break-words text-fg">{children}</dd>
+    </>
   )
 }
 
@@ -80,30 +86,39 @@ export default function AboutCard() {
   const channel = settings.data?.update_channel ?? 'stable'
 
   return (
-    <section
-      className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800"
-      data-testid="about-card"
+    <FormSection
+      title="About and updates"
+      description="What this install is, and whether a newer version is out."
+      testId="about-card"
     >
-      <h2 className="font-semibold">About</h2>
-
-      <div className="mt-3">
+      <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-6 gap-y-2 text-body">
         <Row label="Version">
-          <span data-testid="about-version">{info?.version ?? '…'}</span>
+          <span className="font-mono" data-testid="about-version">
+            {info?.version ?? '…'}
+          </span>
         </Row>
         <Row label="Commit">
-          <span data-testid="about-commit">{info?.commit ?? '…'}</span>
+          <span
+            className="font-mono"
+            title={info?.commit ?? undefined}
+            data-testid="about-commit"
+          >
+            {info?.commit ? shortHash(info.commit) : '…'}
+          </span>
         </Row>
-        <Row label="Build date">
-          <span data-testid="about-date">{info?.date ?? '…'}</span>
+        <Row label="Built">
+          <span data-testid="about-date">
+            {info ? formatDateTime(info.date) : '…'}
+          </span>
         </Row>
         <Row label="Install type">
           <span data-testid="about-runtime">
             {info ? runtimeLabel(info.runtime) : '…'}
           </span>
         </Row>
-      </div>
+      </dl>
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <button
           type="button"
           onClick={() => check.mutate()}
@@ -113,45 +128,37 @@ export default function AboutCard() {
         >
           {check.isPending ? 'Checking…' : 'Check now'}
         </button>
-        <label className="flex select-none items-center gap-2 text-sm text-slate-300">
-          <input
-            type="checkbox"
-            checked={settings.data?.update_check ?? true}
-            onChange={(e) =>
-              saveSettings.mutate({ update_check: e.target.checked })
-            }
-            className="h-11 min-h-11 w-11 shrink-0 accent-emerald-500"
-            data-testid="update-check-toggle"
-          />
-          Check for updates automatically
-        </label>
+        <Checkbox
+          checked={settings.data?.update_check ?? true}
+          onChange={(on) => saveSettings.mutate({ update_check: on })}
+          label="Check for updates automatically"
+          testId="update-check-toggle"
+        />
       </div>
 
       {/* A failed check is a quiet note, never a toast (task 17). */}
       {check.isError && (
-        <p className="mt-3 text-sm text-slate-400" data-testid="check-error">
+        <p className="text-body text-fg-muted" data-testid="check-error">
           {checkFailureMessage(check.error)}
         </p>
       )}
 
       {update && update.update_available && update.latest && (
-        <div
-          className="mt-4 rounded-xl bg-sky-950/60 p-4 ring-1 ring-sky-800/60"
-          data-testid="update-banner"
-        >
-          <p className="text-sm font-semibold text-sky-100">
-            Version {update.latest} is available
-            {update.published_at
+        <Banner
+          tone="info"
+          testId="update-banner"
+          title={`Version ${update.latest} is available${
+            update.published_at
               ? ` (published ${formatPublished(update.published_at)})`
-              : ''}
-            .
-          </p>
+              : ''
+          }.`}
+        >
           {update.release_url && (
             <a
               href={update.release_url}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 inline-flex min-h-11 items-center text-sm text-sky-300 underline"
+              className={linkTouch}
               data-testid="release-notes-link"
             >
               Release notes
@@ -160,9 +167,11 @@ export default function AboutCard() {
 
           {/* The action matches the runtime (task 17). */}
           {isContainer ? (
-            <ContainerInstructions reason={update.reason ?? ''} />
-          ) : update.self_update_supported ? (
             <div className="mt-3">
+              <ContainerInstructions reason={update.reason ?? ''} />
+            </div>
+          ) : update.self_update_supported ? (
+            <div className="mt-3 flex flex-col items-start gap-2">
               <button
                 type="button"
                 onClick={() => apply.mutate()}
@@ -173,7 +182,7 @@ export default function AboutCard() {
                 {applying || apply.isPending ? 'Updating…' : 'Update now'}
               </button>
               <p
-                className="mt-2 text-xs text-amber-200"
+                className="text-caption text-fg-muted"
                 data-testid="update-restart-warning"
               >
                 The app restarts by itself when the update finishes. The
@@ -181,27 +190,21 @@ export default function AboutCard() {
               </p>
             </div>
           ) : (
-            <p
-              className="mt-2 text-sm text-slate-300"
-              data-testid="update-unsupported"
-            >
+            <p className="mt-2 text-body" data-testid="update-unsupported">
               {update.reason}
             </p>
           )}
-        </div>
+        </Banner>
       )}
 
       {/* Live progress while an in-app update runs. */}
       {update?.progress?.active && (
-        <p
-          className="mt-3 text-sm text-slate-300"
-          data-testid="update-progress"
-        >
+        <p className="text-body text-fg" data-testid="update-progress">
           {stageLabel(update.progress.stage)}
         </p>
       )}
       {update?.progress && !update.progress.active && update.progress.error && (
-        <p className="mt-3 text-sm text-slate-400" data-testid="update-error">
+        <p className="text-body text-fg-muted" data-testid="update-error">
           The update did not finish: {update.progress.error}
         </p>
       )}
@@ -213,44 +216,37 @@ export default function AboutCard() {
       )}
 
       {!update?.update_available && update?.reason && !isContainer && (
-        <p className="mt-3 text-sm text-slate-400" data-testid="update-note">
+        <p className="text-body text-fg-muted" data-testid="update-note">
           {update.reason}
         </p>
       )}
 
-      <div className="mt-4 border-t border-slate-800 pt-4">
-        <label className="grid max-w-xs gap-1 text-sm">
-          <span className="text-slate-300">Update channel</span>
-          <select
-            value={channel}
-            onChange={(e) =>
-              saveSettings.mutate({ update_channel: e.target.value })
-            }
-            className={input}
-            data-testid="update-channel"
-          >
-            <option value="stable">Stable releases</option>
-            <option value="prerelease">
-              Prereleases (early test versions)
-            </option>
-          </select>
-        </label>
-      </div>
-    </section>
+      <Field label="Update channel" htmlFor="update-channel">
+        <select
+          id="update-channel"
+          value={channel}
+          onChange={(e) =>
+            saveSettings.mutate({ update_channel: e.target.value })
+          }
+          className={`${select} max-w-xs`}
+          data-testid="update-channel"
+        >
+          <option value="stable">Stable releases</option>
+          <option value="prerelease">Prereleases (early test versions)</option>
+        </select>
+      </Field>
+    </FormSection>
   )
 }
 
 /** The exact host commands a container install runs to update. */
 function ContainerInstructions({ reason }: { reason: string }) {
   return (
-    <div className="mt-3">
-      <pre
-        className="overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-300"
-        data-testid="container-instructions"
-      >
+    <div className="flex flex-col gap-2">
+      <CodeBlock copy testId="container-instructions">
         {reason}
-      </pre>
-      <p className="mt-1 text-xs text-slate-500">
+      </CodeBlock>
+      <p className="text-caption text-fg-muted">
         Run these on the machine that hosts the container.
       </p>
     </div>
