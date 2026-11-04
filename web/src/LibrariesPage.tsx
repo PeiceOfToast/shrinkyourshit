@@ -11,16 +11,12 @@
  * the most urgent chip: failed, then missing, working, waiting, new, and
  * otherwise "Up to date" when every file is satisfied or done.
  *
- * Delete keeps its task 13 confirmation that only the library's records are
- * removed; files on disk are untouched. Remove still sits in the row here as
- * a quiet danger action; spec 5.7 moves it to a Danger zone on the Edit page
- * (task 47).
+ * Remove is not on this list: it lives in the Danger zone of the Edit page
+ * (spec 5.7, task 47), so Scan now and Edit are the only row actions.
  */
-import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  deleteLibrary,
   getLibraries,
   getStats,
   scanLibrary,
@@ -29,7 +25,6 @@ import {
 } from './api'
 import Badge from './Badge'
 import Card from './Card'
-import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
 import EmptyState from './EmptyState'
 import ErrorBox from './ErrorBox'
@@ -40,7 +35,7 @@ import PageHeader from './PageHeader'
 import StatusChip from './StatusChip'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
-import { btn, btnDangerGhost, btnGhost, btnPrimary } from './uiControls'
+import { btn, btnGhost, btnPrimary } from './uiControls'
 
 type StatusKey =
   'new' | 'satisfied' | 'queued' | 'processing' | 'done' | 'failed' | 'missing'
@@ -76,7 +71,6 @@ export default function LibrariesPage() {
   const toast = useToast()
   const libraries = useQuery({ queryKey: ['libraries'], queryFn: getLibraries })
   const stats = useQuery({ queryKey: ['stats'], queryFn: getStats })
-  const [toDelete, setToDelete] = useState<Library | null>(null)
 
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ['libraries'] })
@@ -90,16 +84,6 @@ export default function LibrariesPage() {
       refresh()
     },
     onError: (err: unknown) => toast.failure('Scan failed', err),
-  })
-  const del = useMutation({
-    mutationFn: deleteLibrary,
-    onSuccess: () => {
-      setToDelete(null)
-      toast.success('Library removed. The files on disk are untouched.')
-      refresh()
-    },
-    onError: (err: unknown) =>
-      toast.failure('Removing the library failed', err),
   })
 
   const countsFor = (lib: Library): LibraryStats | undefined =>
@@ -172,16 +156,6 @@ export default function LibrariesPage() {
     >
       Edit
     </Link>
-  )
-  const removeButton = (lib: Library, onCard: boolean) => (
-    <button
-      type="button"
-      onClick={() => setToDelete(lib)}
-      className={btnDangerGhost}
-      data-testid={`library-delete-${lib.id}${onCard ? '-card' : ''}`}
-    >
-      Remove
-    </button>
   )
 
   /** The name over the mono path. The row link wraps it (DataList rowHref). */
@@ -281,14 +255,12 @@ export default function LibrariesPage() {
         <>
           {scanButton(lib, false)}
           {editLink(lib, false)}
-          {removeButton(lib, false)}
         </>
       ),
       cardCell: (lib) => (
         <>
           {scanButton(lib, true)}
           {editLink(lib, true)}
-          {removeButton(lib, true)}
         </>
       ),
     },
@@ -361,26 +333,6 @@ export default function LibrariesPage() {
           />
         }
       />
-
-      {toDelete && (
-        <ConfirmDialog
-          title={`Remove “${toDelete.name}”?`}
-          confirmLabel="Remove library"
-          busy={del.isPending}
-          onConfirm={() => del.mutate(toDelete.id)}
-          onClose={() => setToDelete(null)}
-          testId="confirm-delete"
-          confirmTestId="confirm-delete-yes"
-          cancelTestId="confirm-delete-cancel"
-        >
-          <p>
-            This removes the library and its job records from the database and
-            forgets what ShrinkYourShit did there. The files in{' '}
-            <span className="text-fg">{toDelete.path}</span> are not touched —
-            nothing on disk is deleted or renamed.
-          </p>
-        </ConfirmDialog>
-      )}
     </PageContainer>
   )
 }
