@@ -350,3 +350,6 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T21:52:00Z pm: task 56 PR #60 opened from the supervisor box (gh is not installed on VM 201); CI run 41919436135 green 9/9 (go 3m21s, e2e 3m30s, web, docker, docker-arm64 11m22s, cross, installer, installer-powershell, report)
 - 2026-11-04T22:00:22Z pm: PR #60 squash-merged as 29a1827, branch task/56-condition-steps deleted; STATUS 56 done with PR #60; next task is 57-per-step-hardware.md
 - 2026-11-04T22:00:46Z pm: task 57 (per step hardware) dispatched as run 20261104-220046-731fceec (build/haiku) on branch off main 97c1fd6, with the PATH export note and the no-PR instruction
+- 2026-11-04T22:35:30Z pm: task 57 run 20261104-220046 done; verified on VM 201: checklist 4/4, make test exit 0 (444 web tests, 13 Go packages ok), make lint exit 0, DECISIONS.md unchanged vs origin/main, diff in scope (plan.go, runner.go, hardware_test.go, runner_test.go, ARCHITECTURE.md, task notes)
+- 2026-11-04T22:35:30Z pm: PR #61 opened; CI run 41924491913 green 9/9 (go 4m05s, e2e 2m52s, docker, docker-arm64 12m00s, cross, web, installer, installer-powershell, report)
+- 2026-11-04T22:35:30Z pm: PR #61 squash-merged as 4c6f336, branch task/57-per-step-hardware deleted, main pulled on VM 201; STATUS 57 done with PR #61
