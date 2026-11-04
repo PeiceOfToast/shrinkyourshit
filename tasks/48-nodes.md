@@ -13,14 +13,14 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] One lifecycle Badge for approved nodes.
-- [ ] The switch has the visible label "Encoding".
-- [ ] The EncodingStatus panel holds `nodes-pause-all` and `nodes-resume-all` (existing tests green).
-- [ ] Revoke opens ConfirmDialog (new test).
-- [ ] FFmpeg details inside a Disclosure.
-- [ ] Facts `dl` using `format.ts`.
-- [ ] EmptyState.
-- [ ] Dialogs restyled; the join command in `CodeBlock copy`.
+- [x] One lifecycle Badge for approved nodes.
+- [x] The switch has the visible label "Encoding".
+- [x] The EncodingStatus panel holds `nodes-pause-all` and `nodes-resume-all` (existing tests green).
+- [x] Revoke opens ConfirmDialog (new test).
+- [x] FFmpeg details inside a Disclosure.
+- [x] Facts `dl` using `format.ts`.
+- [x] EmptyState.
+- [x] Dialogs restyled; the join command in `CodeBlock copy`.
 
 ## Rules for this wave
 

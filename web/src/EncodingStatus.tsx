@@ -28,7 +28,7 @@ import Banner from './Banner'
 import Icon from './Icon'
 import Switch from './Switch'
 import { useToast } from './toastContext'
-import { btn } from './uiControls'
+import { btn, btnGhost } from './uiControls'
 
 export type EncodingVariant = 'rail' | 'icon' | 'compact' | 'panel'
 
@@ -63,10 +63,17 @@ function runningLabel(active: number): string {
 export default function EncodingStatus({
   variant,
   waiting,
+  controls = false,
 }: {
   variant: EncodingVariant
   /** Files waiting in the queue, for the panel sentence when known. */
   waiting?: number
+  /**
+   * Panel only (Nodes, spec 5.10): the action slot holds Pause all and
+   * Resume all instead of the single resume action. Same mutations and
+   * toasts as the other variants.
+   */
+  controls?: boolean
 }) {
   const client = useQueryClient()
   const toast = useToast()
@@ -172,6 +179,63 @@ export default function EncodingStatus({
   }
 
   if (variant === 'panel') {
+    if (controls) {
+      const approved = nodes.filter((n) => n.status === 'approved')
+      // Pause needs something running or draining; resume needs every
+      // approved node stopped (the state a pause leaves behind).
+      const canPause = approved.some(
+        (n) => n.desired_state === 'running' || n.desired_state === 'draining',
+      )
+      const canResume =
+        approved.length > 0 &&
+        approved.every((n) => n.desired_state === 'stopped')
+      const sentence =
+        state === 'paused'
+          ? 'Encoding is paused on all nodes.'
+          : state === 'running'
+            ? `Shrinking ${active} ${active === 1 ? 'file' : 'files'}${
+                waiting === undefined ? '' : ` · ${waiting} waiting`
+              }`
+            : state === 'no-nodes'
+              ? 'No nodes yet.'
+              : 'All caught up.'
+      const tone =
+        state === 'paused'
+          ? 'warning'
+          : state === 'running'
+            ? 'info'
+            : 'success'
+      return (
+        <Banner
+          tone={tone}
+          testId="encoding-status"
+          action={
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => pause.mutate()}
+                disabled={!canPause || busy}
+                className={canPause ? btn : btnGhost}
+                data-testid="nodes-pause-all"
+              >
+                {pause.isPending ? 'Pausing…' : 'Pause all'}
+              </button>
+              <button
+                type="button"
+                onClick={() => resume.mutate()}
+                disabled={!canResume || busy}
+                className={canResume ? btn : btnGhost}
+                data-testid="nodes-resume-all"
+              >
+                {resume.isPending ? 'Resuming…' : 'Resume all'}
+              </button>
+            </div>
+          }
+        >
+          {sentence}
+        </Banner>
+      )
+    }
     if (state === 'no-nodes') {
       return (
         <Banner tone="info" testId="encoding-status">

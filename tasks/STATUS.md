@@ -67,7 +67,7 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 45 | 45-rules-page.md | done | PR #48 https://github.com/PeiceOfToast/shrinkyourshit/pull/48 , v1.9, CI green, checklist ticked |
 | 46 | 46-flow-page.md | done | PR #49 https://github.com/PeiceOfToast/shrinkyourshit/pull/49, v1.9, CI green, checklist ticked |
 | 47 | 47-edit-page-properties.md | done | PR #50 https://github.com/PeiceOfToast/shrinkyourshit/pull/50, v1.9, CI green (9 checks), checklist ticked; spec 8.4 items 1-2 taken at default yes |
-| 48 | 48-nodes.md | todo |  |
+| 48 | 48-nodes.md | done | PR pending, v1.9, CI pending, checklist ticked |
 | 49 | 49-encode-app-settings.md | todo |  |
 | 50 | 50-integrations-plugins.md | todo |  |
 | 51 | 51-setup-login.md | todo |  |
