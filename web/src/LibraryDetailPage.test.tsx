@@ -7,7 +7,13 @@
  * search and sort; status filter; pagination (page size, previous/next);
  * the cancel-job confirmation and toasts; the per-file job history link.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -176,7 +182,7 @@ describe('LibraryDetailPage', () => {
     expect(screen.getByTestId('file-after-f1')).toHaveTextContent('—')
     expect(screen.getByTestId('file-ratio-f1')).toHaveTextContent('—')
     // The encoder of the file's most recent job.
-    expect(screen.getByTestId('file-encoder-f2')).toHaveTextContent('nvenc')
+    expect(screen.getByTestId('file-encoder-f2')).toHaveTextContent('NVIDIA')
     expect(screen.getByTestId('file-encoder-f1')).toHaveTextContent('—')
     expect(screen.getByTestId('retry-failed')).toHaveTextContent('(1)')
   })
@@ -214,7 +220,7 @@ describe('LibraryDetailPage', () => {
     expect(screen.queryByTestId('library-summary-failed')).toBeNull()
     // Bytes saved.
     expect(screen.getByTestId('library-summary-saved')).toHaveTextContent(
-      '700 MB saved',
+      '700 MB',
     )
     // The last scan time.
     expect(screen.getByTestId('library-last-scan')).toHaveTextContent(
@@ -340,8 +346,8 @@ describe('LibraryDetailPage', () => {
     expect(screen.getByTestId('file-card-reason-f1')).toHaveTextContent(
       'Why: video is h264, target is hevc',
     )
-    expect(card).toHaveTextContent('Size:')
-    expect(card).toHaveTextContent('Encoder:')
+    expect(card).toHaveTextContent('Before and after')
+    expect(card).toHaveTextContent('Encoder')
     // The long path is deliberately wrapped or truncated, never forcing
     // width: the name span carries break-words.
     expect(card.querySelector('.break-words')).not.toBeNull()
@@ -479,7 +485,7 @@ describe('LibraryDetailPage', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('files-page-info')).toHaveTextContent(
-        'Page 1 of 3 · 120 files',
+        '1–50 of 120',
       ),
     )
     // First page: previous disabled, next enabled.
@@ -494,7 +500,7 @@ describe('LibraryDetailPage', () => {
     })
     await waitFor(() =>
       expect(screen.getByTestId('files-page-info')).toHaveTextContent(
-        'Page 2 of 3',
+        '51–100 of 120',
       ),
     )
     expect(screen.getByTestId('files-prev')).not.toBeDisabled()
@@ -511,7 +517,7 @@ describe('LibraryDetailPage', () => {
     })
     await waitFor(() =>
       expect(screen.getByTestId('files-page-info')).toHaveTextContent(
-        'Page 1 of 5',
+        '1–25 of 120',
       ),
     )
   })
@@ -783,5 +789,165 @@ describe('LibraryDetailPage non-media hint (task 34)', () => {
     renderPage()
     await screen.findByTestId('library-last-scan')
     expect(screen.queryByTestId('library-kind-hint')).toBeNull()
+  })
+})
+
+/** The routes every layout test needs: library, stats, plain target, files. */
+function layoutRoutes(items: unknown[], total: number): MockRoute[] {
+  return [
+    {
+      method: 'GET',
+      match: /\/api\/v1\/libraries\/lib-1$/,
+      body: libraryDoc({ flow_source: 'easy' }),
+    },
+    { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+    ...previewRoutes(),
+    {
+      method: 'GET',
+      match: /\/api\/v1\/libraries\/lib-1\/files/,
+      body: { items, total },
+    },
+    {
+      method: 'POST',
+      match: /\/api\/v1\/libraries\/lib-1\/scan$/,
+      body: { started: true },
+    },
+  ]
+}
+
+describe('LibraryDetailPage layout (task 44, spec 5.6)', () => {
+  it('puts Rules, Edit and Scan now in the header, Scan last and primary', async () => {
+    mock = installFetchMock(layoutRoutes([file('f1', 'new')], 1))
+    renderPage()
+    const scan = await screen.findByTestId('library-scan-lib-1')
+    expect(scan).toHaveTextContent('Scan now')
+    expect(scan.className).toContain('bg-accent')
+    expect(screen.getByTestId('library-detail-rules')).toHaveTextContent(
+      'Rules',
+    )
+    expect(screen.getByTestId('library-detail-edit')).toHaveTextContent('Edit')
+    // The header is the only place the page title lives.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Movies',
+    )
+    fireEvent.click(scan)
+    await waitFor(() =>
+      expect(
+        mock.calls('POST', /\/api\/v1\/libraries\/lib-1\/scan$/),
+      ).toHaveLength(1),
+    )
+  })
+
+  it('summarises the library in four numbers with the rules in plain language', async () => {
+    mock = installFetchMock(layoutRoutes([file('f1', 'new')], 1))
+    renderPage()
+    const summary = await screen.findByTestId('library-summary')
+    // Saved is the large value; Files, Waiting and Failed come from stats.
+    expect(screen.getByTestId('library-summary-saved')).toHaveTextContent(
+      '700 MB',
+    )
+    expect(screen.getByTestId('library-summary-files')).toHaveTextContent('3')
+    expect(screen.getByTestId('library-summary-waiting')).toHaveTextContent('1')
+    expect(
+      screen.getByTestId('library-summary-failed-count'),
+    ).toHaveTextContent('0')
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Rules · Easy' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('library-change-rules')).toHaveAttribute(
+      'href',
+      '/libraries/lib-1/rules',
+    )
+    expect(
+      await within(summary).findAllByTestId('target-plain-line'),
+    ).toHaveLength(2)
+  })
+
+  it('puts a label above each toolbar control', async () => {
+    mock = installFetchMock(layoutRoutes([file('f1', 'new')], 1))
+    renderPage()
+    const toolbar = await screen.findByTestId('file-toolbar')
+    // Status: the label wraps the select, with its words first.
+    const status = screen.getByTestId('file-status-filter').closest('label')
+    expect(status).toHaveClass('flex-col')
+    expect(status).toHaveTextContent('Status')
+    // Sort: a column whose first child is the label, then the controls.
+    const sortColumn = screen.getByTestId('file-sort').closest('div.flex-col')
+    expect(sortColumn?.firstElementChild).toHaveTextContent('Sort')
+    expect(toolbar).toHaveTextContent('Search')
+    expect(screen.getByTestId('file-sort-dir')).toHaveAttribute(
+      'aria-label',
+      'Sort ascending',
+    )
+    fireEvent.click(screen.getByTestId('file-sort-dir'))
+    expect(screen.getByTestId('file-sort-dir')).toHaveAttribute(
+      'aria-label',
+      'Sort descending',
+    )
+  })
+
+  it('hides Retry when nothing has failed and shows it with the count when something has', async () => {
+    mock = installFetchMock(layoutRoutes([file('f1', 'new')], 1))
+    renderPage()
+    await screen.findByTestId('file-table')
+    expect(screen.queryByTestId('retry-failed')).toBeNull()
+    mock.restore()
+
+    mock = installFetchMock(
+      layoutRoutes(
+        [file('f1', 'failed', { last_job_id: 'job-1' }), file('f2', 'failed')],
+        2,
+      ),
+    )
+    renderPage()
+    expect(await screen.findByTestId('retry-failed')).toHaveTextContent(
+      'Retry failed (2)',
+    )
+  })
+
+  it('hides the pager when every file fits on one page', async () => {
+    mock = installFetchMock(
+      layoutRoutes(
+        [file('f1', 'new'), file('f2', 'new'), file('f3', 'new')],
+        3,
+      ),
+    )
+    renderPage()
+    await screen.findByTestId('file-table')
+    expect(screen.queryByTestId('files-pagination')).toBeNull()
+    expect(screen.queryByTestId('files-page-size')).toBeNull()
+  })
+
+  it('reads a satisfied file that was made smaller as Shrunk, and names encoders in plain words', async () => {
+    mock = installFetchMock(
+      layoutRoutes(
+        [
+          file('f1', 'satisfied', { bytes_saved: 400_000_000 }),
+          file('f2', 'done', { bytes_saved: 1, last_job_encoder: 'cpu' }),
+          file('f3', 'satisfied', { last_job_encoder: 'qsv' }),
+        ],
+        3,
+      ),
+    )
+    renderPage()
+    await screen.findByTestId('file-table')
+    expect(screen.getByTestId('file-status-f1')).toHaveTextContent('Shrunk')
+    expect(screen.getByTestId('file-status-f3')).toHaveTextContent(
+      'Nothing to do',
+    )
+    expect(screen.getByTestId('file-encoder-f2')).toHaveTextContent('CPU')
+    expect(screen.getByTestId('file-encoder-f3')).toHaveTextContent('Intel')
+    // The ratio sits under the saved size, as "1.7× smaller".
+    expect(screen.getByTestId('file-ratio-f1')).toHaveTextContent('smaller')
+  })
+
+  it('switches from cards to the table at md, not sm', async () => {
+    mock = installFetchMock(layoutRoutes([file('f1', 'new')], 1))
+    renderPage()
+    const cards = await screen.findByTestId('file-cards')
+    expect(cards.className).toContain('md:hidden')
+    expect(cards.className).not.toContain('sm:hidden')
+    const table = screen.getByTestId('file-table')
+    expect(table.parentElement?.className).toContain('hidden md:block')
   })
 })

@@ -225,3 +225,31 @@ describe('FileHistory', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('FileHistory dialog structure (task 44)', () => {
+  it('builds the dialog from the shared header, body and footer', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/files\/f1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderPanel()
+    const title = await screen.findByTestId('file-history-title')
+    // DialogHeader: the title row is padded at the top.
+    expect(title.parentElement).toHaveClass('px-6', 'pt-6')
+    // DialogFooter: the action row is padded at the bottom.
+    expect(screen.getByTestId('file-history-close').parentElement).toHaveClass(
+      'px-6',
+      'pb-6',
+    )
+    // DialogBody: the middle scrolls, so a long history never pushes the
+    // footer off screen.
+    expect(
+      (await screen.findByTestId('file-history-empty')).closest(
+        '.overflow-y-auto',
+      ),
+    ).not.toBeNull()
+  })
+})

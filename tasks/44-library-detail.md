@@ -13,15 +13,15 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] Header actions are Rules, Edit and Scan now (primary).
-- [ ] Summary Card with four numbers and the rules summary.
-- [ ] Labels above toolbar controls.
-- [ ] Retry hidden at 0.
-- [ ] Pager hidden when `total <= perPage`.
-- [ ] Status "Shrunk" for satisfied with savings.
-- [ ] Encoder words.
-- [ ] `cardsBelow="md"`.
-- [ ] The dialogs use DialogHeader/Body/Footer.
+- [x] Header actions are Rules, Edit and Scan now (primary).
+- [x] Summary Card with four numbers and the rules summary.
+- [x] Labels above toolbar controls.
+- [x] Retry hidden at 0.
+- [x] Pager hidden when `total <= perPage`.
+- [x] Status "Shrunk" for satisfied with savings.
+- [x] Encoder words.
+- [x] `cardsBelow="md"`.
+- [x] The dialogs use DialogHeader/Body/Footer.
 
 ## Rules for this wave
 

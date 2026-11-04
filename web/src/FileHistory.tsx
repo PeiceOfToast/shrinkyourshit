@@ -10,25 +10,27 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { getFileJobs, type FileItem, type Job } from './api'
-import { formatBytes, statusLabel } from './easyModel'
+import Badge, { type BadgeTone } from './Badge'
+import { statusLabel } from './easyModel'
 import ErrorBox from './ErrorBox'
+import { formatBytes } from './format'
 import JobLogDialog from './JobLogDialog'
-import ModalDialog from './dialog'
-import { btnGhost } from './uiControls'
+import ModalDialog, { DialogBody, DialogFooter, DialogHeader } from './dialog'
+import { btn, btnGhost } from './uiControls'
 
-function jobStatusColor(status: string): string {
+function jobStatusTone(status: string): BadgeTone {
   switch (status) {
     case 'done':
-      return 'text-emerald-400'
+      return 'success'
     case 'failed':
-      return 'text-red-400'
+      return 'danger'
     case 'running':
     case 'claimed':
-      return 'text-sky-400'
+      return 'info'
     case 'cancelled':
-      return 'text-slate-400'
+      return 'neutral'
     default:
-      return 'text-amber-400'
+      return 'warning'
   }
 }
 
@@ -42,37 +44,37 @@ function JobRow({
 }) {
   const hasSizes = job.bytes_before > 0
   return (
-    <li
-      className="rounded-2xl bg-slate-900 p-4 ring-1 ring-slate-800"
-      data-testid="file-history-job"
-    >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span className={`font-medium ${jobStatusColor(job.status)}`}>
+    <li className="py-3" data-testid="file-history-job">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body">
+        <Badge tone={jobStatusTone(job.status)}>
           {statusLabel(job.status)}
-        </span>
-        <span className="text-slate-400" data-testid="file-history-attempt">
+        </Badge>
+        <span className="text-fg-muted" data-testid="file-history-attempt">
           Attempt {job.attempt + 1}
         </span>
-        <span className="text-slate-400" data-testid="file-history-encoder">
-          <span className="text-slate-600">Encoder: </span>
+        <span className="text-fg-muted" data-testid="file-history-encoder">
+          <span className="text-fg-subtle">Encoder: </span>
           {job.encoder_used || '—'}
         </span>
         {hasSizes && (
-          <span className="text-slate-400" data-testid="file-history-bytes">
-            <span className="text-slate-600">Size: </span>
+          <span
+            className="tabular-nums text-fg-muted"
+            data-testid="file-history-bytes"
+          >
+            <span className="text-fg-subtle">Size: </span>
             {formatBytes(job.bytes_before)}
             {' → '}
             {job.bytes_after > 0 ? formatBytes(job.bytes_after) : '—'}
           </span>
         )}
         {job.status === 'running' && job.percent > 0 && (
-          <span className="text-sky-300">{Math.round(job.percent)}%</span>
+          <span className="text-info">{Math.round(job.percent)}%</span>
         )}
         {job.has_log && (
           <button
             type="button"
             onClick={() => onOpenLog(job)}
-            className={`${btnGhost} !min-h-11 !px-3 !text-xs`}
+            className={btnGhost}
             data-testid={`file-history-log-${job.id}`}
           >
             Log
@@ -81,7 +83,7 @@ function JobRow({
       </div>
       {job.fallback_reasons.length > 0 && (
         <ul
-          className="mt-2 space-y-1 text-sm text-amber-300"
+          className="mt-2 space-y-1 text-body text-warning"
           data-testid="file-history-fallbacks"
         >
           {job.fallback_reasons.map((reason, i) => (
@@ -91,7 +93,7 @@ function JobRow({
       )}
       {job.error && (
         <p
-          className="mt-2 break-words text-sm text-red-400"
+          className="mt-2 break-words text-body text-danger"
           data-testid="file-history-error-text"
         >
           {job.error}
@@ -99,11 +101,11 @@ function JobRow({
       )}
       {job.log && (
         <details className="mt-2" data-testid="file-history-log">
-          <summary className="cursor-pointer text-sm text-slate-400 hover:text-slate-200">
+          <summary className="cursor-pointer text-body text-fg-muted hover:text-fg">
             Log
           </summary>
           <pre
-            className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-slate-950 p-3 text-xs text-slate-400"
+            className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-control bg-canvas p-3 text-caption text-fg-muted"
             data-testid="file-history-log-text"
           >
             {job.log}
@@ -133,17 +135,18 @@ export default function FileHistory({
       onClose={onClose}
       label={`Job history for ${name}`}
       testId="file-history"
-      className="m-auto w-full max-w-2xl rounded-2xl bg-slate-950 p-6 text-slate-100 shadow-xl ring-1 ring-slate-800"
+      size="lg"
     >
-      <h2 className="text-lg font-bold" data-testid="file-history-title">
-        Job history
-      </h2>
-      <p className="mt-0.5 truncate text-sm text-slate-500">{name}</p>
-
-      <div className="mt-4">
+      <DialogHeader
+        title="Job history"
+        titleTestId="file-history-title"
+        onClose={onClose}
+      />
+      <DialogBody>
+        <p className="-mt-2 mb-4 truncate text-caption text-fg-muted">{name}</p>
         {jobs.isPending ? (
           <p
-            className="text-sm text-slate-500"
+            className="text-body text-fg-muted"
             data-testid="file-history-loading"
           >
             Loading the history…
@@ -152,28 +155,29 @@ export default function FileHistory({
           <ErrorBox title="Cannot load the job history." error={jobs.error} />
         ) : jobs.data.total === 0 ? (
           <p
-            className="text-sm text-slate-400"
+            className="text-body text-fg-muted"
             data-testid="file-history-empty"
           >
             No jobs have run for this file yet.
           </p>
         ) : (
-          <ul className="space-y-2" data-testid="file-history-jobs">
+          <ul className="divide-y divide-line" data-testid="file-history-jobs">
             {jobs.data.items.map((job) => (
               <JobRow key={job.id} job={job} onOpenLog={setLogJob} />
             ))}
           </ul>
         )}
-      </div>
-
-      <button
-        type="button"
-        onClick={onClose}
-        className="mt-5 rounded-lg bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
-        data-testid="file-history-close"
-      >
-        Close
-      </button>
+      </DialogBody>
+      <DialogFooter>
+        <button
+          type="button"
+          onClick={onClose}
+          className={btn}
+          data-testid="file-history-close"
+        >
+          Close
+        </button>
+      </DialogFooter>
       {logJob && <JobLogDialog job={logJob} onClose={() => setLogJob(null)} />}
     </ModalDialog>
   )
