@@ -48,6 +48,22 @@ describe('KindPicker', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('uses the shared Checkbox and marks the selected tile (task 41)', () => {
+    renderPicker(['video'])
+    const video = screen.getByTestId('kind-video')
+    // The shared Checkbox puts the 44 px input and the peer-styled box in place.
+    expect(video.className).toContain('peer')
+    expect(video.closest('label')!.className).toContain('min-h-11')
+    // The selected tile carries the accent ring; an unselected one does not.
+    expect(video.closest('div.rounded-control')!.className).toContain(
+      'ring-accent/60',
+    )
+    expect(
+      screen.getByTestId('kind-image').closest('div.rounded-control')!
+        .className,
+    ).not.toContain('ring-accent/60')
+  })
+
   it('labels kinds in plain language', () => {
     expect(kindLabel('image')).toBe('Photos')
     expect(kindLabel('other')).toBe('Anything else')

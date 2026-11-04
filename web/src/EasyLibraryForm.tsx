@@ -1,35 +1,43 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The easy screen (task 07): pick a folder, move a slider, tick a box,
- * press Start. Everything else is a sensible default. No technical terms
- * on this screen — the Advanced panel on the edit page is the only place
- * codec names appear.
+ * The easy screen (task 07, restyled in task 41): pick a folder, move a
+ * slider, tick a box, press "Add library". Everything else is a sensible
+ * default. No technical terms on this screen — the Exact settings panel on
+ * the edit page is the only place codec names appear.
  */
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { createLibrary, type Library } from './api'
+import Checkbox from './Checkbox'
 import { initialEasyValue, toEasyInput, type EasyFormValue } from './easyModel'
 import ErrorBox from './ErrorBox'
 import {
   AudioSlider,
+  pathField,
   QualitySlider,
   RemoveSubtitlesCheckbox,
 } from './easyControls'
+import { FormActions, FormSection } from './FormSection'
 import FolderPickerModal from './FolderPickerModal'
 import FlowPreviewPanel from './FlowPreviewPanel'
+import { btn, btnGhost, btnPrimary } from './uiControls'
 import { useToast } from './toastContext'
 
 export default function EasyLibraryForm({
   initial,
   onSaved,
-  submitLabel = 'Start',
+  onCancel,
+  submitLabel = 'Add library',
 }: {
   initial?: Partial<EasyFormValue>
   onSaved?: (lib: Library) => void
+  /** When given, the action bar shows a Cancel button. */
+  onCancel?: () => void
   submitLabel?: string
 }) {
   const toast = useToast()
+  const helpId = useId()
   const [value, setValue] = useState<EasyFormValue>({
     ...initialEasyValue,
     ...initial,
@@ -52,63 +60,56 @@ export default function EasyLibraryForm({
     onError: (err: unknown) => toast.failure('Adding the folder failed', err),
   })
 
-  return (
-    <div className="space-y-6" data-testid="easy-form">
-      <section className="grid gap-3 rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <span className="text-sm font-medium text-slate-300">Folder</span>
-        {value.path ? (
-          <p
-            className="min-w-0 break-words rounded-lg bg-slate-800 px-3 py-2 text-sm"
-            data-testid="easy-folder"
-          >
-            {value.path}
-          </p>
-        ) : (
-          <p
-            className="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-500"
-            data-testid="easy-folder-empty"
-          >
-            No folder chosen yet.
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={() => setPicking(true)}
-          className="justify-self-start rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold hover:bg-slate-700"
-          data-testid="easy-choose-folder"
-        >
-          {value.path ? 'Choose a different folder' : 'Choose a folder'}
-        </button>
-      </section>
+  const hasPath = Boolean(value.path)
 
-      <section className="grid gap-6 rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
+  return (
+    <div className="flex flex-col gap-6" data-testid="easy-form">
+      <FormSection
+        title="Folder"
+        description="The folder to watch. Subfolders are included."
+      >
+        <div className="flex gap-2">
+          {hasPath ? (
+            <p
+              className={`${pathField} text-fg`}
+              title={value.path}
+              data-testid="easy-folder"
+            >
+              {value.path}
+            </p>
+          ) : (
+            <p
+              className={`${pathField} text-fg-muted`}
+              data-testid="easy-folder-empty"
+            >
+              No folder chosen yet
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
+            className={`${btn} shrink-0`}
+            data-testid="easy-choose-folder"
+          >
+            Choose…
+          </button>
+        </div>
+      </FormSection>
+
+      <FormSection
+        title="How much to shrink"
+        description="You can change this later in Rules."
+      >
         <QualitySlider
           value={value.quality}
           onChange={(quality) => set({ quality })}
         />
+        <AudioSlider value={value.audio} onChange={(audio) => set({ audio })} />
         <RemoveSubtitlesCheckbox
           checked={value.remove_subtitles}
           onChange={(remove_subtitles) => set({ remove_subtitles })}
         />
-        <AudioSlider value={value.audio} onChange={(audio) => set({ audio })} />
-        <label className="flex items-center gap-3" data-testid="easy-watch">
-          <input
-            type="checkbox"
-            checked={value.watch}
-            onChange={(e) => set({ watch: e.target.checked })}
-            className="h-4 w-4 accent-emerald-500"
-            data-testid="easy-watch-checkbox"
-          />
-          <span>
-            <span className="text-sm font-medium text-slate-300">
-              Watch this folder for new files
-            </span>
-            <span className="block text-xs text-slate-500">
-              New files are picked up automatically.
-            </span>
-          </span>
-        </label>
-      </section>
+      </FormSection>
 
       {/* The generated rule in plain language (task 14): one line per
           step, the bridge that teaches the step stack's vocabulary. */}
@@ -120,6 +121,18 @@ export default function EasyLibraryForm({
         }}
       />
 
+      <FormSection title="Watching">
+        <div data-testid="easy-watch">
+          <Checkbox
+            checked={value.watch}
+            onChange={(watch) => set({ watch })}
+            label="Watch this folder for new files"
+            help="New files are picked up automatically."
+            testId="easy-watch-checkbox"
+          />
+        </div>
+      </FormSection>
+
       {create.isError && (
         <ErrorBox
           title="Adding the folder failed."
@@ -128,15 +141,33 @@ export default function EasyLibraryForm({
         />
       )}
 
-      <button
-        type="button"
-        onClick={() => create.mutate()}
-        disabled={!value.path || create.isPending}
-        className="rounded-lg bg-emerald-600 px-6 py-3 font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-        data-testid="easy-start"
-      >
-        {create.isPending ? 'Starting…' : submitLabel}
-      </button>
+      <FormActions sticky>
+        <button
+          type="button"
+          onClick={() => create.mutate()}
+          disabled={!hasPath || create.isPending}
+          aria-describedby={hasPath ? undefined : helpId}
+          className={btnPrimary}
+          data-testid="easy-start"
+        >
+          {create.isPending ? 'Adding…' : submitLabel}
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className={btnGhost}
+            data-testid="easy-cancel"
+          >
+            Cancel
+          </button>
+        )}
+        {!hasPath && (
+          <p id={helpId} className="basis-full text-caption text-fg-muted">
+            Pick a folder first.
+          </p>
+        )}
+      </FormActions>
 
       {picking && (
         <FolderPickerModal

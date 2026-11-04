@@ -60,7 +60,7 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 38 | 38-layout-primitives.md | done | PR #41 https://github.com/PeiceOfToast/shrinkyourshit/pull/41 |
 | 39 | 39-control-primitives.md | done | PR #42 https://github.com/PeiceOfToast/shrinkyourshit/pull/42 |
 | 40 | 40-app-shell-encoding-status.md | done | PR #43 https://github.com/PeiceOfToast/shrinkyourshit/pull/43, v1.9, checklist ticked |
-| 41 | 41-library-forms.md | todo |  |
+| 41 | 41-library-forms.md | done | PR #44 https://github.com/PeiceOfToast/shrinkyourshit/pull/44 |
 | 42 | 42-dashboard.md | todo |  |
 | 43 | 43-libraries-list.md | todo |  |
 | 44 | 44-library-detail.md | todo |  |
