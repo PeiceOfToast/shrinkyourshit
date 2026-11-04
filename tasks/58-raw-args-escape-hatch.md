@@ -40,13 +40,17 @@ shell, and that is the whole guarantee.
 
 ## Acceptance
 
-- [ ] Tokeniser tests cover quoted arguments, escapes and an unbalanced quote.
-- [ ] Every rejected pattern has a test that produces a `FieldError` with the field path.
-- [ ] A well formed `raw_args` step appears in the compiled plan at the right stage and in
+- [x] Tokeniser tests cover quoted arguments, escapes and an unbalanced quote.
+- [x] Every rejected pattern has a test that produces a `FieldError` with the field path.
+- [x] A well formed `raw_args` step appears in the compiled plan at the right stage and in
       `Describe` verbatim.
-- [ ] `allow_raw_args: false` makes a graph containing the step fail with 400, proven by an API
+- [x] `allow_raw_args: false` makes a graph containing the step fail with 400, proven by an API
       test.
-- [ ] `make test` and `make lint` green.
+- [x] `make test` and `make lint` green.
+- [x] Wiring: a raw_args token from a compiled flow reaches the encoder spec (`InputArgs` before
+      `-i`, `OutputArgs` before the output path) in the real argv for every backend, and one job
+      log line per step names the step, the stage and the exact tokens (tests in
+      `internal/encoders/rawargs_build_test.go` and `internal/worker/rawargs_test.go`).
 
 ## Notes
 

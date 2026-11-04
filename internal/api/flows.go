@@ -113,7 +113,11 @@ func (a *API) validateFlow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if errs := flow.Validate(body.Graph); len(errs) > 0 {
+	errs, ok := a.flowErrors(w, r, body.Graph)
+	if !ok {
+		return
+	}
+	if len(errs) > 0 {
 		writeFlowErrors(w, errs)
 		return
 	}
@@ -220,7 +224,11 @@ func (a *API) previewFlow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "provide easy or graph")
 		return
 	}
-	if errs := flow.Validate(graph); len(errs) > 0 {
+	errs, ok := a.flowErrors(w, r, graph)
+	if !ok {
+		return
+	}
+	if len(errs) > 0 {
 		writeFlowErrors(w, errs)
 		return
 	}
@@ -240,6 +248,19 @@ func (a *API) previewFlow(w http.ResponseWriter, r *http.Request) {
 		steps = append(steps, step)
 	}
 	writeJSON(w, http.StatusOK, previewResponse{Graph: graph, Steps: steps})
+}
+
+// flowErrors is the validation the validate and preview endpoints share:
+// the structural rules, plus the raw_args refusals while the allow_raw_args
+// switch is off (task 58). ok is false when the settings could not be read;
+// the reply is already written.
+func (a *API) flowErrors(w http.ResponseWriter, r *http.Request, g flow.Graph) ([]flow.FieldError, bool) {
+	refused, err := a.svc.Settings().RefusedRawArgs(r.Context(), g)
+	if err != nil {
+		a.internal(w, err)
+		return nil, false
+	}
+	return append(flow.Validate(g), refused...), true
 }
 
 // writeFlowErrors writes the 400 invalid_flow body.

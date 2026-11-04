@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
 )
@@ -47,6 +48,9 @@ type Values struct {
 	// its capability probe found the features.
 	QSVExtraQuality bool `json:"qsv_extra_quality"`
 	QSVLowPower     bool `json:"qsv_low_power"`
+	// AllowRawArgs (task 58) is the raw_args kill switch. Default on, as the
+	// owner asked; off refuses flows that hold a raw_args step.
+	AllowRawArgs bool `json:"allow_raw_args"`
 }
 
 // Video codec choices for the settings API (ARCHITECTURE.md easy-mode
@@ -77,6 +81,8 @@ const (
 	DefaultUpdateCheck        = true
 	DefaultUpdateChannel      = update.ChannelStable
 	DefaultBackupBeforeUpdate = true
+	// Raw ffmpeg arguments (task 58): on by default.
+	DefaultAllowRawArgs = true
 )
 
 // read parses one string setting with a fallback.
@@ -105,6 +111,7 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 		UpdateCheck:         DefaultUpdateCheck,
 		UpdateChannel:       DefaultUpdateChannel,
 		BackupBeforeUpdate:  DefaultBackupBeforeUpdate,
+		AllowRawArgs:        DefaultAllowRawArgs,
 	}
 	if n, err := strconv.Atoi(read(raw, store.SettingWorkerConcurrency, "1")); err == nil && n >= MinWorkerConcurrency && n <= MaxWorkerConcurrency {
 		out.WorkerConcurrency = n
@@ -127,6 +134,8 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 	// QSV opt-ins (task 35): default off.
 	out.QSVExtraQuality = raw[store.SettingQSVExtraQuality] == "true"
 	out.QSVLowPower = raw[store.SettingQSVLowPower] == "true"
+	// The raw arguments switch (task 58) is on unless it was stored as off.
+	out.AllowRawArgs = raw[store.SettingAllowRawArgs] != "false"
 	if langs := read(raw, store.SettingPreferredLanguages, ""); langs != "" {
 		out.PreferredLanguages = splitLanguages(langs)
 	}
@@ -199,6 +208,9 @@ type Update struct {
 	QSVExtraQuality *bool
 	QSVLowPower     *bool
 
+	// AllowRawArgs (task 58): nil leaves the switch as it is.
+	AllowRawArgs *bool
+
 	// Login toggle. nil means "leave as is". Turning login on requires a
 	// username (when none is stored) and a password in the same request.
 	LoginEnabled *bool
@@ -210,6 +222,25 @@ type Update struct {
 	// text further than to the auth service.
 	Password        string
 	CurrentPassword string
+}
+
+// RefusedRawArgs returns one field error per raw_args step of g when the
+// allow_raw_args switch is off (task 58, spec 5.3): the graph is refused as
+// a whole, never saved with the step dropped. It returns nil when the graph
+// has no raw_args step or the switch is on.
+func (s *Settings) RefusedRawArgs(ctx context.Context, g flow.Graph) ([]flow.FieldError, error) {
+	refused := flow.RawArgsRefusals(g)
+	if len(refused) == 0 {
+		return nil, nil
+	}
+	vals, err := s.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if vals.AllowRawArgs {
+		return nil, nil
+	}
+	return refused, nil
 }
 
 // Update validates and applies a settings change. The auth service carries
@@ -280,6 +311,11 @@ func (s *Settings) Update(ctx context.Context, auth *Auth, u Update) error {
 	if u.QSVLowPower != nil {
 		if err := s.st.SetSetting(ctx, store.SettingQSVLowPower, strconv.FormatBool(*u.QSVLowPower)); err != nil {
 			return fmt.Errorf("settings: qsv low power: %w", err)
+		}
+	}
+	if u.AllowRawArgs != nil {
+		if err := s.st.SetSetting(ctx, store.SettingAllowRawArgs, strconv.FormatBool(*u.AllowRawArgs)); err != nil {
+			return fmt.Errorf("settings: allow raw args: %w", err)
 		}
 	}
 

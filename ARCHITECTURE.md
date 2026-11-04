@@ -91,7 +91,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Session:** `token_hash (PK), created_at, expires_at`. Admin login sessions (task 06): random 32-byte token, only the SHA-256 hex hash is stored, 30-day expiry checked on lookup. Stored in the `sessions` table (migration 0002).
 
-**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default), `qsv_extra_quality, qsv_low_power` (task 35: the Intel QSV opt-ins, both default off; each node applies them only where its capability probe found the feature, and the heartbeat response carries both so remote workers stay in step).
+**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default), `qsv_extra_quality, qsv_low_power` (task 35: the Intel QSV opt-ins, both default off; each node applies them only where its capability probe found the feature, and the heartbeat response carries both so remote workers stay in step), `allow_raw_args` (task 58: the raw ffmpeg arguments switch, default on; off refuses flows that hold a `raw_args` step).
 
 **Webhook:** `id, name, url, secret, events (comma separated: job.done | job.failed | library.scanned), enabled, created_at, updated_at` (task 25, migration 0011). The secret is generated server side at create time (32 random bytes, hex) and returned exactly once; after that every response carries `secret_set` instead.
 
@@ -267,7 +267,8 @@ Edge{ from, to, when }
   `if_resolution_above`, `if_audio_channels_above`, `if_hdr` (task 56),
   `transcode_video`, `remux_container`, `convert_audio`, `subtitles`,
   `rename`, `skip_if_smaller`, `health_check`, `move` (the last two are
-  task 24), `plugin` (task 32), `scale` (task 54). A graph is a single linear chain: at most one
+  task 24), `plugin` (task 32), `scale` (task 54), `raw_args` (task 58). A
+  graph is a single linear chain: at most one
   edge in and one out per node, exactly one entry step of type `probe`, no
   loops, no unreachable steps, and a guard always has a following step.
 - Parameters per type (validated with unknown-field rejection):
@@ -320,6 +321,19 @@ Edge{ from, to, when }
     root or inside it, checked when the flow is saved); `keep_tree` rebuilds
     the file's path relative to the library root under it. Exactly one per
     graph, trailing slashes trimmed.
+  - `raw_args {stage: input|output, args: string, note: string}` (task 58)
+    — ffmpeg options the other steps do not model. `input` places them
+    before the input file, `output` after it. `args` is split into words by
+    a hand written tokeniser with shell quoting rules and is never passed to
+    a shell. Refused, each with a field error at `params.args`: a `-i`
+    token, `-y` or `-n`, `-f` naming a device format or a `/dev/` path, a
+    shell character (`;` `|` `&` backtick `$(`), a newline, an unbalanced
+    quote or trailing backslash, a bare word that is not the value of an
+    option, and more than 2000 bytes. `note` is at most 200 characters.
+    `Describe` prints the words verbatim behind `UNSAFE`. The step is
+    refused on every save while the app setting `allow_raw_args` is off
+    (`nodes[i].type`, 400 `invalid_flow`). The full denylist and its reasons
+    are in `tasks/58-notes.md`.
   - `skip_if_smaller` and `probe` take no parameters.
 - At most one step of each shaping type (transcode, container, audio,
   subtitles, rename, skip, health check, move); a graph always describes

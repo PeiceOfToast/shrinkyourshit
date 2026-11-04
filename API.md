@@ -695,3 +695,21 @@ No new endpoints. Settings and the heartbeat gain the Intel QSV opt-ins:
   setting that had no effect is explainable. `docs/intel-qsv.md` is the
   plain-language reference, including the Intel Deep Link non-goals
   (Hyper Encode is not implemented and is not planned).
+
+### Task 58
+
+No new endpoints. The raw ffmpeg arguments escape hatch (spec 5.3):
+
+- `GET /api/v1/settings` and `PUT /api/v1/settings` gain `allow_raw_args`
+  (boolean, default `true`). Off refuses every flow that holds a `raw_args`
+  step.
+- A `raw_args` step is `{stage: "input" | "output", args: string, note:
+  string}`. Its refusals are field errors at `nodes[i].params.args` (or
+  `params.stage`, `params.note`), with the rule in the message. The
+  denylist is listed under `raw_args` in `ARCHITECTURE.md`.
+- With `allow_raw_args` off, `PUT /libraries/{id}/flow`, `POST /flows/validate`
+  and `POST /flows/preview` answer `400 {"code":"invalid_flow"}` with one
+  error per `raw_args` step, path `nodes[i].type`. The stored graph is not
+  changed.
+- `GET /flows/step-types` marks the `raw_args` entry with `"unsafe": true`.
+  The field is omitted on every other entry.

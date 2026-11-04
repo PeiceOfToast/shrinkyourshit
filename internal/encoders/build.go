@@ -13,8 +13,8 @@ import (
 // buildCommand assembles the full ffmpeg argument list for a Spec around
 // encoder-specific video options. Shape:
 //
-//	<global flags> [hw pre-input flags] -i input -map ... <video options>
-//	<audio options> <subtitle options> [container flags] output
+//	<global flags> [hw pre-input flags] [raw_args input] -i input -map ... <video options>
+//	<audio options> <subtitle options> [container flags] [raw_args output] output
 //
 // The runner executes this with the ffmpeg binary prefixed and parses
 // "key=value" progress lines from stdout (STACK.md: always pass
@@ -22,6 +22,7 @@ import (
 func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
 	args := []string{"-hide_banner", "-nostdin", "-progress", "pipe:1", "-nostats", "-y"}
 	args = append(args, preInputArgs...)
+	args = append(args, spec.InputArgs...) // raw_args, input stage (task 58)
 	args = append(args, "-i", spec.Input)
 
 	// Stream maps. The uppercase V specifier matches only real video
@@ -59,6 +60,7 @@ func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
 		// whole file is downloaded.
 		args = append(args, "-movflags", "+faststart")
 	}
+	args = append(args, spec.OutputArgs...) // raw_args, output stage (task 58)
 	return append(args, spec.Output)
 }
 

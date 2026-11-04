@@ -224,6 +224,9 @@ const (
 	// with both off the QSV argument vector is unchanged.
 	SettingQSVExtraQuality = "qsv_extra_quality"
 	SettingQSVLowPower     = "qsv_low_power"
+	// Task 58: the raw ffmpeg arguments switch (spec 5.3). Default on; off
+	// refuses any flow holding a raw_args step.
+	SettingAllowRawArgs = "allow_raw_args"
 )
 
 // Result policies (ARCHITECTURE.md; do not add values without updating it).

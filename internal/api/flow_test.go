@@ -359,3 +359,115 @@ func TestLegacyLibraryFlow(t *testing.T) {
 	require.NotEmpty(t, fr.Graph.Nodes)
 	require.Equal(t, flow.FlowSourceAdvanced, fr.Source)
 }
+
+// flowWithRawArgs is validFlow with one raw_args step between the encode and
+// the container. Its node index is 2.
+func flowWithRawArgs(t *testing.T, args string) flow.Graph {
+	t.Helper()
+	params, err := json.Marshal(map[string]any{"stage": flow.RawArgsStageOutput, "args": args, "note": "api test"})
+	require.NoError(t, err)
+	g := validFlow()
+	g.Nodes = []flow.Step{
+		g.Nodes[0],
+		g.Nodes[1],
+		{ID: "raw", Type: flow.StepRawArgs, Params: params},
+		g.Nodes[2],
+	}
+	g.Edges = []flow.Edge{
+		{From: "probe", To: "transcode_video"},
+		{From: "transcode_video", To: "raw"},
+		{From: "raw", To: "remux_container"},
+	}
+	return g
+}
+
+// TestRawArgsSwitchRefusesFlows (task 58 acceptance): with allow_raw_args
+// off, a graph holding a raw_args step is refused with 400 invalid_flow on
+// save, validate and preview, and nothing is saved; a graph without the step
+// is unaffected. Turning the switch back on lets the step save.
+func TestRawArgsSwitchRefusesFlows(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	raw := flowWithRawArgs(t, "-preset fast")
+
+	// Default on: the step saves and round trips with its unsafe palette entry.
+	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": raw})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// Switch off.
+	off := false
+	rec = h.do(http.MethodPut, "/api/v1/settings", map[string]any{"allow_raw_args": off})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"allow_raw_args":false`)
+
+	// Save: 400 invalid_flow naming the step, and the stored graph is unchanged.
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": raw})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "invalid_flow")
+	require.Contains(t, rec.Body.String(), `"path":"nodes[2].type"`)
+	require.Contains(t, rec.Body.String(), "allow_raw_args")
+	rec = h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/flow", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got flowResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Graph.Nodes, 4, "the refused save must not change the stored graph")
+
+	// Validate and preview refuse the same graph.
+	rec = h.do(http.MethodPost, "/api/v1/flows/validate", map[string]any{"graph": raw})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "invalid_flow")
+	rec = h.do(http.MethodPost, "/api/v1/flows/preview", map[string]any{"graph": raw})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "invalid_flow")
+
+	// A graph without the step is not affected by the switch.
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": validFlow()})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// Switch back on: the step saves again.
+	on := true
+	rec = h.do(http.MethodPut, "/api/v1/settings", map[string]any{"allow_raw_args": on})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": raw})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TestRawArgsRejectedWordsAreFieldErrors (task 58): a forbidden word in the
+// arguments is a 400 with a field error at the step's args field, whatever
+// the switch says.
+func TestRawArgsRejectedWordsAreFieldErrors(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+
+	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+		"source": "steps", "graph": flowWithRawArgs(t, "-i /etc/passwd"),
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"path":"nodes[2].params.args"`)
+	require.Contains(t, rec.Body.String(), "-i sets the input file")
+
+	rec = h.do(http.MethodPost, "/api/v1/flows/validate", map[string]any{
+		"graph": flowWithRawArgs(t, "-preset fast; rm -rf /"),
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"path":"nodes[2].params.args"`)
+}
+
+// TestRawArgsPaletteMarksUnsafe: the step-types palette carries the unsafe
+// marker on raw_args only.
+func TestRawArgsPaletteMarksUnsafe(t *testing.T) {
+	h := newAPIHarness(t)
+	rec := h.do(http.MethodGet, "/api/v1/flows/step-types", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var list struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	for _, it := range list.Items {
+		if it["type"] == flow.StepRawArgs {
+			require.Equal(t, true, it["unsafe"])
+			continue
+		}
+		require.NotContains(t, it, "unsafe", "%v must not be marked unsafe", it["type"])
+	}
+}

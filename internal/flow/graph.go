@@ -39,6 +39,8 @@ const (
 	StepHealthCheck          = "health_check"
 	StepMove                 = "move"
 	StepPlugin               = "plugin"
+	// Task 58: the validated raw ffmpeg arguments escape hatch (spec 5.3).
+	StepRawArgs = "raw_args"
 )
 
 // Bounds of the task 56 guards. A resolution guard compares the video height
@@ -439,7 +441,8 @@ func StepNeedsMedia(t string) bool {
 	switch t {
 	case StepProbe, StepIfCodecNot, StepIfBitrateAbove, StepIfResolutionAbove,
 		StepIfAudioChannelsAbove, StepIfHDR, StepTranscodeVideo, StepScale,
-		StepRemuxContainer, StepConvertAudio, StepSubtitles, StepHealthCheck:
+		StepRemuxContainer, StepConvertAudio, StepSubtitles, StepHealthCheck,
+		StepRawArgs:
 		return true
 	}
 	return false
@@ -677,6 +680,8 @@ func validateStepParams(n Step) *paramError {
 			return perr("params.destination", "the destination must be an absolute path, got %q", p.Destination)
 		}
 		return nil
+	case StepRawArgs:
+		return validateRawArgsParams(n.Params)
 	case StepPlugin:
 		var p pluginParams
 		if err := decodeParams(n.Params, &p); err != nil {

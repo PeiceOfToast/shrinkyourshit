@@ -263,6 +263,10 @@ type Effective struct {
 	// transcode ran.
 	Hardware     string
 	HardwareStep string
+	// RawArgs are the raw_args steps that ran (task 58), in chain order.
+	// Each names its stage (input or output). The worker splits them by
+	// stage into the encoder spec (InputArgs, OutputArgs) and logs them.
+	RawArgs []RawArg
 }
 
 // FreshEffective is the Effective a resolution starts from (task 32):
@@ -347,6 +351,18 @@ func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo, kind probe.Kind
 		}
 	case StepSkipIfSmaller:
 		eff.SkipIfSmaller = true
+	case StepRawArgs:
+		var par rawArgsParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		words, err := ParseRawArgs(par.Args)
+		if err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
+		}
+		eff.RawArgs = append(eff.RawArgs, RawArg{
+			StepID: s.ID, Stage: par.Stage, Args: words, Raw: par.Args, Note: par.Note,
+		})
 	case StepRename:
 		var par renameParams
 		if err := decodeParams(s.Params, &par); err != nil {
@@ -632,6 +648,9 @@ func ParseParams(s Step) (any, error) {
 	case StepPlugin:
 		var p pluginParams
 		return p, decodeParams(s.Params, &p)
+	case StepRawArgs:
+		var p rawArgsParams
+		return p, decodeParams(s.Params, &p)
 	}
 	return nil, fmt.Errorf("flow: unknown step type %q", s.Type)
 }
@@ -724,6 +743,10 @@ func describeStep(s PlanStep) string {
 			return guard + fmt.Sprintf("Move the finished file into %s, keeping its folder layout.", p.Destination)
 		}
 		return guard + fmt.Sprintf("Move the finished file into %s.", p.Destination)
+	case StepRawArgs:
+		var p rawArgsParams
+		_ = decodeParams(s.Params, &p)
+		return describeRawArgs(p, guard)
 	case StepPlugin:
 		var p pluginParams
 		_ = decodeParams(s.Params, &p)
@@ -880,8 +903,11 @@ type StepTypeInfo struct {
 	Label       string `json:"label"`
 	Description string `json:"description"`
 	// Condition marks guard steps: they gate the step that follows them.
-	Condition bool         `json:"condition"`
-	Params    []ParamField `json:"params"`
+	Condition bool `json:"condition"`
+	// Unsafe marks a step that hands the engine words it does not model
+	// (task 58): the UI styles it as a warning. Only raw_args sets it.
+	Unsafe bool         `json:"unsafe,omitempty"`
+	Params []ParamField `json:"params"`
 }
 
 func floatPtr(v float64) *float64 { return &v }
@@ -1056,6 +1082,20 @@ func StepTypes() []StepTypeInfo {
 					Help: "An installed, enabled step plugin."},
 				{Name: "continue_on_error", Label: "continue on error", Kind: "toggle",
 					Help: "For logging and sidecar style plugins only: a failing step is a warning and the chain continues."},
+			},
+		},
+		{
+			Type:        StepRawArgs,
+			Label:       "Raw ffmpeg arguments",
+			Description: "Advanced and unsafe: add ffmpeg options that no other step offers. The words are passed to ffmpeg, never to a shell. Input and output paths, overwrite flags, devices and shell characters are refused.",
+			Unsafe:      true,
+			Params: []ParamField{
+				{Name: "stage", Label: "where", Kind: "select", Options: []string{RawArgsStageInput, RawArgsStageOutput}, Required: true, Default: RawArgsStageOutput,
+					Help: "input: options placed before the input file. output: options placed after it, before the output file."},
+				{Name: "args", Label: "arguments", Kind: "text", Required: true,
+					Help: "ffmpeg options only, space separated; quotes group words. No input or output path, no -y or -n, no devices, no ; | & ` or $( characters."},
+				{Name: "note", Label: "note", Kind: "text",
+					Help: "Why this step exists. Shown next to the arguments in the flow preview."},
 			},
 		},
 	}

@@ -354,3 +354,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T22:35:30Z pm: PR #61 opened; CI run 41924491913 green 9/9 (go 4m05s, e2e 2m52s, docker, docker-arm64 12m00s, cross, web, installer, installer-powershell, report)
 - 2026-11-04T22:35:30Z pm: PR #61 squash-merged as 4c6f336, branch task/57-per-step-hardware deleted, main pulled on VM 201; STATUS 57 done with PR #61
 - 2026-11-04T22:36:13Z pm: task 58 (validated raw arguments escape hatch) dispatched as run 20261104-223542-6ec8c451 (build/haiku) off main 117e3fd, with the PATH export note and the no-PR instruction
+- 2026-11-04T23:09:11Z pm: task 58 run 20261104-223542 done, checklist 5/5, make test and make lint exit 0 on VM 201, but Effective.RawArgs never reaches the ffmpeg argv (spec 5.3 requires the tokens appended), so no merge; follow-up build run started to wire input and output raw args through encoders.Spec and the worker
