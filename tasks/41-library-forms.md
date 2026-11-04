@@ -13,13 +13,13 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] FormSection layout; the field column is capped at `max-w-2xl`.
-- [ ] "Add library" button; Cancel.
-- [ ] Slider stop labels: under `sm` only three are visible, while all test ids remain.
-- [ ] Checkboxes use `Checkbox`.
-- [ ] The Edit page's Advanced panel becomes "Exact settings" with human option labels (values unchanged; `LibraryEditPage.test.tsx` asserts values, not labels; check).
-- [ ] Sticky action bar on mobile.
-- [ ] The mobile audit passes on both routes (added to `mobile.spec.ts` here).
+- [x] FormSection layout; the field column is capped at `max-w-2xl`.
+- [x] "Add library" button; Cancel.
+- [x] Slider stop labels: under `sm` only three are visible, while all test ids remain.
+- [x] Checkboxes use `Checkbox`.
+- [x] The Edit page's Advanced panel becomes "Exact settings" with human option labels (values unchanged; `LibraryEditPage.test.tsx` asserts values, not labels; check).
+- [x] Sticky action bar on mobile.
+- [x] The mobile audit passes on both routes (added to `mobile.spec.ts` here).
 
 ## Rules for this wave
 
