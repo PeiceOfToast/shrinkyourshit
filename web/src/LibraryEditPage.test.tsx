@@ -249,3 +249,68 @@ describe('LibraryEditPage file kinds (task 34)', () => {
     ).toBe(true)
   })
 })
+
+describe('LibraryEditPage layout (task 41)', () => {
+  it('names the exact panel "Exact settings" and labels options in plain language', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library({ quality: 3, remove_subtitles: true, audio: 2 }),
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('advanced-panel')
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Exact settings' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Advanced', { exact: false })).toBeNull()
+
+    // Labels change; the stored values do not.
+    const audio = screen.getByTestId('advanced-audio-mode') as HTMLSelectElement
+    expect(audio.value).toBe('keep_preferred')
+    expect(
+      Array.from(audio.options).map((o) => [o.value, o.textContent]),
+    ).toEqual([
+      ['keep_all', 'Keep every track'],
+      ['keep_preferred', 'Keep my languages'],
+      ['keep_best', 'Keep the best track'],
+      ['compact', 'Keep the best track, make it small'],
+    ])
+    const subs = screen.getByTestId(
+      'advanced-subtitles-mode',
+    ) as HTMLSelectElement
+    expect(Array.from(subs.options).map((o) => o.textContent)).toEqual([
+      'Keep every track',
+      'Keep my languages',
+      'Remove all',
+    ])
+    expect(
+      Array.from(
+        (screen.getByTestId('advanced-container') as HTMLSelectElement).options,
+      ).map((o) => o.textContent),
+    ).toEqual(['MKV', 'MP4'])
+  })
+
+  it('keeps Save and Cancel in a sticky action bar and gives the sections their titles', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(null),
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-edit-save')
+    const bar = screen.getByTestId('library-edit-save').parentElement!
+    expect(bar.className).toContain('sticky')
+    for (const title of ['Library', 'File types', 'Exact settings']) {
+      expect(
+        screen.getByRole('heading', { level: 2, name: title }),
+      ).toBeInTheDocument()
+    }
+    expect(
+      screen.getByText('Files of other types stay untouched.'),
+    ).toBeInTheDocument()
+  })
+})
