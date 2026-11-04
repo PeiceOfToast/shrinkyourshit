@@ -158,6 +158,14 @@ Stored as JSON on the library. All tasks that read or write a Target use this ex
   - `compact`: same selection as `keep_best`, then transcode it to `compact_codec` (`aac` 160k stereo or `opus` 128k stereo) unless it already is that codec.
 - `subtitles.mode`: `keep_all | keep_preferred | remove`. `extract_removed` writes removed text subtitles as `.srt` beside the file (engine supports it in task 04; UI exposes it post-MVP).
 - `container`: `mkv | mp4`. MVP UI always uses `mkv`.
+- `video.scale` (optional, task 54): `{"height": 1080, "only_if_larger": true, "allow_upscale": false}`. `height` is `2160 | 1440 | 1080 | 720 | 480`. Scales the video to that height and keeps the aspect ratio. `only_if_larger` (step default true) scales only when the source is taller than `height`. `allow_upscale` (default false) permits enlarging a smaller source. Absent means the resolution is left alone. Stored and resolved in task 54; the encoders apply it in task 55.
+- `video.rate` (optional, task 54): `{"mode": "quality" | "crf" | "bitrate", "crf": 22, "bitrate_kbps": 0, "max_kbps": 0}`. Absent means quality, the scalar in `video.quality`.
+  - `crf`: constant quality, `crf` above 0 and up to 51 (lower is better quality, bigger file). `bitrate_kbps` must be zero.
+  - `bitrate`: target `bitrate_kbps` above 0. `crf` must be zero.
+  - `max_kbps` (0 = uncapped) caps `crf` or `bitrate`; in bitrate mode it must not be below `bitrate_kbps`. In quality mode it must be zero.
+- `video.preset` (optional, task 54): `veryfast | faster | fast | medium | slow | slower | veryslow`. Absent or empty means balanced.
+
+Optional video fields are omitted from the JSON when unset, so a Target saved before task 54 keeps its exact bytes.
 
 ## Easy-mode mapping
 
@@ -258,7 +266,7 @@ Edge{ from, to, when }
 - Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`,
   `transcode_video`, `remux_container`, `convert_audio`, `subtitles`,
   `rename`, `skip_if_smaller`, `health_check`, `move` (the last two are
-  task 24), `plugin` (task 32). A graph is a single linear chain: at most one
+  task 24), `plugin` (task 32), `scale` (task 54). A graph is a single linear chain: at most one
   edge in and one out per node, exactly one entry step of type `probe`, no
   loops, no unreachable steps, and a guard always has a following step.
 - Parameters per type (validated with unknown-field rejection):
@@ -269,8 +277,20 @@ Edge{ from, to, when }
     the video is not that codec.
   - `if_bitrate_above {mbps: >0}` — runs the next step only above this
     video bitrate.
-  - `transcode_video {codec: hevc|av1|h264, quality: 1..5}` — `copy` is
-    expressed by omitting the step, so it is a validation error here.
+  - `transcode_video {codec: hevc|av1|h264, quality: 1..5, rate_mode:
+    quality|crf|bitrate, crf: 0..51, bitrate_kbps, max_kbps, preset,
+    hardware: auto|qsv|vaapi|videotoolbox|software}` — `copy` is expressed
+    by omitting the step, so it is a validation error here. Every field
+    after `quality` is optional (task 54). Rate fields must match their
+    mode: `crf` mode needs a `crf` above 0, `bitrate` mode needs
+    `bitrate_kbps`, a rate value set outside its mode is an error, and
+    `max_kbps` in quality mode is an error. `hardware` is validated and
+    described here; the plan carries it from task 57.
+  - `scale {height: 2160|1440|1080|720|480, only_if_larger: bool (default
+    true), allow_upscale: bool (default false)}` — sets the video's scale
+    on the Target. At most one per graph. Its guard is the encode's guard
+    when the encode is guarded (`TargetToFlow` repeats it). The height may
+    arrive as a numeric string, since the palette offers it as a select.
   - `remux_container {container: mkv|mp4}` — exactly one per graph; it
     decides the output file type, which also rejects an empty graph.
   - `convert_audio {mode, languages, compact_codec}` — the audio policy
