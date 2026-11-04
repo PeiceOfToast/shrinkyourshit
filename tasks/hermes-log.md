@@ -302,3 +302,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T08:41:00Z pm: PR #49 CI green (run 41799689155, all 9 checks incl docker-arm64), merged squash 7b4e146, branch deleted, main pulled on VM
 - 2026-11-04T09:18:27Z pm: verified task 47 run 20261104-084621-8277571b (done): all acceptance boxes ticked, STATUS.md done with PR #50, DECISIONS.md unchanged vs origin/main, make test 396 passed and make lint clean on the VM
 - 2026-11-04T09:18:27Z pm: PR #50 CI green (run 41804595635, all 9 checks incl docker-arm64), merged squash 2429f0d, branch deleted, main pulled on VM; notes disclose no test shows languages/subtitle-mode reachable on the Steps tier (flagged for task 53/48 context)
+- 2026-11-04T09:31:52Z pm: started task 48 run 20261104-093122-9ca45489 (build/haiku) from main af22919
