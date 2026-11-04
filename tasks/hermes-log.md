@@ -271,5 +271,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T04:11:33Z pm: v1.9 next task is 40 (app shell and encoding status), starts next tick
 - 2026-11-04T04:18:40Z task 40: dispatched on VM 201 under Claude Code build role (haiku), session f381675a-44b6-4c0d-93a1-8719ca0b28a3, branch task/40-app-shell-encoding-status, run 20261104-041625-fdb2be18; deps 39 done, v1.9 tasks 40-53 all todo on main 637f72b.
 - 2026-11-04T04:40:56Z task 40: verified PR #43 (8/8 CI checks green incl docker-arm64 11m9s, checklist 12/12 ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, make test go suites + 55 web files/344 tests green, make lint 0 issues), merged squash, main at 3e19d05, remote branch deleted, main pulled on VM
-- 2026-11-04T04:40:56Z pm: no lingering claude process after task 40 run 20261104-041625-fdb2be18 (state done, cost bash.5342)
+- 2026-11-04T04:40:56Z pm: no lingering claude process after task 40 run 20261104-041625-fdb2be18 (state done, cost $0.5342)
 - 2026-11-04T04:40:56Z pm: v1.9 next task is 41 (library forms), starts next tick
