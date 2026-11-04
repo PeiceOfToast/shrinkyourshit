@@ -28,7 +28,7 @@ No other existing assertion changed. None deleted.
 - `npm run lint` (eslint, `--max-warnings 0`) clean. `npm run format:check` clean. `npm run build` clean.
 - Playwright (`npx playwright test` against the built binary, with ffmpeg on PATH so the seed creates a file): 61 passed, 3 skipped. The skips are the suite's own per-viewport skips. The mobile audit passes at 320, 390, 414 and 768 on `/libraries/new`, `/libraries/:id` and `/libraries/:id/edit`.
 - Go: `go test ./...` all packages ok. `go vet ./...` clean. `golangci-lint run`: 0 issues. `scripts/check-spdx.sh`: exit 0.
-- Integration: `go test -tags=integration ./...` (the `make test-integration` command), run with ffmpeg on PATH. See the final message for the result.
+- Integration: `go test -tags=integration ./...` (the `make test-integration` command) with ffmpeg on PATH: every package ok.
 - Environment: `make`, `gh`, `golangci-lint` and `ffmpeg` live in `~/.local/bin`, and Chromium's libraries in `~/.local/chromium-deps/lib` (passed through `LD_LIBRARY_PATH`). No system packages were changed.
 
 ## Summary
