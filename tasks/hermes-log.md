@@ -353,3 +353,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T22:35:30Z pm: task 57 run 20261104-220046 done; verified on VM 201: checklist 4/4, make test exit 0 (444 web tests, 13 Go packages ok), make lint exit 0, DECISIONS.md unchanged vs origin/main, diff in scope (plan.go, runner.go, hardware_test.go, runner_test.go, ARCHITECTURE.md, task notes)
 - 2026-11-04T22:35:30Z pm: PR #61 opened; CI run 41924491913 green 9/9 (go 4m05s, e2e 2m52s, docker, docker-arm64 12m00s, cross, web, installer, installer-powershell, report)
 - 2026-11-04T22:35:30Z pm: PR #61 squash-merged as 4c6f336, branch task/57-per-step-hardware deleted, main pulled on VM 201; STATUS 57 done with PR #61
+- 2026-11-04T22:36:13Z pm: task 58 (validated raw arguments escape hatch) dispatched as run 20261104-223542-6ec8c451 (build/haiku) off main 117e3fd, with the PATH export note and the no-PR instruction
