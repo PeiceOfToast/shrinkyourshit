@@ -252,3 +252,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-03T19:46:14Z state: tasks 01-35 all merged, v1.8 queue complete, no open PRs, no running session, no todo or in_progress row in STATUS.md and no task after 35 in ROADMAP.md; PM idle awaiting the next batch from the owner
 2026-11-03T20:01:14Z PM idle: no todo tasks (v1.8 complete through 35), no open PRs, no live session
 2026-11-04T01:46:13Z PM idle: no todo tasks (v1.8 complete through 35), no open PRs, no live session
+- 2026-11-04T02:05:00Z pm: found docs/design/ui-redesign-2026-11-04.md (1137 lines, written 01:52Z from the 22 screenshots in /home/mb/ui-shots) untracked on the VM; used its section 7 to create tasks 36 to 53, added the v1.9 queue to STATUS.md and a v1.9 section to ROADMAP.md, committed fbe4cca and pushed to main
+- 2026-11-04T02:05:00Z task 36: started build run 20261104-020240-9e806a90 (haiku), design tokens, Inter via @fontsource, motion and focus rules; note the launcher ssh call hit its 120s local timeout while the run itself started fine under nohup
