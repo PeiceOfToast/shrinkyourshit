@@ -294,3 +294,7 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T07:15:35Z pm: task 44 left four owner questions in tasks/44-notes.md (History versus Log plus History, Scan now also on the Libraries row, no library level Shrunk chip, btnIcon missing min-h-11); none block task 45, all are UI choices, not DECISIONS.md changes
 - 2026-11-04T07:15:35Z pm: v1.9 next task is 45 (rules page), starts next tick
 - 2026-11-04T07:20:00Z pm: killed lingering sleeping claude process (pid 1485782, run 20261104-064620-d5bb521a) after status reported done and its work was merged; working tree was clean, no uncommitted work lost
+
+- 2026-11-04T07:32:15Z start task 45 (rules page) build run 20261104-073146-c4ea6e4e
+- 2026-11-04T08:00:12Z pm: verified task 45 run 20261104-073146-c4ea6e4e (done, 3 turns): 6/6 acceptance boxes ticked, STATUS.md done with PR #48, DECISIONS.md unchanged vs origin/main, make test 383 passed and make lint clean on the VM
+- 2026-11-04T08:00:12Z pm: PR #48 CI green on final commit 862b9c2 (run 41794962729, all 9 checks incl docker-arm64), merged squash 6006e50, branch deleted, main pulled on VM
