@@ -5,12 +5,14 @@
  * non-technical user picks a folder, moves a slider, ticks a box and presses
  * "Add library".
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useNavigate } from 'react-router-dom'
 import EasyLibraryForm from './EasyLibraryForm'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
 
 export default function NewLibraryPage() {
+  useDocumentTitle(['Add a library'])
   const navigate = useNavigate()
   return (
     <PageContainer data-testid="new-library-page">

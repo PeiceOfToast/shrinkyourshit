@@ -14,6 +14,7 @@
  * Remove is not on this list: it lives in the Danger zone of the Edit page
  * (spec 5.7, task 47), so Scan now and Edit are the only row actions.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -67,6 +68,7 @@ function isUpToDate(c: LibraryStats | undefined): boolean {
 }
 
 export default function LibrariesPage() {
+  useDocumentTitle(['Libraries'])
   const client = useQueryClient()
   const toast = useToast()
   const libraries = useQuery({ queryKey: ['libraries'], queryFn: getLibraries })

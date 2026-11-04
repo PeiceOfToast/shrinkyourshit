@@ -7,6 +7,7 @@
  * Save action sits directly under the Server section because it only saves
  * Server. The encode defaults live at /encode.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSettings, updateSettings, type SettingsUpdate } from './api'
@@ -21,6 +22,7 @@ import { useToast } from './toastContext'
 import { btn, btnDanger, btnPrimary, input } from './uiControls'
 
 export default function AppSettingsPage() {
+  useDocumentTitle(['App settings'])
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
   const client = useQueryClient()
   const toast = useToast()

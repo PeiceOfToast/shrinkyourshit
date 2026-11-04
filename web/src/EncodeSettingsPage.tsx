@@ -7,6 +7,7 @@
  * Sync extras. Split out of the old SettingsPage; the server-level settings
  * live at /app.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -74,6 +75,7 @@ function QSVSwitchRow({
 }
 
 export default function EncodeSettingsPage() {
+  useDocumentTitle(['Encode settings'])
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
   const client = useQueryClient()

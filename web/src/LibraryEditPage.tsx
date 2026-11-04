@@ -13,6 +13,7 @@
  * tier owns the flow, the stored target otherwise. A stored target that
  * matches the stored one keeps the flow; an easy save regenerates it.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -73,6 +74,7 @@ export default function LibraryEditPage() {
     queryKey: ['library', id],
     queryFn: () => getLibrary(id),
   })
+  useDocumentTitle(['Edit library', library.data?.name])
   const [name, setName] = useState<string | null>(null)
   const [watch, setWatch] = useState<boolean | null>(null)
   const [kinds, setKinds] = useState<string[] | null>(null)

@@ -6,6 +6,7 @@
  * network the wizard's join card starts the pairing flow (task 08): the
  * machine switches to worker mode, this window shows what happened next.
  */
+import { useDocumentTitle } from './useDocumentTitle'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -20,6 +21,7 @@ import Card from './Card'
 import Icon from './Icon'
 
 export default function SetupPage() {
+  useDocumentTitle(['Setup'])
   return (
     <RedirectWhenSetupComplete>
       <SetupFlow />

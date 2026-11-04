@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useDocumentTitle } from './useDocumentTitle'
 import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from './AppShell'
@@ -23,9 +24,10 @@ import { SkeletonRows } from './skeleton'
 const FlowCanvasPage = lazy(() => import('./FlowCanvasPage'))
 
 function FlowLoading() {
+  useDocumentTitle(['Rules'])
   return (
     <PageContainer className="space-y-6" data-testid="flow-loading">
-      <h1 className="text-2xl font-bold">Flow</h1>
+      <h1 className="text-2xl font-bold">Rules</h1>
       <SkeletonRows rows={4} />
     </PageContainer>
   )
