@@ -54,6 +54,12 @@ const PAGES: Array<{ path: string; ready: string; settled: string }> = [
     ready: 'libraries-page',
     settled: '[data-testid="libraries-cards"], [data-testid="libraries-table"]',
   },
+  // Task 41: the New library form (FormSections and the sticky action bar).
+  {
+    path: '/libraries/new',
+    ready: 'new-library-page',
+    settled: '[data-testid="easy-start"]',
+  },
   {
     path: '/nodes',
     ready: 'nodes-page',
@@ -187,6 +193,13 @@ test.describe('mobile audit', () => {
           '[data-testid="file-cards"], [data-testid="file-table"]',
         )
         await auditPage(page, detail, width)
+
+        // Task 41: the Edit library form, with the sliders, the exact
+        // settings panel and the sticky action bar (interim, spec 5.7).
+        const edit = `/libraries/${libraryId}/edit`
+        await open(page, edit, 'library-edit')
+        await settle(page, '[data-testid="library-edit-save"]')
+        await auditPage(page, edit, width)
 
         // Task 22: the flow canvas is view only below md — no palette,
         // no inspector, no edit controls — and the canvas chrome (zoom
