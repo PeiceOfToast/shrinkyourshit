@@ -25,16 +25,29 @@ const (
 	StepProbe          = "probe"
 	StepIfCodecNot     = "if_codec_not"
 	StepIfBitrateAbove = "if_bitrate_above"
-	StepTranscodeVideo = "transcode_video"
-	StepScale          = "scale"
-	StepRemuxContainer = "remux_container"
-	StepConvertAudio   = "convert_audio"
-	StepSubtitles      = "subtitles"
-	StepRename         = "rename"
-	StepSkipIfSmaller  = "skip_if_smaller"
-	StepHealthCheck    = "health_check"
-	StepMove           = "move"
-	StepPlugin         = "plugin"
+	// Task 56: resolution, audio channels and HDR guards.
+	StepIfResolutionAbove    = "if_resolution_above"
+	StepIfAudioChannelsAbove = "if_audio_channels_above"
+	StepIfHDR                = "if_hdr"
+	StepTranscodeVideo       = "transcode_video"
+	StepScale                = "scale"
+	StepRemuxContainer       = "remux_container"
+	StepConvertAudio         = "convert_audio"
+	StepSubtitles            = "subtitles"
+	StepRename               = "rename"
+	StepSkipIfSmaller        = "skip_if_smaller"
+	StepHealthCheck          = "health_check"
+	StepMove                 = "move"
+	StepPlugin               = "plugin"
+)
+
+// Bounds of the task 56 guards. A resolution guard compares the video height
+// in pixels; a channel guard compares the channel count of an audio track.
+const (
+	ResolutionAboveMin = 480
+	ResolutionAboveMax = 4320
+	ChannelsAboveMin   = 1
+	ChannelsAboveMax   = 8
 )
 
 // Hardware values for transcode_video.hardware. auto is the global policy
@@ -122,6 +135,25 @@ type (
 	// is above this many megabits per second.
 	ifBitrateAboveParams struct {
 		MBPS float64 `json:"mbps"`
+	}
+
+	// if_resolution_above: run the guarded step only when the video is
+	// taller than this many pixels (480 to 4320).
+	ifResolutionAboveParams struct {
+		Height int `json:"height"`
+	}
+
+	// if_audio_channels_above: run the guarded step only when some audio
+	// track has more channels than this (1 to 8).
+	ifAudioChannelsAboveParams struct {
+		Channels int `json:"channels"`
+	}
+
+	// if_hdr: run the guarded step only when the video is HDR (is_hdr
+	// true) or only when it is not (false). The toggle must be present so
+	// a graph never relies on a silent default.
+	ifHDRParams struct {
+		IsHDR *bool `json:"is_hdr"`
 	}
 
 	// transcode_video: encode the video with this codec (never copy — a
@@ -389,7 +421,13 @@ func byIDOrMinusOne(byID map[string]int, id string) int {
 	return -1
 }
 
-func isGuard(t string) bool { return t == StepIfCodecNot || t == StepIfBitrateAbove }
+func isGuard(t string) bool {
+	switch t {
+	case StepIfCodecNot, StepIfBitrateAbove, StepIfResolutionAbove, StepIfAudioChannelsAbove, StepIfHDR:
+		return true
+	}
+	return false
+}
 
 // StepNeedsMedia reports whether a step type only makes sense on a probed
 // media file (task 34): it reads streams, encodes or verifies the encode.
@@ -399,7 +437,8 @@ func isGuard(t string) bool { return t == StepIfCodecNot || t == StepIfBitrateAb
 // arrives) — are media-agnostic.
 func StepNeedsMedia(t string) bool {
 	switch t {
-	case StepProbe, StepIfCodecNot, StepIfBitrateAbove, StepTranscodeVideo, StepScale,
+	case StepProbe, StepIfCodecNot, StepIfBitrateAbove, StepIfResolutionAbove,
+		StepIfAudioChannelsAbove, StepIfHDR, StepTranscodeVideo, StepScale,
 		StepRemuxContainer, StepConvertAudio, StepSubtitles, StepHealthCheck:
 		return true
 	}
@@ -469,6 +508,33 @@ func validateStepParams(n Step) *paramError {
 		}
 		if p.MBPS <= 0 {
 			return perr("params.mbps", "want a number above 0, got %v", p.MBPS)
+		}
+		return nil
+	case StepIfResolutionAbove:
+		var p ifResolutionAboveParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		if p.Height < ResolutionAboveMin || p.Height > ResolutionAboveMax {
+			return perr("params.height", "want %d to %d pixels, got %d", ResolutionAboveMin, ResolutionAboveMax, p.Height)
+		}
+		return nil
+	case StepIfAudioChannelsAbove:
+		var p ifAudioChannelsAboveParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		if p.Channels < ChannelsAboveMin || p.Channels > ChannelsAboveMax {
+			return perr("params.channels", "want %d to %d channels, got %d", ChannelsAboveMin, ChannelsAboveMax, p.Channels)
+		}
+		return nil
+	case StepIfHDR:
+		var p ifHDRParams
+		if err := decodeParams(n.Params, &p); err != nil {
+			return perr("params", "%s", err)
+		}
+		if p.IsHDR == nil {
+			return perr("params.is_hdr", "is required: true (HDR video) or false (video that is not HDR)")
 		}
 		return nil
 	case StepTranscodeVideo:

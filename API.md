@@ -373,7 +373,8 @@ Details:
 - `GET /flows/step-types` → standard list envelope of `{type, label,
   description, condition, params:[{name,label,kind,options?,min?,max?,
   required?,default?,help?}]}`; `condition: true` marks guard steps
-  (`if_codec_not`, `if_bitrate_above`).
+  (`if_codec_not`, `if_bitrate_above`, `if_resolution_above`,
+  `if_audio_channels_above`, `if_hdr`).
 - `JobSpec` (task 05) gains `flow` and `flow_source`: the worker compiles
   the graph and resolves it against the probed source; the resolved Target
   drives the encode, a `skip_if_smaller` step overrides the result policy

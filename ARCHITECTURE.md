@@ -264,6 +264,7 @@ Edge{ from, to, when }
 - `schema` is 1. `Edge.When` is reserved for the task-15 canvas; v1
   conditions are `if_*` guard steps, so compile ignores a non-empty `when`.
 - Step types for v1: `probe`, `if_codec_not`, `if_bitrate_above`,
+  `if_resolution_above`, `if_audio_channels_above`, `if_hdr` (task 56),
   `transcode_video`, `remux_container`, `convert_audio`, `subtitles`,
   `rename`, `skip_if_smaller`, `health_check`, `move` (the last two are
   task 24), `plugin` (task 32), `scale` (task 54). A graph is a single linear chain: at most one
@@ -277,6 +278,13 @@ Edge{ from, to, when }
     the video is not that codec.
   - `if_bitrate_above {mbps: >0}` — runs the next step only above this
     video bitrate.
+  - `if_resolution_above {height: 480..4320}` — runs the next step only when
+    the video is taller than this many pixels (task 56).
+  - `if_audio_channels_above {channels: 1..8}` — runs the next step only when
+    some audio track has more channels than this (task 56).
+  - `if_hdr {is_hdr: bool}` — runs the next step only when the video is HDR
+    (`true`) or only when it is not (`false`). Required, so a graph never
+    relies on a silent default (task 56).
   - `transcode_video {codec: hevc|av1|h264, quality: 1..5, rate_mode:
     quality|crf|bitrate, crf: 0..51, bitrate_kbps, max_kbps, preset,
     hardware: auto|qsv|vaapi|videotoolbox|software}` — `copy` is expressed
@@ -330,8 +338,9 @@ Edge{ from, to, when }
   job log naming the step and the file kind, never a failure. A media-only
   flow on a photos library therefore completes as a skip with a reason
   instead of queueing failures. The guards (`if_codec_not`,
-  `if_bitrate_above`) evaluate false on a non-media file: there is no codec
-  and no bitrate. The resolution details:
+  `if_bitrate_above`, `if_resolution_above`, `if_audio_channels_above`,
+  `if_hdr`) evaluate false on a non-media file: there is no codec, no
+  bitrate and no stream. The resolution details:
   - a guarded transcode that passes becomes the effective video with
     `reencode_if_same_codec=false` when the only guards are
     `if_codec_not` (the guard already excludes the same codec — this is
