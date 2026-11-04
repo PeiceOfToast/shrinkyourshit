@@ -62,7 +62,7 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 40 | 40-app-shell-encoding-status.md | done | PR #43 https://github.com/PeiceOfToast/shrinkyourshit/pull/43, v1.9, checklist ticked |
 | 41 | 41-library-forms.md | done | PR #44 https://github.com/PeiceOfToast/shrinkyourshit/pull/44 |
 | 42 | 42-dashboard.md | done | PR #45 https://github.com/PeiceOfToast/shrinkyourshit/pull/45, CI green, checklist ticked |
-| 43 | 43-libraries-list.md | todo |  |
+| 43 | 43-libraries-list.md | done | PR pending, v1.9, CI pending, checklist ticked |
 | 44 | 44-library-detail.md | todo |  |
 | 45 | 45-rules-page.md | todo |  |
 | 46 | 46-flow-page.md | todo |  |

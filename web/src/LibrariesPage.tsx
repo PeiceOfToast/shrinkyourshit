@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Libraries list (tasks 07 and 19): one row per library with the file
- * counts and bytes saved from the per-library breakdown of GET /stats,
- * status chips, a Scan now action, and the name linking to the detail
- * page. From `sm` up it is a real table; under `sm` the same data renders
- * as stacked cards (the task 12 pattern: both trees stay in the DOM, CSS
- * picks the visible one). Delete keeps its task 13 confirmation that only
- * the library's records are removed — files on disk are untouched.
+ * Libraries list (tasks 07, 19 and 43). One row per library: its name and
+ * path, a status column with only the non-zero chips (or one "Up to date"
+ * badge), the file count, the bytes saved, what it looks for, and the row
+ * actions. The whole row links to the library's detail page (spec 5.4).
+ *
+ * The table is used from `sm` up and stacked cards below it (DataList, one
+ * column definition, two layouts). On a card the status column shows only
+ * the most urgent chip: failed, then missing, working, waiting, new, and
+ * otherwise "Up to date" when every file is satisfied or done.
+ *
+ * Delete keeps its task 13 confirmation that only the library's records are
+ * removed; files on disk are untouched. Remove still sits in the row here as
+ * a quiet danger action; spec 5.7 moves it to a Danger zone on the Edit page
+ * (task 47).
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,19 +27,49 @@ import {
   type Library,
   type LibraryStats,
 } from './api'
+import Badge from './Badge'
+import Card from './Card'
 import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
-import { formatBytes } from './easyModel'
+import EmptyState from './EmptyState'
 import ErrorBox from './ErrorBox'
+import { formatBytes, formatCount } from './format'
 import { kindLabel } from './kinds'
 import PageContainer from './PageContainer'
+import PageHeader from './PageHeader'
 import StatusChip from './StatusChip'
-import { SkeletonCard } from './skeleton'
+import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
-import { btn, btnPrimary } from './uiControls'
+import { btn, btnDangerGhost, btnGhost, btnPrimary } from './uiControls'
 
-/** The per-status chips a row shows, in table order. */
-const SHOWN_STATUSES = ['satisfied', 'queued', 'done', 'failed'] as const
+type StatusKey =
+  'new' | 'satisfied' | 'queued' | 'processing' | 'done' | 'failed' | 'missing'
+
+/** The status chips a row can show, in table order. Zero counts render nothing. */
+const CHIP_STATUSES: StatusKey[] = [
+  'new',
+  'satisfied',
+  'queued',
+  'processing',
+  'done',
+  'failed',
+  'missing',
+]
+
+/** The one chip a card shows, most urgent first. */
+const URGENT_STATUSES: StatusKey[] = [
+  'failed',
+  'missing',
+  'processing',
+  'queued',
+  'new',
+]
+
+/** True when the library has files and every one is satisfied or done. */
+function isUpToDate(c: LibraryStats | undefined): boolean {
+  if (!c || c.files === 0) return false
+  return c.satisfied + c.done === c.files
+}
 
 export default function LibrariesPage() {
   const client = useQueryClient()
@@ -68,6 +105,54 @@ export default function LibrariesPage() {
   const countsFor = (lib: Library): LibraryStats | undefined =>
     stats.data?.libraries.find((s) => s.library_id === lib.id)
 
+  const kindsText = (lib: Library) =>
+    (lib.file_kinds ?? ['video']).map(kindLabel).join(', ')
+
+  /** Every non-zero status as a chip, in a wrapping row. */
+  const chipsFor = (lib: Library, suffix: string) => {
+    const c = countsFor(lib)
+    return (
+      <div className="flex flex-wrap gap-1">
+        {CHIP_STATUSES.map((s) => (
+          <StatusChip
+            key={s}
+            status={s}
+            count={c?.[s] ?? 0}
+            testId={`library-chip-${s}-${lib.id}${suffix}`}
+          />
+        ))}
+        {isUpToDate(c) && (
+          <Badge tone="success" testId={`library-uptodate-${lib.id}${suffix}`}>
+            Up to date
+          </Badge>
+        )}
+      </div>
+    )
+  }
+
+  /** The card badge: the single most urgent chip, or "Up to date". */
+  const urgentFor = (lib: Library, suffix: string) => {
+    const c = countsFor(lib)
+    const urgent = URGENT_STATUSES.find((s) => (c?.[s] ?? 0) > 0)
+    if (urgent) {
+      return (
+        <StatusChip
+          status={urgent}
+          count={c?.[urgent] ?? 0}
+          testId={`library-chip-${urgent}-${lib.id}${suffix}`}
+        />
+      )
+    }
+    if (isUpToDate(c)) {
+      return (
+        <Badge tone="success" testId={`library-uptodate-${lib.id}${suffix}`}>
+          Up to date
+        </Badge>
+      )
+    }
+    return null
+  }
+
   const scanButton = (lib: Library, onCard: boolean) => (
     <button
       type="button"
@@ -82,7 +167,7 @@ export default function LibrariesPage() {
   const editLink = (lib: Library, onCard: boolean) => (
     <Link
       to={`/libraries/${lib.id}/edit`}
-      className={btn}
+      className={btnGhost}
       data-testid={`library-edit-${lib.id}${onCard ? '-card' : ''}`}
     >
       Edit
@@ -92,11 +177,29 @@ export default function LibrariesPage() {
     <button
       type="button"
       onClick={() => setToDelete(lib)}
-      className={`${btn} !text-red-300 hover:!bg-red-950/40`}
+      className={btnDangerGhost}
       data-testid={`library-delete-${lib.id}${onCard ? '-card' : ''}`}
     >
       Remove
     </button>
+  )
+
+  /** The name over the mono path. The row link wraps it (DataList rowHref). */
+  const nameAndPath = (lib: Library, suffix: string) => (
+    <>
+      <span
+        className="block break-words"
+        data-testid={`library-name-${lib.id}${suffix}`}
+      >
+        {lib.name}
+      </span>
+      <span
+        className="mt-0.5 block max-w-[28rem] truncate font-mono text-caption font-normal text-fg-muted"
+        title={lib.path}
+      >
+        {lib.path}
+      </span>
+    </>
   )
 
   const columns: Column<Library>[] = [
@@ -104,118 +207,39 @@ export default function LibrariesPage() {
       key: 'name',
       header: 'Library',
       primary: true,
-      cell: (lib) => (
-        <Link
-          to={`/libraries/${lib.id}`}
-          className="inline-flex min-h-11 items-center font-semibold text-slate-100 hover:text-emerald-400"
-          data-testid={`library-name-${lib.id}`}
-        >
-          {lib.name}
-        </Link>
-      ),
-      cardCell: (lib) => (
-        <Link
-          to={`/libraries/${lib.id}`}
-          className="inline-flex min-h-11 items-center break-words font-semibold text-slate-100 hover:text-emerald-400"
-          data-testid={`library-name-${lib.id}-card`}
-        >
-          {lib.name}
-        </Link>
-      ),
+      cell: (lib) => nameAndPath(lib, ''),
+      cardCell: (lib) => nameAndPath(lib, '-card'),
     },
     {
-      key: 'path',
-      header: 'Path',
-      cell: (lib) => (
-        <span
-          className="block max-w-[18rem] truncate text-xs text-slate-500"
-          title={lib.path}
-        >
-          {lib.path}
-        </span>
-      ),
-      cardCell: (lib) => (
-        <span className="break-words text-xs text-slate-500">{lib.path}</span>
-      ),
-      cardLabel: 'Path',
-    },
-    {
-      key: 'kinds',
-      header: 'Looking for',
-      cell: (lib) => (
-        <span
-          className="text-slate-400"
-          data-testid={`library-kinds-${lib.id}`}
-        >
-          {(lib.file_kinds ?? ['video']).map(kindLabel).join(', ')}
-        </span>
-      ),
-      cardCell: (lib) => (
-        <span
-          className="text-slate-400"
-          data-testid={`library-kinds-${lib.id}-card`}
-        >
-          {(lib.file_kinds ?? ['video']).map(kindLabel).join(', ')}
-        </span>
-      ),
-      cardLabel: 'Looking for',
+      key: 'status',
+      header: 'Status',
+      cardPlacement: 'badge',
+      cell: (lib) => chipsFor(lib, ''),
+      cardCell: (lib) => urgentFor(lib, '-card'),
     },
     {
       key: 'files',
       header: 'Files',
+      align: 'end',
       cell: (lib) => (
-        <span
-          className="text-slate-300"
-          data-testid={`library-files-${lib.id}`}
-        >
-          {countsFor(lib)?.files ?? 0}
+        <span className="text-fg" data-testid={`library-files-${lib.id}`}>
+          {formatCount(countsFor(lib)?.files ?? 0)}
         </span>
       ),
       cardCell: (lib) => (
-        <span
-          className="text-slate-300"
-          data-testid={`library-files-${lib.id}-card`}
-        >
-          {countsFor(lib)?.files ?? 0}
+        <span className="text-fg" data-testid={`library-files-${lib.id}-card`}>
+          {formatCount(countsFor(lib)?.files ?? 0)}
         </span>
       ),
       cardLabel: 'Files',
     },
     {
-      key: 'status',
-      header: 'Status',
-      cell: (lib) => (
-        <div className="flex max-w-[18rem] flex-wrap gap-1.5">
-          {SHOWN_STATUSES.map((s) => (
-            <StatusChip
-              key={s}
-              status={s}
-              count={countsFor(lib)?.[s] ?? 0}
-              testId={`library-chip-${s}-${lib.id}`}
-            />
-          ))}
-        </div>
-      ),
-      cardCell: (lib) => (
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {SHOWN_STATUSES.map((s) => (
-            <StatusChip
-              key={s}
-              status={s}
-              count={countsFor(lib)?.[s] ?? 0}
-              testId={`library-chip-${s}-${lib.id}-card`}
-            />
-          ))}
-        </div>
-      ),
-      cardLabel: 'Status',
-    },
-    {
       key: 'saved',
       header: 'Saved',
+      align: 'end',
       cell: (lib) => (
         <span
-          className="text-emerald-400"
+          className="text-accent-text"
           data-testid={`library-saved-${lib.id}`}
         >
           {formatBytes(countsFor(lib)?.bytes_saved ?? 0)}
@@ -223,78 +247,98 @@ export default function LibrariesPage() {
       ),
       cardCell: (lib) => (
         <span
-          className="whitespace-nowrap text-emerald-400"
+          className="whitespace-nowrap text-accent-text"
           data-testid={`library-saved-${lib.id}-card`}
         >
-          {formatBytes(countsFor(lib)?.bytes_saved ?? 0)} saved
+          {formatBytes(countsFor(lib)?.bytes_saved ?? 0)}
         </span>
       ),
       cardLabel: 'Saved',
     },
     {
+      key: 'kinds',
+      header: 'Looking for',
+      cell: (lib) => (
+        <span className="text-fg-muted" data-testid={`library-kinds-${lib.id}`}>
+          {kindsText(lib)}
+        </span>
+      ),
+      cardCell: (lib) => (
+        <span
+          className="text-fg-muted"
+          data-testid={`library-kinds-${lib.id}-card`}
+        >
+          {kindsText(lib)}
+        </span>
+      ),
+      cardLabel: 'Looking for',
+    },
+    {
       key: 'actions',
       header: '',
+      actions: true,
       cell: (lib) => (
-        <div className="flex flex-wrap justify-end gap-2">
+        <>
           {scanButton(lib, false)}
           {editLink(lib, false)}
           {removeButton(lib, false)}
-        </div>
+        </>
       ),
       cardCell: (lib) => (
-        <div className="flex flex-wrap justify-end gap-2">
+        <>
           {scanButton(lib, true)}
           {editLink(lib, true)}
           {removeButton(lib, true)}
-        </div>
+        </>
       ),
-      cardNoLabel: true,
     },
   ]
 
-  if (libraries.isPending) {
-    return (
-      <PageContainer className="space-y-4" data-testid="libraries-page">
-        <h1 className="text-2xl font-bold">Libraries</h1>
-        <SkeletonCard className="h-20" />
-        <SkeletonCard className="h-20" />
-      </PageContainer>
-    )
-  }
-  if (libraries.isError) {
-    return (
-      <PageContainer className="space-y-4" data-testid="libraries-page">
-        <h1 className="text-2xl font-bold">Libraries</h1>
-        <ErrorBox title="Cannot load the libraries." error={libraries.error} />
-      </PageContainer>
-    )
-  }
-
-  return (
-    <PageContainer className="space-y-4" data-testid="libraries-page">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Libraries</h1>
+  const header = (
+    <PageHeader
+      title="Libraries"
+      actions={
         <Link
           to="/libraries/new"
           className={btnPrimary}
           data-testid="libraries-add"
         >
-          Add folder
+          Add library
         </Link>
-      </div>
+      }
+    />
+  )
 
-      {libraries.data.total === 0 && (
-        <p className="text-slate-400" data-testid="libraries-empty">
-          No libraries yet.{' '}
-          <Link to="/libraries/new" className="text-emerald-400 underline">
-            Add your first folder
-          </Link>
-          .
-        </p>
-      )}
+  if (libraries.isPending) {
+    return (
+      <PageContainer data-testid="libraries-page">
+        <PageHeader title="Libraries" />
+        <Card padding="none">
+          <SkeletonRows rows={3} />
+        </Card>
+      </PageContainer>
+    )
+  }
+  if (libraries.isError) {
+    return (
+      <PageContainer data-testid="libraries-page">
+        <PageHeader title="Libraries" />
+        <ErrorBox
+          title="Cannot load the libraries."
+          error={libraries.error}
+          onRetry={() => void libraries.refetch()}
+        />
+      </PageContainer>
+    )
+  }
+
+  return (
+    <PageContainer data-testid="libraries-page">
+      {header}
 
       {/* One column definition, two layouts (task 20): the table from
-          `sm` up, stacked cards below it. */}
+          `sm` up, stacked cards below it. The whole row links to the
+          library's detail page. */}
       <DataList
         rows={libraries.data.items}
         columns={columns}
@@ -302,6 +346,20 @@ export default function LibrariesPage() {
         cardTestid="libraries-cards"
         rowTestId={(lib) => `library-${lib.id}`}
         cardRowTestId={(lib) => `library-card-${lib.id}`}
+        rowHref={(lib) => `/libraries/${lib.id}`}
+        empty={
+          <EmptyState
+            icon="library"
+            testId="libraries-empty"
+            title="No libraries yet"
+            body="A library is a folder ShrinkYourShit watches. Add one and it starts looking for files to shrink."
+            action={
+              <Link to="/libraries/new" className={btnPrimary}>
+                Add library
+              </Link>
+            }
+          />
+        }
       />
 
       {toDelete && (
@@ -318,8 +376,8 @@ export default function LibrariesPage() {
           <p>
             This removes the library and its job records from the database and
             forgets what ShrinkYourShit did there. The files in{' '}
-            <span className="text-slate-100">{toDelete.path}</span> are not
-            touched — nothing on disk is deleted or renamed.
+            <span className="text-fg">{toDelete.path}</span> are not touched —
+            nothing on disk is deleted or renamed.
           </p>
         </ConfirmDialog>
       )}

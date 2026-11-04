@@ -13,13 +13,13 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] PageHeader with "Add library".
-- [ ] Rows link to detail.
-- [ ] Only non-zero chips; "Up to date" when everything is satisfied or done.
-- [ ] Path in mono under the name.
-- [ ] The card has no "saved" suffix.
-- [ ] EmptyState.
-- [ ] Test update: `LibrariesPage.test.tsx:116-121`.
+- [x] PageHeader with "Add library".
+- [x] Rows link to detail.
+- [x] Only non-zero chips; "Up to date" when everything is satisfied or done.
+- [x] Path in mono under the name.
+- [x] The card has no "saved" suffix.
+- [x] EmptyState.
+- [x] Test update: `LibrariesPage.test.tsx:116-121`.
 
 ## Rules for this wave
 

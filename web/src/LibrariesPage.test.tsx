@@ -5,7 +5,13 @@
  * scan-now, and a delete confirmation that promises files on disk are
  * untouched (only the library record delete goes out).
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -126,14 +132,12 @@ describe('LibrariesPage', () => {
     )
 
     // The library name links to the detail page.
-    expect(screen.getByTestId('library-name-lib-1')).toHaveAttribute(
-      'href',
-      '/libraries/lib-1',
-    )
-    expect(screen.getByTestId('library-name-lib-2')).toHaveAttribute(
-      'href',
-      '/libraries/lib-2',
-    )
+    expect(
+      screen.getByTestId('library-name-lib-1').closest('a'),
+    ).toHaveAttribute('href', '/libraries/lib-1')
+    expect(
+      screen.getByTestId('library-name-lib-2').closest('a'),
+    ).toHaveAttribute('href', '/libraries/lib-2')
   })
 
   it('renders the phone card list with the same data (task 19)', async () => {
@@ -155,17 +159,21 @@ describe('LibrariesPage', () => {
     expect(screen.getByTestId('library-files-lib-1-card')).toHaveTextContent(
       '3',
     )
+    // The card shows only the most urgent chip (spec 5.4): one waiting file.
     expect(
-      screen.getByTestId('library-chip-satisfied-lib-1-card'),
-    ).toHaveTextContent('2 Nothing to do')
+      screen.getByTestId('library-chip-queued-lib-1-card'),
+    ).toHaveTextContent('1 Waiting')
+    expect(screen.queryByTestId('library-chip-satisfied-lib-1-card')).toBeNull()
     expect(screen.getByTestId('library-saved-lib-1-card')).toHaveTextContent(
-      '2.0 GB saved',
+      '2.0 GB',
     )
+    expect(
+      screen.getByTestId('library-saved-lib-1-card'),
+    ).not.toHaveTextContent('saved')
     // The card name links to the detail page.
-    expect(screen.getByTestId('library-name-lib-1-card')).toHaveAttribute(
-      'href',
-      '/libraries/lib-1',
-    )
+    expect(
+      screen.getByTestId('library-name-lib-1-card').closest('a'),
+    ).toHaveAttribute('href', '/libraries/lib-1')
     // The table stays in the DOM for assistive tech (task 20).
     expect(screen.getByRole('table')).toBeInTheDocument()
   })
@@ -181,9 +189,16 @@ describe('LibrariesPage', () => {
     ])
     renderPage()
     await screen.findByTestId('libraries-table')
+    // The row link is stretched over the whole row (DataList rowHref), so its
+    // tap target is the row, which is taller than 44 px. Every other control
+    // keeps the 44 px height itself.
+    const rowLinks = screen
+      .getAllByRole('link')
+      .filter((el) => el.className.includes('after:inset-0'))
+    expect(rowLinks.length).toBeGreaterThan(0)
     for (const el of [
       ...screen.getAllByRole('button'),
-      ...screen.getAllByRole('link'),
+      ...screen.getAllByRole('link').filter((el) => !rowLinks.includes(el)),
     ]) {
       expect(el.className).toContain('min-h-11')
     }
@@ -324,7 +339,10 @@ describe('LibrariesPage', () => {
       expect(screen.getByTestId('libraries-empty')).toBeInTheDocument(),
     )
     expect(screen.getByTestId('libraries-empty')).toHaveTextContent(
-      'Add your first folder',
+      'No libraries yet',
+    )
+    expect(screen.getByTestId('libraries-empty')).toHaveTextContent(
+      'Add library',
     )
   })
 })
@@ -351,5 +369,138 @@ describe('LibrariesPage file kinds (task 34)', () => {
     expect(screen.getByTestId('library-kinds-lib-2')).toHaveTextContent(
       'Video, Audio',
     )
+  })
+})
+
+describe('LibrariesPage layout (task 43, spec 5.4)', () => {
+  it('has a PageHeader titled Libraries with an "Add library" action', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+    ])
+    renderPage()
+    await screen.findByTestId('libraries-table')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Libraries',
+    )
+    const add = screen.getByTestId('libraries-add')
+    expect(add).toHaveTextContent('Add library')
+    expect(add).toHaveAttribute('href', '/libraries/new')
+    expect(add.className).toContain('bg-accent')
+  })
+
+  it('shows only the non-zero status chips in the table', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: {
+          ...stats,
+          libraries: [
+            {
+              ...stats.libraries[0],
+              files: 4,
+              new: 0,
+              satisfied: 1,
+              queued: 2,
+              processing: 0,
+              done: 0,
+              failed: 1,
+              missing: 0,
+            },
+          ],
+        },
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-chip-queued-lib-1')
+    expect(screen.getByTestId('library-chip-queued-lib-1')).toHaveTextContent(
+      '2 Waiting',
+    )
+    expect(screen.getByTestId('library-chip-failed-lib-1')).toHaveTextContent(
+      '1 Failed',
+    )
+    expect(
+      screen.getByTestId('library-chip-satisfied-lib-1'),
+    ).toHaveTextContent('1 Nothing to do')
+    for (const s of ['new', 'processing', 'done', 'missing']) {
+      expect(
+        screen.queryByTestId(`library-chip-${s}-lib-1`),
+      ).not.toBeInTheDocument()
+    }
+    expect(screen.queryByTestId('library-uptodate-lib-1')).toBeNull()
+  })
+
+  it('shows "Up to date" when every file is satisfied or done', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/stats$/,
+        body: {
+          ...stats,
+          libraries: [
+            {
+              ...stats.libraries[0],
+              files: 3,
+              new: 0,
+              satisfied: 2,
+              queued: 0,
+              processing: 0,
+              done: 1,
+              failed: 0,
+              missing: 0,
+            },
+          ],
+        },
+      },
+    ])
+    renderPage()
+    const badge = await screen.findByTestId('library-uptodate-lib-1')
+    expect(badge).toHaveTextContent('Up to date')
+    expect(badge.className).toContain('bg-success/10')
+    // No chips at all: every count is satisfied or done, none is zero-noise.
+    expect(screen.queryByTestId('library-chip-queued-lib-1')).toBeNull()
+    // The card shows the same badge.
+    expect(
+      await screen.findByTestId('library-uptodate-lib-1-card'),
+    ).toHaveTextContent('Up to date')
+  })
+
+  it('puts the path in mono under the name', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+    ])
+    renderPage()
+    await screen.findByTestId('libraries-table')
+    const table = screen.getByTestId('libraries-table')
+    const name = within(table).getByTestId('library-name-lib-1')
+    const path = within(table).getByText('/media/movies', { selector: 'span' })
+    expect(path.className).toContain('font-mono')
+    expect(path.className).toContain('text-caption')
+    expect(path.className).toContain('truncate')
+    // The path is in the same cell, below the name.
+    expect(name.closest('td')).toBe(path.closest('td'))
+    expect(
+      name.compareDocumentPosition(path) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })
