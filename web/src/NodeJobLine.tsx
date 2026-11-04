@@ -23,19 +23,19 @@ export default function NodeJobLine({ job }: { job: Job }) {
   const [logOpen, setLogOpen] = useState(false)
   return (
     <div
-      className="mt-2 text-xs text-slate-400"
+      className="mt-2 text-xs text-fg-muted"
       data-testid={`node-job-line-${job.id}`}
     >
       <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         {/* First line: what is being worked on, and how far along. */}
         <span className="flex min-w-0 items-center gap-2">
           <span
-            className="truncate font-medium text-slate-200"
+            className="truncate font-medium text-fg"
             title={job.file_path || name}
           >
             {name}
           </span>
-          <span className="flex-none tabular-nums text-slate-300">
+          <span className="flex-none tabular-nums text-fg">
             {Math.round(job.percent)}%
           </span>
         </span>
@@ -53,7 +53,7 @@ export default function NodeJobLine({ job }: { job: Job }) {
           <button
             type="button"
             onClick={() => setLogOpen(true)}
-            className={`${btnGhost} !min-h-11 !px-3 !text-xs`}
+            className={btnGhost}
             data-testid="node-job-line-log"
           >
             Log
@@ -61,7 +61,7 @@ export default function NodeJobLine({ job }: { job: Job }) {
         </span>
       </div>
       <div
-        className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800"
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-raised"
         role="progressbar"
         aria-valuenow={Math.round(job.percent)}
         aria-valuemin={0}
@@ -70,7 +70,7 @@ export default function NodeJobLine({ job }: { job: Job }) {
         data-testid="node-job-line-bar"
       >
         <div
-          className="h-full rounded-full bg-emerald-500 transition-all"
+          className="h-full rounded-full bg-info transition-all"
           style={{ width: progressWidth(job.percent) }}
         />
       </div>

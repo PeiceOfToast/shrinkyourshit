@@ -236,3 +236,29 @@ describe('JobLogDialog', () => {
     })
   })
 })
+
+describe('JobLogDialog dialog structure (task 44)', () => {
+  it('builds the dialog from the shared header, body and footer', () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs\/job-1\/log$/,
+        body: { lines: [], total: 0, has_more: false, status: 'done' },
+      },
+    ])
+    render(
+      <JobLogDialog job={jobFixture({ status: 'done' })} onClose={() => {}} />,
+    )
+    expect(screen.getByTestId('job-log-title').parentElement).toHaveClass(
+      'px-6',
+      'pt-6',
+    )
+    expect(screen.getByTestId('job-log-close').parentElement).toHaveClass(
+      'px-6',
+      'pb-6',
+    )
+    expect(
+      screen.getByTestId('job-log-rows').closest('.overflow-y-auto'),
+    ).not.toBeNull()
+  })
+})
