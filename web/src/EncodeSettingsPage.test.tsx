@@ -161,4 +161,83 @@ describe('EncodeSettingsPage', () => {
     >
     expect(put).toEqual({ qsv_extra_quality: true })
   })
+
+  it('orders the sections as spec 5.11 and states the three-letter language rule (task 49)', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('save-settings')
+
+    const headings = screen
+      .getAllByRole('heading', { level: 2 })
+      .map((h) => h.textContent)
+    expect(headings).toEqual(['Library defaults', 'Intel Quick Sync extras'])
+    expect(
+      screen.getByText(
+        'Three-letter language codes, comma separated (for example eng, deu).',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('save-settings')).toHaveTextContent(
+      'Save changes',
+    )
+  })
+
+  it('says the QSV switches do nothing when no node reports Quick Sync (task 49)', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            {
+              id: 'n1',
+              capabilities: { encoders: [{ name: 'cpu', codecs: ['hevc'] }] },
+            },
+          ],
+          total: 1,
+        },
+      },
+    ])
+    renderPage()
+    expect(await screen.findByTestId('qsv-no-nodes')).toHaveTextContent(
+      'None of your nodes has Intel Quick Sync, so these do nothing today.',
+    )
+  })
+
+  it('hides the QSV notice when a node reports Quick Sync (task 49)', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            {
+              id: 'n1',
+              capabilities: {
+                encoders: [{ name: 'qsv', codecs: ['hevc'] }],
+              },
+            },
+          ],
+          total: 1,
+        },
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('qsv-extra-quality')
+    // The notice only shows once the nodes have loaded and found no QSV, so
+    // wait for the nodes response to land before asserting it is absent.
+    await waitFor(() =>
+      expect(mock.calls('GET', /\/api\/v1\/nodes$/).length).toBeGreaterThan(0),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.queryByTestId('qsv-no-nodes')).not.toBeInTheDocument()
+  })
 })

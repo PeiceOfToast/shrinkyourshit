@@ -1,21 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Encode settings (task 10): the library defaults — preferred languages,
- * the default video format for new libraries and what happens to the
- * original file by default. Split out of the old SettingsPage; the
- * server-level settings live at /app.
+ * Encode settings (task 10, restyled task 49, spec 5.11): the library
+ * defaults — preferred languages, the default video format for new libraries
+ * and what happens to the original file by default — then the Intel Quick
+ * Sync extras. Split out of the old SettingsPage; the server-level settings
+ * live at /app.
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getSettings, updateSettings, type SettingsUpdate } from './api'
+import {
+  getNodes,
+  getSettings,
+  updateSettings,
+  type SettingsUpdate,
+} from './api'
+import Banner from './Banner'
 import ErrorBox from './ErrorBox'
+import { Field, FormActions, FormSection } from './FormSection'
 import PageContainer from './PageContainer'
+import PageHeader from './PageHeader'
 import { buildUpdate, toForm, type FormState } from './settingsModel'
-import { SkeletonRows } from './skeleton'
+import { SkeletonCard } from './skeleton'
 import Switch from './Switch'
 import { useToast } from './toastContext'
-import { btnPrimary, input } from './uiControls'
+import { btnPrimary, input, select } from './uiControls'
 
 const policies = [
   {
@@ -32,8 +41,41 @@ const codecs = [
   { value: 'h264', label: 'H.264 — for very old devices' },
 ]
 
+/** One Intel Quick Sync opt-in: the switch, then its plain-language help. */
+function QSVSwitchRow({
+  name,
+  help,
+  checked,
+  onChange,
+  testId,
+  disabled,
+}: {
+  name: string
+  help: string
+  checked: boolean
+  onChange: (on: boolean) => void
+  testId: string
+  disabled: boolean
+}) {
+  return (
+    <div className="flex flex-col">
+      <Switch
+        checked={checked}
+        onChange={onChange}
+        label={`${name} on Intel Quick Sync`}
+        visibleLabel={name}
+        testId={testId}
+        disabled={disabled}
+      />
+      {/* 44 px track plus the 12 px gap: the help lines up under the name. */}
+      <p className="pl-14 text-caption text-fg-muted">{help}</p>
+    </div>
+  )
+}
+
 export default function EncodeSettingsPage() {
   const query = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
   const client = useQueryClient()
   const toast = useToast()
   const [form, setForm] = useState<FormState | null>(null)
@@ -54,27 +96,38 @@ export default function EncodeSettingsPage() {
     onError: (err: unknown) => toast.failure('Saving settings failed', err),
   })
 
+  const header = (
+    <PageHeader
+      title="Encode settings"
+      subtitle="Defaults for new libraries. Each library can change them in its Rules."
+    />
+  )
+
   if (query.isPending) {
     return (
-      <PageContainer className="space-y-6" data-testid="encode-settings-page">
-        <h1 className="text-2xl font-bold">Encode settings</h1>
-        <SkeletonRows rows={3} />
+      <PageContainer data-testid="encode-settings-page">
+        {header}
+        <SkeletonCard className="h-64" />
       </PageContainer>
     )
   }
   if (query.isError || !query.data) {
     return (
-      <PageContainer className="space-y-6" data-testid="encode-settings-page">
-        <h1 className="text-2xl font-bold">Encode settings</h1>
-        <ErrorBox title="Cannot load the settings." error={query.error} />
+      <PageContainer data-testid="encode-settings-page">
+        {header}
+        <ErrorBox
+          title="Cannot load the settings."
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
       </PageContainer>
     )
   }
   if (form === null) {
     return (
-      <PageContainer className="space-y-6" data-testid="encode-settings-page">
-        <h1 className="text-2xl font-bold">Encode settings</h1>
-        <SkeletonRows rows={3} />
+      <PageContainer data-testid="encode-settings-page">
+        {header}
+        <SkeletonCard className="h-64" />
       </PageContainer>
     )
   }
@@ -83,81 +136,41 @@ export default function EncodeSettingsPage() {
 
   const savePlain = () => save.mutate(buildUpdate(form, {}))
 
+  // QSV is only useful on a node that reports it. Until the nodes load,
+  // say nothing rather than guess.
+  const anyNodeHasQSV = (nodes.data?.items ?? []).some((n) =>
+    (n.capabilities?.encoders ?? []).some((e) => e.name === 'qsv'),
+  )
+  const noNodeHasQSV = nodes.isSuccess && !anyNodeHasQSV
+
   return (
-    <PageContainer className="space-y-6" data-testid="encode-settings-page">
-      <h1 className="text-2xl font-bold">Encode settings</h1>
-      {save.isError && (
-        <ErrorBox
-          title="Saving the settings failed."
-          error={save.error}
-          testId="settings-error"
-        />
-      )}
+    <PageContainer data-testid="encode-settings-page">
+      {header}
 
-      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="font-semibold">Hardware extras (Intel Quick Sync)</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Each machine uses an extra only when its check found the hardware
-          supports it. Off is the default and changes nothing.
-        </p>
-        <div className="mt-4 flex items-start gap-3">
-          <Switch
-            checked={query.data.qsv_extra_quality}
-            onChange={(on) => save.mutate({ qsv_extra_quality: on })}
-            label="Extra quality on Intel Quick Sync"
-            testId="qsv-extra-quality"
-            disabled={save.isPending}
-          />
-          <span className="grid gap-0.5 text-sm text-slate-300">
-            Extra quality
-            <span className="text-xs text-slate-500">
-              Uses look-ahead and extended bitrate control where the machine
-              supports both. A little slower, slightly better files. Does
-              nothing on machines without the feature.
-            </span>
-          </span>
-        </div>
-        <div className="mt-3 flex items-start gap-3">
-          <Switch
-            checked={query.data.qsv_low_power}
-            onChange={(on) => save.mutate({ qsv_low_power: on })}
-            label="Low-power mode on Intel Quick Sync"
-            testId="qsv-low-power"
-            disabled={save.isPending}
-          />
-          <span className="grid gap-0.5 text-sm text-slate-300">
-            Low-power mode
-            <span className="text-xs text-slate-500">
-              Faster and slightly worse, and it draws less power. Does nothing
-              on older hardware.
-            </span>
-          </span>
-        </div>
-      </section>
-
-      <section className="rounded-2xl bg-slate-900 p-6 ring-1 ring-slate-800">
-        <h2 className="font-semibold">Library defaults</h2>
-        <label className="mt-4 grid gap-1">
-          <span className="text-sm text-slate-300">Keep my languages</span>
+      <FormSection title="Library defaults">
+        <Field
+          label="Keep my languages"
+          htmlFor="preferred-languages"
+          help="Three-letter language codes, comma separated (for example eng, deu)."
+        >
           <input
+            id="preferred-languages"
             type="text"
             value={form.preferred_languages}
             onChange={(e) => set({ preferred_languages: e.target.value })}
-            className={input}
+            className={`${input} max-w-xs`}
             data-testid="preferred-languages"
           />
-          <span className="text-xs text-slate-500">
-            Two-letter codes, comma separated (for example eng, deu).
-          </span>
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">
-            Video format for new libraries
-          </span>
+        </Field>
+        <Field
+          label="Video format for new libraries"
+          htmlFor="default-video-codec"
+        >
           <select
+            id="default-video-codec"
             value={form.default_video_codec}
             onChange={(e) => set({ default_video_codec: e.target.value })}
-            className={input}
+            className={select}
             data-testid="default-video-codec"
           >
             {codecs.map((c) => (
@@ -166,15 +179,16 @@ export default function EncodeSettingsPage() {
               </option>
             ))}
           </select>
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">
-            What happens to the original file
-          </span>
+        </Field>
+        <Field
+          label="What happens to the original file"
+          htmlFor="default-result-policy"
+        >
           <select
+            id="default-result-policy"
             value={form.default_result_policy}
             onChange={(e) => set({ default_result_policy: e.target.value })}
-            className={input}
+            className={select}
             data-testid="default-result-policy"
           >
             {policies.map((p) => (
@@ -183,18 +197,54 @@ export default function EncodeSettingsPage() {
               </option>
             ))}
           </select>
-        </label>
-      </section>
+        </Field>
+      </FormSection>
 
-      <button
-        type="button"
-        onClick={savePlain}
-        disabled={save.isPending}
-        className={btnPrimary}
-        data-testid="save-settings"
+      <FormSection
+        title="Intel Quick Sync extras"
+        description="Only used on machines where the hardware check found Quick Sync. Off changes nothing."
       >
-        {save.isPending ? 'Saving…' : 'Save settings'}
-      </button>
+        {noNodeHasQSV && (
+          <Banner tone="info" testId="qsv-no-nodes">
+            None of your nodes has Intel Quick Sync, so these do nothing today.
+          </Banner>
+        )}
+        <QSVSwitchRow
+          name="Extra quality"
+          help="Uses look-ahead and extended bitrate control where the machine supports both. A little slower, slightly better files. Does nothing on machines without the feature."
+          checked={query.data.qsv_extra_quality}
+          onChange={(on) => save.mutate({ qsv_extra_quality: on })}
+          testId="qsv-extra-quality"
+          disabled={save.isPending}
+        />
+        <QSVSwitchRow
+          name="Low-power mode"
+          help="Faster and slightly worse, and it draws less power. Does nothing on older hardware."
+          checked={query.data.qsv_low_power}
+          onChange={(on) => save.mutate({ qsv_low_power: on })}
+          testId="qsv-low-power"
+          disabled={save.isPending}
+        />
+      </FormSection>
+
+      {save.isError && (
+        <ErrorBox
+          title="Saving the settings failed."
+          error={save.error}
+          testId="settings-error"
+        />
+      )}
+      <FormActions>
+        <button
+          type="button"
+          onClick={savePlain}
+          disabled={save.isPending}
+          className={btnPrimary}
+          data-testid="save-settings"
+        >
+          {save.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+      </FormActions>
     </PageContainer>
   )
 }

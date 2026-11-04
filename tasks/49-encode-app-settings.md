@@ -13,14 +13,14 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] FormSections in the order of 5.11.
-- [ ] The language help says "Three-letter".
-- [ ] The App Save sits directly under Server.
-- [ ] Number input `w-32`.
-- [ ] The About commit is `shortHash` with a `title`; the date via `formatDateTime`.
-- [ ] Container instructions in `CodeBlock` with `whitespace-pre-wrap` (Playwright at 390: `pre` scrollWidth ≤ clientWidth).
-- [ ] The update toggle is a `Checkbox`.
-- [ ] The QSV "none of your nodes" Banner when no node reports QSV.
+- [x] FormSections in the order of 5.11.
+- [x] The language help says "Three-letter".
+- [x] The App Save sits directly under Server.
+- [x] Number input `w-32`.
+- [x] The About commit is `shortHash` with a `title`; the date via `formatDateTime`.
+- [x] Container instructions in `CodeBlock` with `whitespace-pre-wrap` (Playwright at 390: `pre` scrollWidth ≤ clientWidth).
+- [x] The update toggle is a `Checkbox`.
+- [x] The QSV "none of your nodes" Banner when no node reports QSV.
 
 ## Rules for this wave
 
