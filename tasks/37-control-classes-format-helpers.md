@@ -13,9 +13,9 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] Exports exactly as in 2.10. The test asserts every control string contains `min-h-11` and contains none of `slate-`, `emerald-`, `red-`, `rose-`, `!`.
-- [ ] `format.test.ts` covers bytes (0, 551 000, 15 185 350, 1.2e12), counts (43655 → "43,655" with `en-US` forced), relative times (5 s, 4 min, 3 h, 2 d), `shortHash`, and `encoderLabel` (cpu, qsv, vaapi, nvenc, videotoolbox, unknown passthrough).
-- [ ] Existing `easyModel.test.ts` passes unchanged.
+- [x] Exports exactly as in 2.10. The test asserts every control string contains `min-h-11` and contains none of `slate-`, `emerald-`, `red-`, `rose-`, `!`.
+- [x] `format.test.ts` covers bytes (0, 551 000, 15 185 350, 1.2e12), counts (43655 → "43,655" with `en-US` forced), relative times (5 s, 4 min, 3 h, 2 d), `shortHash`, and `encoderLabel` (cpu, qsv, vaapi, nvenc, videotoolbox, unknown passthrough).
+- [x] Existing `easyModel.test.ts` passes unchanged.
 
 ## Rules for this wave
 
