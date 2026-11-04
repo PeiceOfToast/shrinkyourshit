@@ -379,6 +379,14 @@ guard armed, and the step-types `params` is normalized to `[]` client-side (`web
 `web/e2e/mobile.spec.ts` fails CI on any horizontal overflow or sub 44px control at
 320, 390, 414 and 768 px, including the library detail and flow routes.
 
+Visual system (v1.9): the spec is `docs/design/ui-redesign-2026-11-04.md`. Colours, type,
+spacing and radii come from tokens defined in `web/src/index.css` and mapped in
+`web/tailwind.config.js`; components use token classes only (`text-fg`, `bg-surface`,
+`text-danger`). Raw palette names (`slate-*`, `emerald-*`, `red-*`, `amber-*`, `sky-*`) stay in
+`index.css` and in the `bg-slate-950` body mirror in `App.tsx`. `web/eslint.config.js` fails
+`npm run lint` on retired classes in JSX `className` values, and every audited route has exactly
+one h1 (`web/e2e/mobile.spec.ts`, `web/e2e/layout.spec.ts`).
+
 ## Update path
 
 Three install shapes, three update paths, and the app always says which one applies.

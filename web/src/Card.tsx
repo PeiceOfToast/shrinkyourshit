@@ -2,7 +2,7 @@
 
 /**
  * Card (task 38, spec 3.4): the one surface for a section of a page. It
- * replaces the hand-written `rounded-2xl bg-slate-900 p-6 ring-1 …` copies.
+ * replaces the hand-written copies of the surface, radius and ring classes.
  * Never nest a Card in a Card; divide sub-groups with `border-t border-line`.
  */
 import type { ReactNode } from 'react'

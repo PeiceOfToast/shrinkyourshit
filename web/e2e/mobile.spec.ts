@@ -27,6 +27,9 @@
  * Zoom In control must actually move the viewport at phone widths. Both
  * routes skip cleanly when the server has no libraries.
  *
+ * Task 53 extends the audit to Integrations and the Rules page, and adds
+ * a single-h1 check per route (spec 6, Headings) at every width.
+ *
  * Runs only under the `phone` project (playwright.config.ts sets
  * `testIgnore` on the other two projects, which exist for layout.spec);
  * the widths are set per test below.
@@ -75,6 +78,13 @@ const PAGES: Array<{ path: string; ready: string; settled: string }> = [
     path: '/app',
     ready: 'app-settings-page',
     settled: '[data-testid="worker-concurrency"], [data-testid="about-card"]',
+  },
+  // Task 53: Integrations joins the audit (spec 6, touch targets and
+  // headings). Its tabs render once the integrations list has loaded.
+  {
+    path: '/integrations',
+    ready: 'integrations-page',
+    settled: '[data-testid="integrations-tabs"]',
   },
 ]
 
@@ -142,6 +152,13 @@ async function auditPage(
     `${path} at ${width}px: the page overflows horizontally by ${overflow}px (scrollWidth ${scrollWidth} > viewport ${innerWidth})`,
   ).toBeLessThanOrEqual(0)
 
+  // Spec 6, Headings: exactly one h1 per route, at every audited width.
+  const h1 = await page.locator('h1').count()
+  expect(
+    h1,
+    `${path} at ${width}px: expected exactly one h1, found ${h1}`,
+  ).toBe(1)
+
   const small = await page.evaluate((selector): SmallControl[] => {
     return [...document.querySelectorAll(selector)]
       .map((el) => {
@@ -200,6 +217,13 @@ test.describe('mobile audit', () => {
         await open(page, edit, 'library-edit')
         await settle(page, '[data-testid="library-edit-save"]')
         await auditPage(page, edit, width)
+
+        // Task 53: the Rules page (Easy and Steps tiers, tier selector).
+        // Its tier selector renders once the rules have loaded.
+        const rules = `/libraries/${libraryId}/rules`
+        await open(page, rules, 'rules')
+        await settle(page, '[data-testid="tier-selector"]')
+        await auditPage(page, rules, width)
 
         // Task 22: the flow canvas is view only below md — no palette,
         // no inspector, no edit controls — and the canvas chrome (zoom

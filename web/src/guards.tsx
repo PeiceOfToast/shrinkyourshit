@@ -15,8 +15,8 @@ import { useMe, useSetupStatus } from './queries'
 
 function FullPageCard({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-full items-center justify-center bg-slate-950 p-4 text-slate-100">
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-10 text-center shadow-xl ring-1 ring-slate-800">
+    <main className="flex min-h-full items-center justify-center bg-canvas p-4 text-fg">
+      <div className="w-full max-w-md rounded-card bg-surface p-10 text-center ring-1 ring-line">
         {children}
       </div>
     </main>
@@ -26,7 +26,7 @@ function FullPageCard({ children }: { children: React.ReactNode }) {
 function Loading() {
   return (
     <FullPageCard>
-      <p className="text-slate-400">Loading…</p>
+      <p className="text-fg-muted">Loading…</p>
     </FullPageCard>
   )
 }
@@ -46,7 +46,7 @@ export function RequireReady() {
   if (status.isError || !status.data) {
     return (
       <FullPageCard>
-        <p className="text-red-400" data-testid="guard-error">
+        <p className="text-danger" data-testid="guard-error">
           Cannot reach the ShrinkYourShit server.
         </p>
       </FullPageCard>
@@ -68,7 +68,7 @@ function RequireLogin({ loginEnabled }: { loginEnabled: boolean }) {
   if (me.isPending) {
     return (
       <FullPageCard>
-        <p className="text-slate-400">Checking your session…</p>
+        <p className="text-fg-muted">Checking your session…</p>
       </FullPageCard>
     )
   }
