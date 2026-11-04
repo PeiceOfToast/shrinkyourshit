@@ -4,15 +4,66 @@
 @tailwind utilities;
 
 /*
+ * Design tokens (docs/design/ui-redesign-2026-11-04.md, 2.2 and 2.9). Each
+ * colour is a bare RGB triple so Tailwind's /<alpha> modifiers work; the
+ * mapping to class names lives in tailwind.config.js.
+ */
+:root {
+  --c-canvas: 2 6 23;
+  --c-surface: 15 23 42;
+  --c-raised: 30 41 59;
+  --c-raised-hover: 51 65 85;
+  --c-line: 30 41 59;
+  --c-line-strong: 100 116 139;
+  --c-fg: 241 245 249;
+  --c-fg-muted: 148 163 184;
+  --c-fg-subtle: 100 116 139;
+  --c-accent: 16 185 129;
+  --c-accent-hover: 52 211 153;
+  --c-accent-fg: 2 6 23;
+  --c-accent-text: 52 211 153;
+  --c-focus: 125 211 252;
+  --c-success: 52 211 153;
+  --c-info: 125 211 252;
+  --c-warning: 252 211 77;
+  --c-danger: 248 113 113;
+  --c-danger-solid: 220 38 38;
+  --c-danger-solid-hover: 185 28 28;
+}
+
+/*
+ * Inter Variable, latin subset only (docs/design/.../2.3 and 8.5). The
+ * fontsource entry point wght.css declares seven subset faces and would
+ * ship seven woff2 files; this declares the latin face alone, pointing at
+ * the one latin woff2 in the package. unicode-range is the latin range
+ * fontsource publishes, so characters outside it fall back to the system
+ * stack.
+ */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+/*
  * The page background is painted on the root elements, not only on the
  * shell box (task 10): anything outside the shell — overscroll, short
  * pages, the iOS rubber band — must never render the browser default
  * white. App also mirrors the class onto documentElement/body at runtime
  * so the guarantee is observable (and tested) outside of a stylesheet.
+ * The mirrored class stays `bg-slate-950`: it is the same colour as
+ * `bg-canvas` (slate-950), and keeping it avoids touching App's test.
  */
 html,
 body {
-  @apply bg-slate-950;
+  @apply bg-canvas text-fg font-sans antialiased;
 }
 
 html {
@@ -22,10 +73,11 @@ html {
 /*
  * One visible keyboard focus ring for every interactive element (task 13
  * accessibility pass): a single rule here instead of a focus utility on
- * every button, link and input.
+ * every button, link and input. Sky-300 (focus), not emerald, so the ring
+ * never reads as "selected" (2.8).
  */
 :focus-visible {
-  outline: 2px solid theme('colors.emerald.400');
+  outline: 2px solid rgb(var(--c-focus));
   outline-offset: 2px;
 }
 
@@ -34,7 +86,45 @@ html {
  * own dismiss-on-backdrop click uses the element, not this layer.
  */
 dialog::backdrop {
-  background: rgb(0 0 0 / 0.6);
+  background: rgb(var(--c-canvas) / 0.7);
+}
+
+/*
+ * Reduced motion (2.7): durations collapse to effectively zero and the
+ * looping animations (running dot, skeletons' animate-pulse) stop, so
+ * state changes still happen without movement.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * React Flow on the app palette (2.9). Variable names checked against
+ * @xyflow/react 12's dist/style.css.
+ */
+main .react-flow {
+  --xy-background-color: rgb(var(--c-canvas));
+  --xy-background-pattern-color: rgb(var(--c-raised));
+  --xy-edge-stroke: rgb(var(--c-line-strong));
+  --xy-edge-stroke-selected: rgb(var(--c-accent));
+  --xy-minimap-background-color: rgb(var(--c-surface));
+  --xy-minimap-mask-background-color: rgb(var(--c-canvas) / 0.7);
+  --xy-controls-button-background-color: rgb(var(--c-surface));
+  --xy-controls-button-background-color-hover: rgb(var(--c-raised));
+  --xy-controls-button-color: rgb(var(--c-fg));
+  --xy-controls-button-border-color: rgb(var(--c-line));
+  --xy-attribution-background-color: transparent;
+}
+
+main .react-flow__attribution a {
+  color: rgb(var(--c-fg-subtle));
 }
 
 /*

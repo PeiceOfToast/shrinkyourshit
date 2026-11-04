@@ -13,11 +13,11 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] All variables from 2.9 exist and the Tailwind config matches it.
-- [ ] New `src/tokens.test.ts` imports `tailwind.config.js` and asserts that the colour keys `canvas, surface, raised, line, fg, accent, focus, success, info, warning, danger`, the font sizes `caption, body, heading, title` and the durations `fast, base, slow` exist.
-- [ ] The focus ring is sky-300; the reduced-motion rule is present; React Flow variables are set (verify the names against the installed CSS).
-- [ ] `npm run build` passes; the bundle includes one Inter woff2 (latin).
-- [ ] No component file changed apart from `main.tsx`.
+- [x] All variables from 2.9 exist and the Tailwind config matches it.
+- [x] New `src/tokens.test.ts` imports `tailwind.config.js` and asserts that the colour keys `canvas, surface, raised, line, fg, accent, focus, success, info, warning, danger`, the font sizes `caption, body, heading, title` and the durations `fast, base, slow` exist.
+- [x] The focus ring is sky-300; the reduced-motion rule is present; React Flow variables are set (verify the names against the installed CSS).
+- [x] `npm run build` passes; the bundle includes one Inter woff2 (latin).
+- [x] No component file changed apart from `main.tsx`.
 
 ## Rules for this wave
 
