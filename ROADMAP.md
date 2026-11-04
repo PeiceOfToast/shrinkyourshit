@@ -110,6 +110,36 @@ carried it. AMF stays a documented non-goal.
 Dependency note for 33: it adds `github.com/tetratelabs/wazero` to `STACK.md` with the one-line
 justification rule 3 of `AGENTS.md` asks for. Nothing else in this wave adds a dependency.
 
+## v1.9: UI redesign (scheduled)
+
+Spec: `docs/design/ui-redesign-2026-11-04.md`. `web/` only: no Go, no API shape, no `DECISIONS.md`
+change. Eighteen tasks in five phases (tokens, primitives, shell, pages, enforcement), run in order.
+Each depends on the task before it except where noted.
+
+| Task | File | What it does | Depends on |
+|------|------|--------------|------------|
+| 36 | `tasks/36-design-tokens-font-motion.md` | Colour, type, spacing and motion tokens in Tailwind, self-hosted Inter, focus and reduced-motion rules | 35 |
+| 37 | `tasks/37-control-classes-format-helpers.md` | The shared control class strings and the formatting helpers (bytes, counts, times, hashes, encoder words) | 36 |
+| 38 | `tasks/38-layout-primitives.md` | PageHeader, Card, FormSection, EmptyState, Banner, Disclosure and Icon | 37 |
+| 39 | `tasks/39-control-primitives.md` | Badge, Checkbox, Tabs, SegmentedControl, CopyButton, CodeBlock and the restyled shared controls | 38 |
+| 40 | `tasks/40-app-shell-encoding-status.md` | Desktop top bar removed, rail footer status, one encoding switch for the whole app, 56 px mobile bar | 39 |
+| 41 | `tasks/41-library-forms.md` | New and Edit library forms onto FormSection, sliders readable on mobile, exact settings relabelled | 40 |
+| 42 | `tasks/42-dashboard.md` | Dashboard onto the primitives: encoding status sentences, real file names in recent activity | 41 |
+| 43 | `tasks/43-libraries-list.md` | Libraries list: rows link, only non-zero chips, empty state | 42 |
+| 44 | `tasks/44-library-detail.md` | Library detail, file history and job log dialog: header actions, summary card, Shrunk status, honest pager | 43 |
+| 45 | `tasks/45-rules-page.md` | Rules page (Easy and Steps) with one header and a neutral tier control shared with Flow | 44 |
+| 46 | `tasks/46-flow-page.md` | Flow page shares the Rules header, one Edit flow, readable canvas | 45 |
+| 47 | `tasks/47-edit-page-properties.md` | Edit page becomes library properties only; rule controls live on Rules (needs owner OK, spec 8.4) | 45, owner OK |
+| 48 | `tasks/48-nodes.md` | Nodes: one lifecycle badge, labelled encoding switch, confirm on revoke | 47 |
+| 49 | `tasks/49-encode-app-settings.md` | Encode and App settings plus About: section order, short hash, wrapping container instructions | 48 |
+| 50 | `tasks/50-integrations-plugins.md` | Integrations and Plugins: tabs, card headers, empty states, secret panel | 49 |
+| 51 | `tasks/51-setup-login.md` | Setup and Login: one heading, visual stepper, 44 px targets | 50 |
+| 52 | `tasks/52-copy-sweep.md` | Copy sweep and a document title on every route | 51 |
+| 53 | `tasks/53-guardrail-lint-audit.md` | Lint rule against the retired palette, mobile audit over every route at four widths | 52 |
+
+The one new dependency is `@fontsource-variable/inter` (OFL-1.1, self-hosted, about 48 KB), justified
+in the spec's section 8.5 and in `tasks/36-notes.md`.
+
 ## After v1.2 (order flexible, superseded by v1.3 to v1.8)
 
 Kept as history: this is the list the waves were cut from, and items 1 to 8 are now scheduled across

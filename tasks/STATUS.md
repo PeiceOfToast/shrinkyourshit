@@ -49,3 +49,27 @@ Same rules as the table above.
 | 34 | 34-non-media-file-types.md | done | PR #37 https://github.com/PeiceOfToast/shrinkyourshit/pull/37, v1.8, CI green |
 | 35 | 35-intel-qsv-tuning.md | done | PR #38 https://github.com/PeiceOfToast/shrinkyourshit/pull/38, v1.8, CI green, checklist ticked |
 
+## v1.9 queue (UI redesign)
+
+Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; tasks run in order, one at a time.
+
+| Task | File | Status | PR / note |
+|------|------|--------|-----------|
+| 36 | 36-design-tokens-font-motion.md | todo |  |
+| 37 | 37-control-classes-format-helpers.md | todo |  |
+| 38 | 38-layout-primitives.md | todo |  |
+| 39 | 39-control-primitives.md | todo |  |
+| 40 | 40-app-shell-encoding-status.md | todo |  |
+| 41 | 41-library-forms.md | todo |  |
+| 42 | 42-dashboard.md | todo |  |
+| 43 | 43-libraries-list.md | todo |  |
+| 44 | 44-library-detail.md | todo |  |
+| 45 | 45-rules-page.md | todo |  |
+| 46 | 46-flow-page.md | todo |  |
+| 47 | 47-edit-page-properties.md | todo | owner OK pending, spec 8.4 item 1; default yes |
+| 48 | 48-nodes.md | todo |  |
+| 49 | 49-encode-app-settings.md | todo |  |
+| 50 | 50-integrations-plugins.md | todo |  |
+| 51 | 51-setup-login.md | todo |  |
+| 52 | 52-copy-sweep.md | todo |  |
+| 53 | 53-guardrail-lint-audit.md | todo |  |
