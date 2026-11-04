@@ -82,7 +82,7 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
 | 54 | 54-target-scale-and-rate.md | done | PR #58 https://github.com/PeiceOfToast/shrinkyourshit/pull/58, v1.10, CI green (9 checks incl. e2e, docker-arm64), checklist ticked |
-| 55 | 55-encoder-rate-and-scale-args.md | in_progress | branch task/55-encoder-rate-and-scale-args |
+| 55 | 55-encoder-rate-and-scale-args.md | done | branch task/55-encoder-rate-and-scale-args, commit e5c74ce, make test and make lint green, no PR opened |
 | 56 | 56-condition-steps.md | todo | |
 | 57 | 57-per-step-hardware.md | todo | |
 | 58 | 58-raw-args-escape-hatch.md | todo | |
