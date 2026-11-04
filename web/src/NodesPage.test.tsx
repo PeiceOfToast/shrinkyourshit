@@ -109,7 +109,15 @@ describe('NodesPage', () => {
     // Approve: the refetch shows the node ready.
     fireEvent.click(screen.getByTestId('node-approve-node-pending'))
     await waitFor(() => expect(status).toBe('approved'))
-    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument())
+    // The approve call announced itself (toast). The mocked list keeps
+    // returning the pending row, so the row itself is not asserted here.
+    await waitFor(() =>
+      expect(
+        screen
+          .queryAllByTestId('toast')
+          .some((t) => t.textContent?.includes('attic-box approved.')),
+      ).toBe(true),
+    )
 
     // Reject deletes the pending row — but only after the confirmation
     // names what happens (task 13).
@@ -177,12 +185,12 @@ describe('NodesPage', () => {
     expect(text).toContain('install.ps1')
 
     // The copy buttons are present for every command.
-    expect(screen.getByTestId('copy-docker')).toBeInTheDocument()
-    expect(screen.getByTestId('copy-shell')).toBeInTheDocument()
-    expect(screen.getByTestId('copy-powershell')).toBeInTheDocument()
+    expect(screen.getByTestId('add-node-docker-copy')).toBeInTheDocument()
+    expect(screen.getByTestId('add-node-shell-copy')).toBeInTheDocument()
+    expect(screen.getByTestId('add-node-powershell-copy')).toBeInTheDocument()
     // Clicking copy must not explode when the clipboard is unavailable.
     expect(() =>
-      fireEvent.click(screen.getByTestId('copy-docker')),
+      fireEvent.click(screen.getByTestId('add-node-docker-copy')),
     ).not.toThrow()
   })
 
@@ -313,6 +321,15 @@ describe('NodesPage', () => {
     renderNodes()
     await waitFor(() => screen.getByTestId('node-revoke-node-1'))
     fireEvent.click(screen.getByTestId('node-revoke-node-1'))
+    // Revoke is confirmed first (task 48): the dialog names the effect and
+    // nothing is sent until the confirm button is pressed.
+    expect(screen.getByTestId('node-revoke-dialog-node-1')).toHaveTextContent(
+      'Revoke worker-a?',
+    )
+    expect(
+      mock.calls('POST', /\/api\/v1\/nodes\/node-1\/revoke$/),
+    ).toHaveLength(0)
+    fireEvent.click(screen.getByTestId('node-revoke-confirm-node-1'))
     await waitFor(() =>
       expect(
         mock.calls('POST', /\/api\/v1\/nodes\/node-1\/revoke$/).length,
@@ -651,8 +668,10 @@ describe('NodesPage', () => {
     ])
     const first = renderNodes()
     const footer = await screen.findByTestId('node-stats-node-1')
-    expect(footer).toHaveTextContent('2 files')
-    expect(footer).toHaveTextContent('1.5 GB saved')
+    expect(footer).toHaveTextContent('Files done')
+    expect(footer).toHaveTextContent('2')
+    expect(footer).toHaveTextContent('Saved')
+    expect(footer).toHaveTextContent('1.5 GB')
     first.unmount()
 
     // A node with no finished jobs reports its zeros explicitly.
@@ -674,8 +693,8 @@ describe('NodesPage', () => {
     ])
     renderNodes()
     const fresh = await screen.findByTestId('node-stats-node-1')
-    expect(fresh).toHaveTextContent('0 files')
-    expect(fresh).toHaveTextContent('0 B saved')
+    expect(fresh).toHaveTextContent('Files done')
+    expect(fresh).toHaveTextContent('0 B')
   })
 
   it('renders whatever encoders a node reports, including the newer vaapi and videotoolbox names (task 30)', async () => {
@@ -709,8 +728,9 @@ describe('NodesPage', () => {
     ])
     renderNodes()
     const chips = await screen.findByTestId('node-encoders-node-1')
-    expect(chips).toHaveTextContent('vaapi')
-    expect(chips).toHaveTextContent('videotoolbox')
+    // Shown as plain-language labels (format.ts encoderLabel).
+    expect(chips).toHaveTextContent('Intel')
+    expect(chips).toHaveTextContent('Apple')
   })
 
   it('pause all and resume all call their endpoints and disable when redundant (task 18)', async () => {
@@ -786,8 +806,109 @@ describe('NodesPage', () => {
     // Both actions announced themselves (pause + resume).
     const toasts = await screen.findAllByTestId('toast')
     expect(
-      toasts.some((t) => t.textContent?.includes('Resumed 2 nodes.')),
+      toasts.some((t) =>
+        t.textContent?.includes('Encoding resumed on 2 nodes.'),
+      ),
     ).toBe(true)
+  })
+
+  it('shows one lifecycle badge per approved node and a labelled Encoding switch (task 48)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderNodes()
+    await waitFor(() => screen.getByTestId('node-lifecycle-node-1'))
+    // One lifecycle badge, and no separate "Ready" approval pill.
+    expect(
+      document.querySelectorAll('[data-testid^="node-lifecycle-"]'),
+    ).toHaveLength(1)
+    expect(screen.getByTestId('node-lifecycle-node-1')).toHaveTextContent(
+      'Running',
+    )
+    expect(screen.queryByText('Ready')).not.toBeInTheDocument()
+    // The switch has a visible "Encoding" label beside it.
+    expect(screen.getByText('Encoding')).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: 'Encoding on worker-a' }),
+    ).toBeInTheDocument()
+  })
+
+  it('asks before revoking and keeps the node when cancelled (task 48)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [nodeFixture()], total: 1 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/nodes\/node-1\/revoke$/,
+        body: nodeFixture({ status: 'revoked' }),
+      },
+    ])
+    renderNodes()
+    fireEvent.click(await screen.findByTestId('node-revoke-node-1'))
+    const dialog = screen.getByTestId('node-revoke-dialog-node-1')
+    expect(dialog).toHaveTextContent('must be paired again to come back')
+    expect(dialog).toHaveTextContent('Jobs it holds go back to the queue')
+    fireEvent.click(screen.getByTestId('node-revoke-cancel-node-1'))
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('node-revoke-dialog-node-1'),
+      ).not.toBeInTheDocument(),
+    )
+    expect(
+      mock.calls('POST', /\/api\/v1\/nodes\/node-1\/revoke$/),
+    ).toHaveLength(0)
+  })
+
+  it('keeps FFmpeg details closed inside Technical details, with the short version (task 48)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [
+            nodeFixture({
+              capabilities: {
+                encoders: [{ name: 'cpu', codecs: ['hevc'] }],
+                ffmpeg_version:
+                  'ffmpeg version 7.1.4-Jellyfin Copyright (c) 2000-2025',
+              },
+            }),
+          ],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderNodes()
+    const tech = await screen.findByTestId('node-tech-node-1')
+    expect(tech.tagName).toBe('DETAILS')
+    expect(tech).not.toHaveAttribute('open')
+    expect(tech).toHaveTextContent('Technical details')
+    expect(tech).toHaveTextContent('FFmpeg 7.1.4-Jellyfin')
+    expect(tech.querySelector('pre')?.textContent).toContain(
+      'Copyright (c) 2000-2025',
+    )
   })
 
   it('shows the probed QSV features in plain language (task 35)', async () => {
