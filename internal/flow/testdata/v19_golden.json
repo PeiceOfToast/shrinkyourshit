@@ -1,0 +1,32 @@
+{
+  "v19_fixture": {
+    "validate": [],
+    "target": "{\"video\":{\"codec\":\"hevc\",\"quality\":2,\"reencode_if_same_codec\":true},\"audio\":{\"mode\":\"keep_preferred\",\"preferred_languages\":[\"eng\",\"ger\"],\"compact_codec\":\"aac\"},\"subtitles\":{\"mode\":\"remove\",\"preferred_languages\":null,\"extract_removed\":true},\"container\":\"mkv\"}",
+    "describe": [
+      "Look inside the file to see what it is.",
+      "Only when the video is not HEVC and the video bitrate is above 10 megabits per second: Encode the video as HEVC at quality 2 of 5 (lower saves more space).",
+      "Put everything into a MKV file.",
+      "Keep only the audio tracks in English or German; if none match, keep all.",
+      "Remove all subtitles. Text subtitles are first saved as separate .srt files.",
+      "Name the result \"{name}.shrunk\" (where {name} is the original name).",
+      "Keep the original when the new file is not smaller.",
+      "Play 3 minute(s) from the middle of the finished file before anything is replaced; if it does not play cleanly, the job fails.",
+      "Move the finished file into /data/shrunk/, keeping its folder layout."
+    ],
+    "rename": "{name}.shrunk",
+    "health_check": "{\"mode\":\"sample\",\"minutes\":3,\"duration_tolerance\":0.02}",
+    "move_to": "/data/shrunk",
+    "keep_tree": true,
+    "skip_if_smaller": true
+  },
+  "resolved_h264_20mbps": "{\"video\":{\"codec\":\"hevc\",\"quality\":2,\"reencode_if_same_codec\":true},\"audio\":{\"mode\":\"keep_preferred\",\"preferred_languages\":[\"eng\",\"ger\"],\"compact_codec\":\"aac\"},\"subtitles\":{\"mode\":\"remove\",\"preferred_languages\":null,\"extract_removed\":true},\"container\":\"mkv\"}",
+  "resolved_hevc_skipped": "{\"video\":{\"codec\":\"copy\",\"quality\":3,\"reencode_if_same_codec\":false},\"audio\":{\"mode\":\"keep_preferred\",\"preferred_languages\":[\"eng\",\"ger\"],\"compact_codec\":\"aac\"},\"subtitles\":{\"mode\":\"remove\",\"preferred_languages\":null,\"extract_removed\":true},\"container\":\"mkv\"}",
+  "easy_default_target": "{\"video\":{\"codec\":\"hevc\",\"quality\":3,\"reencode_if_same_codec\":false},\"audio\":{\"mode\":\"keep_all\",\"preferred_languages\":[\"eng\"],\"compact_codec\":\"aac\"},\"subtitles\":{\"mode\":\"keep_all\",\"preferred_languages\":[\"eng\"],\"extract_removed\":false},\"container\":\"mkv\"}",
+  "easy_default_describe": [
+    "Look inside the file to see what it is.",
+    "Only when the video is not HEVC: Encode the video as HEVC at quality 3 of 5 (lower saves more space).",
+    "Put everything into a MKV file.",
+    "Keep every audio track exactly as it is.",
+    "Keep all subtitles."
+  ]
+}

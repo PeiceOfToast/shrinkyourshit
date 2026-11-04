@@ -250,14 +250,16 @@ func ApplyStep(eff *Effective, s PlanStep, info probe.MediaInfo, kind probe.Kind
 		if err := decodeParams(s.Params, &par); err != nil {
 			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
 		}
-		eff.Target.Video = VideoTarget{
-			Codec:   par.Codec,
-			Quality: par.Quality,
-			// Guarded only by if_codec_not means "encode unless
-			// already this codec" — exactly the default satisfied
-			// rule (DECISIONS.md B2), so the flag stays off.
-			ReencodeIfSameCodec: !allCodecNot(s.When),
+		// Guarded only by if_codec_not means "encode unless already this
+		// codec" — exactly the default satisfied rule (DECISIONS.md B2),
+		// so the flag stays off.
+		applyTranscode(&eff.Target.Video, par, !allCodecNot(s.When))
+	case StepScale:
+		var par scaleParams
+		if err := decodeParams(s.Params, &par); err != nil {
+			return true, fmt.Errorf("flow: step %s: %w", s.ID, err)
 		}
+		eff.Target.Video.Scale = scaleTarget(par)
 	case StepRemuxContainer:
 		var par remuxContainerParams
 		if err := decodeParams(s.Params, &par); err != nil {
@@ -368,6 +370,34 @@ func allCodecNot(when []Condition) bool {
 	return len(when) > 0
 }
 
+// applyTranscode writes a transcode_video step onto the video target. It
+// keeps Scale (a scale step may come before the encode in the chain), and
+// replaces everything the encode owns. An empty rate_mode is quality, so the
+// rate stays nil and an existing two field graph yields today's Target.
+func applyTranscode(v *VideoTarget, par transcodeVideoParams, reencodeIfSameCodec bool) {
+	v.Codec = par.Codec
+	v.Quality = par.Quality
+	v.ReencodeIfSameCodec = reencodeIfSameCodec
+	v.Rate = nil
+	switch par.RateMode {
+	case RateModeCRF:
+		v.Rate = &RateTarget{Mode: RateModeCRF, CRF: par.CRF, MaxKBPS: par.MaxKBPS}
+	case RateModeBitrate:
+		v.Rate = &RateTarget{Mode: RateModeBitrate, BitrateKBPS: par.BitrateKBPS, MaxKBPS: par.MaxKBPS}
+	}
+	v.Preset = par.Preset
+}
+
+// scaleTarget turns a scale step into its Target form, filling the defaults:
+// only_if_larger true, allow_upscale false.
+func scaleTarget(par scaleParams) *ScaleTarget {
+	onlyIfLarger := true
+	if par.OnlyIfLarger != nil {
+		onlyIfLarger = *par.OnlyIfLarger
+	}
+	return &ScaleTarget{Height: int(par.Height), OnlyIfLarger: onlyIfLarger, AllowUpscale: par.AllowUpscale}
+}
+
 // normalizeHealthCheck fills a health_check step's zero fields with the
 // defaults (task 24): mode sample, minutes 2, tolerance 0.02.
 func normalizeHealthCheck(p healthCheckParams) HealthCheckSpec {
@@ -400,11 +430,12 @@ func (p Plan) Target() Target {
 		case StepTranscodeVideo:
 			var par transcodeVideoParams
 			if err := decodeParams(s.Params, &par); err == nil {
-				t.Video = VideoTarget{
-					Codec:               par.Codec,
-					Quality:             par.Quality,
-					ReencodeIfSameCodec: !allCodecNot(s.When),
-				}
+				applyTranscode(&t.Video, par, !allCodecNot(s.When))
+			}
+		case StepScale:
+			var par scaleParams
+			if err := decodeParams(s.Params, &par); err == nil {
+				t.Video.Scale = scaleTarget(par)
 			}
 		case StepRemuxContainer:
 			var par remuxContainerParams
@@ -512,6 +543,9 @@ func ParseParams(s Step) (any, error) {
 	case StepTranscodeVideo:
 		var p transcodeVideoParams
 		return p, decodeParams(s.Params, &p)
+	case StepScale:
+		var p scaleParams
+		return p, decodeParams(s.Params, &p)
 	case StepRemuxContainer:
 		var p remuxContainerParams
 		return p, decodeParams(s.Params, &p)
@@ -564,7 +598,11 @@ func describeStep(s PlanStep) string {
 	case StepTranscodeVideo:
 		var p transcodeVideoParams
 		_ = decodeParams(s.Params, &p)
-		return guard + fmt.Sprintf("Encode the video as %s at quality %d of 5 (lower saves more space).", codecLabel(p.Codec), p.Quality)
+		return guard + describeTranscode(p)
+	case StepScale:
+		var p scaleParams
+		_ = decodeParams(s.Params, &p)
+		return guard + describeScale(scaleTarget(p))
 	case StepRemuxContainer:
 		var p remuxContainerParams
 		_ = decodeParams(s.Params, &p)
@@ -631,6 +669,44 @@ func describeStep(s PlanStep) string {
 		return guard + line
 	}
 	return guard + "(unknown step)"
+}
+
+// describeTranscode renders a transcode_video step. A step with only the
+// original fields reads exactly as it did before task 54 (the golden test
+// holds it to that).
+func describeTranscode(p transcodeVideoParams) string {
+	var line string
+	switch p.RateMode {
+	case RateModeCRF:
+		line = fmt.Sprintf("Encode the video as %s at a constant quality of CRF %s (lower is better quality and a bigger file).", codecLabel(p.Codec), trimFloat(p.CRF))
+	case RateModeBitrate:
+		line = fmt.Sprintf("Encode the video as %s at a target of %d kbps.", codecLabel(p.Codec), p.BitrateKBPS)
+	default:
+		line = fmt.Sprintf("Encode the video as %s at quality %d of 5 (lower saves more space).", codecLabel(p.Codec), p.Quality)
+	}
+	if p.MaxKBPS > 0 {
+		line += fmt.Sprintf(" Never more than %d kbps.", p.MaxKBPS)
+	}
+	if p.Preset != "" {
+		line += fmt.Sprintf(" Speed preset %s (slower presets save more space and take longer).", p.Preset)
+	}
+	if p.Hardware != "" && p.Hardware != HardwareAuto {
+		line += fmt.Sprintf(" Hardware: %s.", p.Hardware)
+	}
+	return line
+}
+
+// describeScale renders a scale step in plain language.
+func describeScale(sc *ScaleTarget) string {
+	size := fmt.Sprintf("%dp", sc.Height)
+	switch {
+	case sc.AllowUpscale:
+		return fmt.Sprintf("Scale the video to %s, enlarging it when it is smaller.", size)
+	case sc.OnlyIfLarger:
+		return fmt.Sprintf("Scale the video down to %s when it is taller; a smaller video is left as it is.", size)
+	default:
+		return fmt.Sprintf("Scale the video to %s; a smaller video is not enlarged.", size)
+	}
 }
 
 func describeConditions(when []Condition) string {
@@ -717,15 +793,24 @@ type ParamField struct {
 
 // StepTypeInfo is one palette entry of GET /api/v1/flows/step-types.
 type StepTypeInfo struct {
-	Type        string       `json:"type"`
-	Label       string       `json:"label"`
-	Description string       `json:"description"`
+	Type        string `json:"type"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
 	// Condition marks guard steps: they gate the step that follows them.
 	Condition bool         `json:"condition"`
 	Params    []ParamField `json:"params"`
 }
 
 func floatPtr(v float64) *float64 { return &v }
+
+// intStrings renders integer options as the strings the select fields carry.
+func intStrings(vs []int) []string {
+	out := make([]string, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, strconv.Itoa(v))
+	}
+	return out
+}
 
 // StepTypes is the v1 palette, in stack order (probe first, guards before
 // the actions they gate).
@@ -760,12 +845,28 @@ func StepTypes() []StepTypeInfo {
 			}},
 		},
 		{
+			Type:        StepScale,
+			Label:       "Scale the video",
+			Description: "Resize the video to a height, keeping its shape. Never enlarges a smaller video unless allowed.",
+			Params: []ParamField{
+				{Name: "height", Label: "height", Kind: "select", Options: intStrings(ScaleHeights()), Required: true, Default: 1080, Help: "The height to scale to: 2160 is 4K, 1080 is full HD."},
+				{Name: "only_if_larger", Label: "only when taller than this", Kind: "toggle", Default: true, Help: "Scale only videos taller than the height. On by default."},
+				{Name: "allow_upscale", Label: "allow enlarging", Kind: "toggle", Default: false, Help: "Also enlarge a video that is smaller than the height. Off by default."},
+			},
+		},
+		{
 			Type:        StepTranscodeVideo,
 			Label:       "Encode the video",
-			Description: "Re-encode the video with this codec and quality (1 saves the most space, 5 the least).",
+			Description: "Re-encode the video with this codec and quality (1 saves the most space, 5 the least). Rate, speed and hardware are optional.",
 			Params: []ParamField{
 				{Name: "codec", Label: "codec", Kind: "select", Options: []string{CodecHEVC, CodecAV1, CodecH264}, Required: true, Default: CodecHEVC},
 				{Name: "quality", Label: "quality", Kind: "number", Min: floatPtr(QualityMin), Max: floatPtr(QualityMax), Required: true, Default: 3},
+				{Name: "rate_mode", Label: "rate control", Kind: "select", Options: []string{RateModeQuality, RateModeCRF, RateModeBitrate}, Default: RateModeQuality, Help: "quality uses the quality number above; crf holds a constant quality; bitrate aims at a size."},
+				{Name: "crf", Label: "crf", Kind: "number", Min: floatPtr(CRFMin), Max: floatPtr(CRFMax), Help: "Only for crf rate control. Above 0; lower is better quality."},
+				{Name: "bitrate_kbps", Label: "target bitrate (kbps)", Kind: "number", Min: floatPtr(1), Help: "Only for bitrate rate control."},
+				{Name: "max_kbps", Label: "maximum bitrate (kbps)", Kind: "number", Min: floatPtr(1), Help: "Optional cap for crf or bitrate control. Leave empty for no cap."},
+				{Name: "preset", Label: "speed preset", Kind: "select", Options: Presets(), Help: "Slower presets save more space and take longer. Leave empty for balanced."},
+				{Name: "hardware", Label: "hardware", Kind: "select", Options: []string{HardwareAuto, HardwareQSV, HardwareVAAPI, HardwareVideoToolbox, HardwareSoftware}, Default: HardwareAuto, Help: "auto follows the global encoder policy for this step."},
 			},
 		},
 		{
@@ -844,4 +945,3 @@ func StepTypes() []StepTypeInfo {
 		},
 	}
 }
-

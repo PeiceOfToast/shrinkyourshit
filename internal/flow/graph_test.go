@@ -376,3 +376,137 @@ func TestStepTypesIncludePlugin(t *testing.T) {
 	require.Equal(t, "continue_on_error", pl.Params[1].Name)
 	require.Equal(t, "toggle", pl.Params[1].Kind)
 }
+
+/* ------------------------------------------------------------------ */
+/* Scale and the widened transcode_video (task 54)                     */
+/* ------------------------------------------------------------------ */
+
+// TestValidateScaleHeight: only 2160, 1440, 1080, 720 and 480 are valid. A
+// bad height is a FieldError on params.height, and the select's string form
+// ("1080") is accepted the same as the number.
+func TestValidateScaleHeight(t *testing.T) {
+	for _, h := range []string{"2160", "1440", "1080", "720", "480", "1080"} {
+		g := graphWith(Step{ID: "sc", Type: StepScale, Params: json.RawMessage(`{"height":` + h + `}`)})
+		require.Empty(t, Validate(g), "height %s must validate", h)
+	}
+	g := graphWith(Step{ID: "sc", Type: StepScale, Params: json.RawMessage(`{"height":"1080"}`)})
+	require.Empty(t, Validate(g), "the select sends the height as a string")
+
+	for _, h := range []string{"1000", "0", "4320"} {
+		g := graphWith(Step{ID: "sc", Type: StepScale, Params: json.RawMessage(`{"height":` + h + `}`)})
+		errs := Validate(g)
+		require.Len(t, errs, 1, "height %s", h)
+		require.Equal(t, "nodes[1].params.height", errs[0].Path)
+	}
+	// A value that is not a whole number is rejected too, not silently zeroed.
+	g = graphWith(Step{ID: "sc", Type: StepScale, Params: json.RawMessage(`{"height":"tall"}`)})
+	require.NotEmpty(t, Validate(g))
+}
+
+// TestValidateScaleIsShapingOnce: a Target holds one scale, so a graph may
+// hold one scale step.
+func TestValidateScaleIsShapingOnce(t *testing.T) {
+	g := graphWith(Step{ID: "sc", Type: StepScale, Params: json.RawMessage(`{"height":720}`)})
+	g.Nodes = append(g.Nodes[:2], append([]Step{{ID: "sc2", Type: StepScale, Params: json.RawMessage(`{"height":480}`)}}, g.Nodes[2:]...)...)
+	g.Edges = []Edge{{From: "probe", To: "sc"}, {From: "sc", To: "sc2"}, {From: "sc2", To: "remux"}}
+	require.Contains(t, errsText(Validate(g)), "only one scale step is allowed")
+}
+
+// TestValidateTranscodeCrossFieldRules: the seven cross field rules of spec
+// 5.2. Each has a failing case that names the field and a passing case.
+// Rule 1: crf mode needs a crf. Rule 2: bitrate mode needs a bitrate. Rule
+// 3: crf outside crf mode. Rule 4: bitrate outside bitrate mode. Rule 5:
+// max_kbps in quality mode. Rule 6: max_kbps below bitrate in bitrate mode.
+// Rule 7: an unknown rate_mode. A crf value above 51 is a range error on
+// its own field.
+func TestValidateTranscodeCrossFieldRules(t *testing.T) {
+	cases := []struct {
+		rule   string
+		params string
+		field  string // "" means the case must pass
+	}{
+		{"1 crf mode needs crf", `{"codec":"hevc","quality":3,"rate_mode":"crf"}`, "params.crf"},
+		{"1 crf mode with crf passes", `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":22}`, ""},
+		{"2 bitrate mode needs bitrate", `{"codec":"hevc","quality":3,"rate_mode":"bitrate"}`, "params.bitrate_kbps"},
+		{"2 bitrate mode with bitrate passes", `{"codec":"hevc","quality":3,"rate_mode":"bitrate","bitrate_kbps":4000}`, ""},
+		{"3 crf outside crf mode", `{"codec":"hevc","quality":3,"rate_mode":"bitrate","bitrate_kbps":4000,"crf":22}`, "params.crf"},
+		{"3 crf without any mode", `{"codec":"hevc","quality":3,"crf":22}`, "params.crf"},
+		{"4 bitrate outside bitrate mode", `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":22,"bitrate_kbps":4000}`, "params.bitrate_kbps"},
+		{"4 bitrate in quality mode", `{"codec":"hevc","quality":3,"rate_mode":"quality","bitrate_kbps":4000}`, "params.bitrate_kbps"},
+		{"5 max in quality mode", `{"codec":"hevc","quality":3,"max_kbps":9000}`, "params.max_kbps"},
+		{"5 max in crf mode passes", `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":22,"max_kbps":9000}`, ""},
+		{"6 max below bitrate", `{"codec":"hevc","quality":3,"rate_mode":"bitrate","bitrate_kbps":8000,"max_kbps":4000}`, "params.max_kbps"},
+		{"6 max at or above bitrate passes", `{"codec":"hevc","quality":3,"rate_mode":"bitrate","bitrate_kbps":4000,"max_kbps":8000}`, ""},
+		{"7 unknown rate mode", `{"codec":"hevc","quality":3,"rate_mode":"vbr"}`, "params.rate_mode"},
+		{"crf range above 51", `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":52}`, "params.crf"},
+		{"crf zero is not crf mode", `{"codec":"hevc","quality":3,"rate_mode":"crf","crf":0}`, "params.crf"},
+		{"no rate fields passes", `{"codec":"hevc","quality":3}`, ""},
+		{"quality rate mode passes", `{"codec":"hevc","quality":3,"rate_mode":"quality"}`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.rule, func(t *testing.T) {
+			g := graphWith(Step{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(c.params)})
+			errs := Validate(g)
+			if c.field == "" {
+				require.Empty(t, errs, errsText(errs))
+				return
+			}
+			require.Len(t, errs, 1, errsText(errs))
+			require.Equal(t, "nodes[1]."+c.field, errs[0].Path)
+		})
+	}
+}
+
+// TestValidateTranscodePresetAndHardware: presets are the seven named values
+// or empty; hardware is auto, qsv, vaapi, videotoolbox, software or empty.
+func TestValidateTranscodePresetAndHardware(t *testing.T) {
+	for _, p := range []string{"veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", ""} {
+		g := graphWith(Step{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"preset":"` + p + `"}`)})
+		require.Empty(t, Validate(g), "preset %q", p)
+	}
+	g := graphWith(Step{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"preset":"ultrafast"}`)})
+	require.Contains(t, errsText(Validate(g)), "params.preset")
+	for _, h := range []string{"auto", "qsv", "vaapi", "videotoolbox", "software"} {
+		g := graphWith(Step{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"hardware":"` + h + `"}`)})
+		require.Empty(t, Validate(g), "hardware %q", h)
+	}
+	g = graphWith(Step{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"hardware":"cuda"}`)})
+	require.Contains(t, errsText(Validate(g)), "params.hardware")
+}
+
+// TestValidateTranscodeUnknownFieldRejected: the new fields are known, but a
+// typo in a field name is still an error, not silently ignored.
+func TestValidateTranscodeUnknownFieldRejected(t *testing.T) {
+	g := graphWith(Step{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"bitrate":4000}`)})
+	require.NotEmpty(t, Validate(g))
+}
+
+// TestStepTypesScaleAndTranscodeOptions: the palette the UI renders lists the
+// scale step and every option of the widened transcode_video.
+func TestStepTypesScaleAndTranscodeOptions(t *testing.T) {
+	byType := map[string]StepTypeInfo{}
+	for _, st := range StepTypes() {
+		byType[st.Type] = st
+	}
+	sc, ok := byType[StepScale]
+	require.True(t, ok, "scale must be in the palette")
+	require.False(t, sc.Condition)
+	require.Len(t, sc.Params, 3)
+	require.Equal(t, "height", sc.Params[0].Name)
+	require.Equal(t, "select", sc.Params[0].Kind)
+	require.Equal(t, []string{"2160", "1440", "1080", "720", "480"}, sc.Params[0].Options)
+	require.Equal(t, "only_if_larger", sc.Params[1].Name)
+	require.Equal(t, true, sc.Params[1].Default)
+	require.Equal(t, "allow_upscale", sc.Params[2].Name)
+	require.Equal(t, false, sc.Params[2].Default)
+
+	tv := byType[StepTranscodeVideo]
+	names := make([]string, 0, len(tv.Params))
+	for _, f := range tv.Params {
+		names = append(names, f.Name)
+	}
+	require.Equal(t, []string{"codec", "quality", "rate_mode", "crf", "bitrate_kbps", "max_kbps", "preset", "hardware"}, names)
+	require.Equal(t, []string{"quality", "crf", "bitrate"}, tv.Params[2].Options)
+	require.Equal(t, []string{"veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}, tv.Params[6].Options)
+	require.Equal(t, []string{"auto", "qsv", "vaapi", "videotoolbox", "software"}, tv.Params[7].Options)
+}

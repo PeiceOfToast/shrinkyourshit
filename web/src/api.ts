@@ -175,11 +175,32 @@ export function updateSettings(body: SettingsUpdate): Promise<Settings> {
  * desired end state of a library; Easy is the easy-screen input that
  * compiled to it (null when the library has no easy representation).
  */
+/** Video scale on a Target (task 54). Height is 2160, 1440, 1080, 720 or 480. */
+export interface TargetScale {
+  height: number
+  only_if_larger: boolean
+  allow_upscale: boolean
+}
+
+/** Video rate control on a Target (task 54). A missing rate means quality. */
+export interface TargetRate {
+  mode: 'quality' | 'crf' | 'bitrate'
+  crf: number
+  bitrate_kbps: number
+  max_kbps: number
+}
+
 export interface Target {
   video: {
     codec: string
     quality: number
     reencode_if_same_codec: boolean
+    /** Optional (task 54): absent means the height is left alone. */
+    scale?: TargetScale
+    /** Optional (task 54): absent means quality, the scalar above. */
+    rate?: TargetRate
+    /** Optional (task 54): veryfast..veryslow; absent or empty is balanced. */
+    preset?: string
   }
   audio: {
     mode: string
@@ -672,6 +693,26 @@ export interface FlowGraph {
   schema: number
   nodes: FlowStep[]
   edges: FlowEdge[]
+}
+
+/** Params of a `scale` step (task 54). The height select sends a string. */
+export interface ScaleStepParams {
+  height: number | string
+  only_if_larger?: boolean
+  allow_upscale?: boolean
+}
+
+/** Params of a `transcode_video` step (task 54); the rate, preset and
+ * hardware fields are optional and absent on existing graphs. */
+export interface TranscodeVideoStepParams {
+  codec: string
+  quality: number
+  rate_mode?: 'quality' | 'crf' | 'bitrate'
+  crf?: number
+  bitrate_kbps?: number
+  max_kbps?: number
+  preset?: string
+  hardware?: 'auto' | 'qsv' | 'vaapi' | 'videotoolbox' | 'software'
 }
 
 export interface FlowFieldError {

@@ -51,6 +51,33 @@ const (
 	QualityMax = 5
 )
 
+// Rate modes for RateTarget.Mode. A nil Target.Video.Rate means quality, the
+// existing scalar meaning (Target.Video.Quality).
+const (
+	RateModeQuality = "quality"
+	RateModeCRF     = "crf"
+	RateModeBitrate = "bitrate"
+)
+
+// Speed presets for VideoTarget.Preset, fastest to slowest. The empty string
+// means the balanced default (encoders map it to their medium preset).
+var presetValues = []string{"veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
+
+// Presets lists the valid VideoTarget.Preset values, fastest to slowest.
+func Presets() []string { return append([]string(nil), presetValues...) }
+
+// Scale heights for ScaleTarget.Height, largest first.
+var scaleHeights = []int{2160, 1440, 1080, 720, 480}
+
+// ScaleHeights lists the valid ScaleTarget.Height values, largest first.
+func ScaleHeights() []int { return append([]int(nil), scaleHeights...) }
+
+// CRF bounds for RateTarget.CRF. Zero is not a valid CRF in crf mode.
+const (
+	CRFMin = 0.0
+	CRFMax = 51.0
+)
+
 // Target is the desired end state for files in a library. Its JSON shape is
 // fixed by ARCHITECTURE.md; changing it is a schema migration.
 type Target struct {
@@ -69,6 +96,101 @@ type VideoTarget struct {
 	// ReencodeIfSameCodec overrides the skip-when-already-target rule
 	// (DECISIONS.md B2). Off by default.
 	ReencodeIfSameCodec bool `json:"reencode_if_same_codec"`
+	// Scale resizes the video. Nil means the resolution is left alone.
+	// Task 54: stored and resolved; the encoders apply it in task 55.
+	Scale *ScaleTarget `json:"scale,omitempty"`
+	// Rate is the rate control. Nil means quality (Quality above).
+	Rate *RateTarget `json:"rate,omitempty"`
+	// Preset is the encoder speed preset: veryfast..veryslow. Empty means
+	// balanced.
+	Preset string `json:"preset,omitempty"`
+}
+
+// ScaleTarget resizes the video by its height and keeps the aspect ratio.
+type ScaleTarget struct {
+	// Height is 2160, 1440, 1080, 720 or 480.
+	Height int `json:"height"`
+	// OnlyIfLarger scales only when the source is taller than Height. The
+	// scale step defaults it to true; a stored Target always writes it.
+	OnlyIfLarger bool `json:"only_if_larger"`
+	// AllowUpscale permits enlarging a source shorter than Height. Default
+	// false: a video is never enlarged.
+	AllowUpscale bool `json:"allow_upscale"`
+}
+
+// RateTarget is one of three rate control modes. Crf and bitrate are
+// mutually exclusive; MaxKBPS caps either one (zero means uncapped).
+type RateTarget struct {
+	// Mode is quality (reserved: a nil Rate is quality), crf or bitrate.
+	Mode string `json:"mode"`
+	// CRF is 0 to 51 and must be above zero in crf mode.
+	CRF float64 `json:"crf"`
+	// BitrateKBPS is the target video bitrate, required in bitrate mode.
+	BitrateKBPS int `json:"bitrate_kbps"`
+	// MaxKBPS caps the bitrate. In bitrate mode it must not be below
+	// BitrateKBPS.
+	MaxKBPS int `json:"max_kbps"`
+}
+
+// rateRuleError checks the rate fields of a transcode step or a RateTarget
+// against their mode. It returns the offending field name and a plain
+// message, or empty strings when the combination is valid. An empty mode
+// means quality. The rules are the cross field rules of spec 5.2; a value
+// set outside its mode is an error, never silently ignored.
+func rateRuleError(mode string, crf float64, bitrateKBPS, maxKBPS int) (field, msg string) {
+	switch mode {
+	case "", RateModeQuality:
+		switch {
+		case crf != 0:
+			return "crf", "crf only applies when rate_mode is crf"
+		case bitrateKBPS != 0:
+			return "bitrate_kbps", "bitrate_kbps only applies when rate_mode is bitrate"
+		case maxKBPS != 0:
+			return "max_kbps", "max_kbps only applies when rate_mode is crf or bitrate"
+		}
+	case RateModeCRF:
+		switch {
+		case crf <= CRFMin || crf > CRFMax:
+			return "crf", "rate_mode crf needs a crf above 0 and up to 51"
+		case bitrateKBPS != 0:
+			return "bitrate_kbps", "bitrate_kbps only applies when rate_mode is bitrate"
+		}
+	case RateModeBitrate:
+		switch {
+		case bitrateKBPS <= 0:
+			return "bitrate_kbps", "rate_mode bitrate needs a bitrate above 0 kbps"
+		case crf != 0:
+			return "crf", "crf only applies when rate_mode is crf"
+		case maxKBPS != 0 && maxKBPS < bitrateKBPS:
+			return "max_kbps", "max_kbps must not be below bitrate_kbps"
+		}
+	default:
+		return "rate_mode", fmt.Sprintf("want quality, crf or bitrate, got %q", mode)
+	}
+	return "", ""
+}
+
+// validScaleHeight reports whether h is one of the scale heights.
+func validScaleHeight(h int) bool {
+	for _, v := range scaleHeights {
+		if v == h {
+			return true
+		}
+	}
+	return false
+}
+
+// validPreset reports whether p is "" or one of the speed presets.
+func validPreset(p string) bool {
+	if p == "" {
+		return true
+	}
+	for _, v := range presetValues {
+		if v == p {
+			return true
+		}
+	}
+	return false
 }
 
 // AudioTarget describes how audio tracks are selected and compacted.
@@ -114,6 +236,18 @@ func (t Target) Validate() error {
 	}
 	if t.Video.Quality < QualityMin || t.Video.Quality > QualityMax {
 		return fmt.Errorf("invalid video quality %d: want %d to %d", t.Video.Quality, QualityMin, QualityMax)
+	}
+	if t.Video.Scale != nil && !validScaleHeight(t.Video.Scale.Height) {
+		return fmt.Errorf("invalid scale height %d: want 2160, 1440, 1080, 720 or 480", t.Video.Scale.Height)
+	}
+	if !validPreset(t.Video.Preset) {
+		return fmt.Errorf("invalid preset %q: want veryfast, faster, fast, medium, slow, slower or veryslow", t.Video.Preset)
+	}
+	if t.Video.Rate != nil {
+		r := t.Video.Rate
+		if field, msg := rateRuleError(r.Mode, r.CRF, r.BitrateKBPS, r.MaxKBPS); field != "" {
+			return fmt.Errorf("invalid rate %s: %s", field, msg)
+		}
 	}
 	switch t.Audio.Mode {
 	case AudioKeepAll, AudioKeepPreferred, AudioKeepBest, AudioCompact:

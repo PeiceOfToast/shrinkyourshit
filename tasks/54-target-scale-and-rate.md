@@ -48,13 +48,13 @@ No encoder argument changes (task 55). No new condition steps (56). No UI.
 
 ## Acceptance
 
-- [ ] A graph saved by the current release still parses, validates and produces the identical
+- [x] A graph saved by the current release still parses, validates and produces the identical
       `Target` and `Describe` output. Prove it with a golden test built from a v1.9 graph.
-- [ ] `scale` rejects an unsupported height with a `FieldError` naming the field path.
-- [ ] Each of the seven new `transcode_video` cross field rules has a failing test and passes.
-- [ ] `StepTypes()` lists `scale` and the widened `transcode_video` with every option.
-- [ ] `go test ./internal/flow/...` passes and `make test` is green.
-- [ ] `ARCHITECTURE.md` documents the new Target fields.
+- [x] `scale` rejects an unsupported height with a `FieldError` naming the field path.
+- [x] Each of the seven new `transcode_video` cross field rules has a failing test and passes.
+- [x] `StepTypes()` lists `scale` and the widened `transcode_video` with every option.
+- [x] `go test ./internal/flow/...` passes and `make test` is green.
+- [x] `ARCHITECTURE.md` documents the new Target fields.
 
 ## Notes
 
