@@ -13,12 +13,12 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] SegmentedControl with a neutral selected state and an "In use" badge from `flow.source`.
-- [ ] The three-tier caption.
-- [ ] Banners for the replace warnings (test ids kept).
-- [ ] "Save rules".
-- [ ] Step rows use 44 px icon buttons with aria-labels.
-- [ ] No `rose-` remaining.
+- [x] SegmentedControl with a neutral selected state and an "In use" badge from `flow.source`.
+- [x] The three-tier caption.
+- [x] Banners for the replace warnings (test ids kept).
+- [x] "Save rules".
+- [x] Step rows use 44 px icon buttons with aria-labels.
+- [x] No `rose-` remaining.
 
 ## Rules for this wave
 
