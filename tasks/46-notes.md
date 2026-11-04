@@ -44,17 +44,15 @@ Files: `web/src/FlowCanvas.tsx`, `FlowCanvasPage.tsx`, `FlowInspector.tsx`, `Flo
 - The `rose-` check (`RulesPage.test.tsx:275`) covers only the rules files. Flow files are now free of `rose-`, `slate-`, and `text-[10px]`, but no test enforces it yet. Task 53 is the place to add that.
 
 ## Verification
-- `npm run test` (web): 58 files, 389 tests, all green (task 45 baseline 383, plus 6 new).
-- `npm run lint` (eslint `--max-warnings 0`), `npm run format:check`, `npx tsc --noEmit`: clean.
-- `npm run build`: clean.
-- `go test ./...`: all packages `ok`.
-- `./scripts/check-spdx.sh`: exit 0.
-- `npx playwright test` against the rebuilt binary (`internal/webui/dist` replaced with the new `web/dist`, then `go build`): 61 passed, 6 skipped, exit 0. The 6 skips are the file-table tests in `e2e/layout.spec.ts`, which skip when no file row is seeded (ffmpeg is absent on this VM). The flow background test passed on all three projects.
-- `make` is not installed on this VM. I ran the same commands by hand, with Node and Go from `~/.local`.
+- `make test` (Go suites and web): exit 0. Web 58 files, 389 tests (task 45 baseline 383, plus 6 new). Go packages all `ok`.
+- `make lint` (go vet, golangci-lint, SPDX, eslint `--max-warnings 0`, prettier): exit 0.
+- `make build` (web build, copy into the embed, Go binary): exit 0.
+- Playwright (`npx playwright test`) against the rebuilt binary, with ffmpeg on PATH: 64 passed, 3 skipped, exit 0. The 3 skips are the file-table tests in `e2e/layout.spec.ts` that the suite runs only at one width (its own skips). The flow background test passed on all three projects.
+- The first Playwright run in this task had no ffmpeg on PATH, so 6 skips appeared and the seed had no file row. That run is superseded by the one above.
 
 ## Summary
 1. **Built:** the Flow page (Advanced tier) on spec 5.9: the Rules `PageHeader` with breadcrumb `Libraries › {name}` and title "Rules", the Rules `SegmentedControl` with the "In use" badge, one "Edit flow", "Save rules", Banners for the notices, the canvas frame at viewport height, node faces on tokens with no step id, the inspector showing the id, the palette as a card, `fitViewOptions` at minZoom 0.85, and the minimap only at 10 or more steps.
 2. **Skipped:** nothing in the acceptance list. The tier caption and the tier-specific Rules link (deviations 2 and 3) are not on this page.
 3. **Next tasks should know:** `flow-back` and `flow-source` are gone, and the tests now use `tier-steps` and `tier-advanced-in-use`. Easy and Steps links land on the rules page with the saved tier, not the chosen one (deviation 2). `FlowInspector` and `FlowPalette` use the card recipe, not `Card`.
 4. **Owner decisions:** deviation 2 (tier links open the saved tier), deviation 4 (banner copy for non-Easy sources), and the canvas height formula on phones (deviation 8).
-5. **Known gaps:** no real-device check of the canvas height. The Playwright file-table skips depend on ffmpeg in the seed; CI with ffmpeg will run those.
+5. **Known gaps:** no real-device check of the canvas height.
