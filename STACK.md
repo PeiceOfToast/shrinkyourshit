@@ -36,6 +36,7 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 | Tests | Vitest plus React Testing Library for components, Playwright for layout and end to end (task 12) |
 | Lint/format | ESLint plus Prettier, defaults |
 | Embedding | `web/dist` embedded into the Go binary with `go:embed`; Go serves `index.html` for unknown paths so client routing works. |
+| Fonts | Inter Variable via `@fontsource-variable/inter`, self-hosted in the bundle, latin subset only, OFL-1.1. No CDN request. |
 | Updates | Binary self update from GitHub releases with sha256 verification, container updates by image pull. No update library, no auto apply. |
 
 ## Config reference
