@@ -269,3 +269,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T04:11:33Z task 39: verified PR #42 (9/9 CI checks green including docker-arm64, acceptance checklist 9/9 ticked, STATUS.md done, DECISIONS.md unchanged vs origin/main, make test 54 files / 325 web tests plus go suites green, make lint 0 issues), merged squash, main at dbabf08, remote branch deleted, main pulled on VM
 - 2026-11-04T04:11:33Z pm: killed lingering task 39 claude process (pid 1401988) after its final result; run 20261104-034627-bbd03e77 state done, cost $0.9163
 - 2026-11-04T04:11:33Z pm: v1.9 next task is 40 (app shell and encoding status), starts next tick
+- 2026-11-04T04:18:40Z task 40: dispatched on VM 201 under Claude Code build role (haiku), session f381675a-44b6-4c0d-93a1-8719ca0b28a3, branch task/40-app-shell-encoding-status, run 20261104-041625-fdb2be18; deps 39 done, v1.9 tasks 40-53 all todo on main 637f72b.
