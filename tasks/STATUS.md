@@ -73,3 +73,21 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 51 | 51-setup-login.md | done | PR #54 https://github.com/PeiceOfToast/shrinkyourshit/pull/54, v1.9, CI green (9 checks incl. e2e), checklist ticked |
 | 52 | 52-copy-sweep.md | done | PR #56 https://github.com/PeiceOfToast/shrinkyourshit/pull/56, v1.9, CI green (8 checks), checklist ticked |
 | 53 | 53-guardrail-lint-audit.md | done | PR #57 https://github.com/PeiceOfToast/shrinkyourshit/pull/57, v1.9, CI green (9 checks), checklist 3/3 ticked; wave complete |
+
+## v1.10 queue (encode settings tiers)
+
+Spec: `docs/design/encode-settings-tiers-2026-11-04.md`. Tasks run in order, one at a time.
+Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md` stays read only.
+
+| Task | File | Status | PR / note |
+|------|------|--------|-----------|
+| 54 | 54-target-scale-and-rate.md | todo | |
+| 55 | 55-encoder-rate-and-scale-args.md | todo | |
+| 56 | 56-condition-steps.md | todo | |
+| 57 | 57-per-step-hardware.md | todo | |
+| 58 | 58-raw-args-escape-hatch.md | todo | |
+| 59 | 59-tier-storage-and-representability.md | todo | |
+| 60 | 60-moderate-tree-editor.md | todo | |
+| 61 | 61-advanced-palette.md | todo | |
+| 62 | 62-tier-switch-and-banner.md | todo | |
+| 63 | 63-verify-and-document.md | todo | |

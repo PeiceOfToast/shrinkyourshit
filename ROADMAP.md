@@ -158,3 +158,16 @@ v1.3 to v1.8.
 ## Not planned for v1
 
 Multi-user accounts, SSO, roles, Postgres, any paid tier.
+
+## v1.10 encode settings tiers (scheduled 2026-11-04)
+
+Three editors over one canonical flow graph, per library, with an app wide default tier.
+Specification: `docs/design/encode-settings-tiers-2026-11-04.md`. Tasks 54 to 63.
+
+- Basic keeps the five stop slider and the audio slider; Moderate becomes a real decision tree with
+  condition rows and indented children; Advanced stays a canvas over a widened node set.
+- The engine gains resolution, CRF and bitrate rate control, speed presets, conditions on
+  resolution, audio channels and HDR, per step hardware selection, and one validated raw ffmpeg
+  arguments escape hatch.
+- A library can be moved down a tier without losing any step: the lower tier renders read only and
+  says which tier can edit what it cannot express.
