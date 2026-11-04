@@ -7,6 +7,10 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { login, type ApiError } from './api'
 import { meKey, useSetupStatus } from './queries'
 import { useToast } from './toastContext'
+import Banner from './Banner'
+import Icon from './Icon'
+import { Field } from './FormSection'
+import { btnBlock, btnPrimary, card, input } from './uiControls'
 
 export default function LoginPage() {
   const status = useSetupStatus()
@@ -44,9 +48,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-full items-center justify-center bg-slate-950 p-4 text-slate-100">
+    <main className="grid min-h-dvh place-items-center bg-canvas p-4 text-fg">
       <form
-        className="w-full max-w-sm rounded-2xl bg-slate-900 p-8 shadow-xl ring-1 ring-slate-800"
+        className={`${card} flex w-full max-w-sm flex-col gap-6 p-6 sm:p-8`}
         onSubmit={(e) => {
           e.preventDefault()
           setError(null)
@@ -54,43 +58,44 @@ export default function LoginPage() {
         }}
         data-testid="login-form"
       >
-        <h1 className="text-2xl font-bold tracking-tight">ShrinkYourShit</h1>
-        <p className="mt-1 text-sm text-slate-400">Log in to continue.</p>
-        <label className="mt-6 grid gap-1">
-          <span className="text-sm text-slate-300">Username</span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="login-username"
-          />
-        </label>
-        <label className="mt-3 grid gap-1">
-          <span className="text-sm text-slate-300">Password</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            className="w-full rounded-lg bg-slate-800 px-3 py-2"
-            data-testid="login-password"
-          />
-        </label>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <Icon name="brand" className="h-8 w-8 text-accent-text" />
+          <h1 className="text-title text-fg">Log in</h1>
+          <p className="text-body text-fg-muted">to ShrinkYourShit</p>
+        </div>
+        <div className="flex flex-col gap-4">
+          <Field label="Username" htmlFor="login-username">
+            <input
+              id="login-username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              className={input}
+              data-testid="login-username"
+            />
+          </Field>
+          <Field label="Password" htmlFor="login-password">
+            <input
+              id="login-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              className={input}
+              data-testid="login-password"
+            />
+          </Field>
+        </div>
         {error && (
-          <p
-            className="mt-3 text-sm text-red-400"
-            data-testid="login-error"
-            role="alert"
-          >
+          <Banner tone="danger" testId="login-error">
             {error}
-          </p>
+          </Banner>
         )}
         <button
           type="submit"
           disabled={doLogin.isPending}
-          className="mt-6 w-full rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          className={`${btnPrimary} ${btnBlock}`}
           data-testid="login-submit"
         >
           {doLogin.isPending ? 'Logging in…' : 'Log in'}

@@ -70,6 +70,6 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 48 | 48-nodes.md | done | PR #51 https://github.com/PeiceOfToast/shrinkyourshit/pull/51, v1.9, CI green (9 checks), checklist ticked |
 | 49 | 49-encode-app-settings.md | done | PR #52 https://github.com/PeiceOfToast/shrinkyourshit/pull/52, v1.9, CI green (9 checks), checklist ticked; 2 owner questions in notes (worker_concurrency unread, w-32 vs w-full) |
 | 50 | 50-integrations-plugins.md | done | PR #53 https://github.com/PeiceOfToast/shrinkyourshit/pull/53, v1.9, CI green (9 checks), checklist ticked |
-| 51 | 51-setup-login.md | todo |  |
+| 51 | 51-setup-login.md | done | PR #54 https://github.com/PeiceOfToast/shrinkyourshit/pull/54, v1.9, CI green (9 checks incl. e2e), checklist ticked |
 | 52 | 52-copy-sweep.md | todo |  |
 | 53 | 53-guardrail-lint-audit.md | todo |  |

@@ -24,7 +24,7 @@ acceptance checklist is fully ticked and STATUS.md is updated, or when you are b
 10. Never write to, rename, or delete a user's original file until the output has been verified. Never write bookkeeping files into a library folder.
 11. Tests: every acceptance item has at least one test. Unit tests must pass without ffmpeg. Tests that need ffmpeg use build tag `integration` and skip with a clear message when ffmpeg is absent. CI installs ffmpeg and runs both.
 12. Generate test media with ffmpeg (`-f lavfi -i testsrc`, `-f lavfi -i sine`) in test setup. Never commit media files.
-13. Branch `task/NN-short-name` from `main`. Commit small, message `task NN: <what>`. Open a PR when done. CI must be green.
+13. Branch `task/NN-short-name` from `main`. Commit small, message `task NN: <what>`. Push the branch. The supervisor opens the PR and runs the merge gate; leave tasks/STATUS.md in_progress with the branch name and stop. Never mark a task blocked just because no PR is open.
 14. Keep the UI plain-language on user-facing screens: no codec names or FFmpeg terms on the easy screen.
 
 ## Loop
