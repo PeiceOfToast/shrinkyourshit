@@ -1,29 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Library edit page (task 07, restyled in task 41). When the library was
- * produced by the easy screen its sliders reopen; a collapsed "Exact
- * settings" panel exposes the raw Target fields (codec,
- * reencode_if_same_codec, container, languages) — the only place in the UI
- * where codec names appear. Saving in exact mode sends a full target (which
- * clears the easy state server-side); saving in easy mode sends the easy
- * object. The option labels are plain language; the values are unchanged.
+ * Library edit page (task 07, restyled in task 41, properties only in task
+ * 47, spec 5.7). The page edits what the library is: name, folder, the
+ * watch flag and the file types. Its rules are a summary with a link to the
+ * Rules page, and Remove library sits in the Danger zone. The sliders and the
+ * exact-values panel moved to the Rules page (Easy and Steps tiers).
  *
- * Interim (task 41, spec 5.7): both panels stay. Task 47 removes the exact
- * panel once the owner signs off.
+ * The API needs a rule on every update (`target` or `easy`, see
+ * libraryParams). This page resends the rule the library already has,
+ * unchanged, so a save never changes the rules: the easy object when the easy
+ * tier owns the flow, the stored target otherwise. A stored target that
+ * matches the stored one keeps the flow; an easy save regenerates it.
  */
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
-import { getLibrary, updateLibrary, type LibraryBody, type Target } from './api'
-import Checkbox from './Checkbox'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  AudioSlider,
-  pathField,
-  QualitySlider,
-  RemoveSubtitlesCheckbox,
-} from './easyControls'
-import { parseEasy } from './easyModel'
+  deleteLibrary,
+  getLibrary,
+  updateLibrary,
+  type Library,
+  type LibraryBody,
+} from './api'
+import Checkbox from './Checkbox'
+import ConfirmDialog from './ConfirmDialog'
+import { pathField } from './easyControls'
+import { parseEasy, qualityLabel } from './easyModel'
 import ErrorBox from './ErrorBox'
 import { Field, FormActions, FormSection } from './FormSection'
 import FolderPickerModal from './FolderPickerModal'
@@ -32,51 +35,32 @@ import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
-import { btn, btnGhost, btnPrimary, input, select } from './uiControls'
+import { btn, btnDangerGhost, btnGhost, btnPrimary, input } from './uiControls'
 
-const CODEC_CHOICES = [
-  { value: 'hevc', label: 'HEVC (H.265) — recommended' },
-  { value: 'av1', label: 'AV1 — smallest files, newer devices only' },
-  { value: 'h264', label: 'H.264 — for very old devices' },
-  { value: 'copy', label: 'Copy — never re-encode the video' },
-]
+/** Plain-language audio part of the rules summary (spec 5.7). */
+const AUDIO_SUMMARY: Record<number, string> = {
+  1: 'keep every audio track',
+  2: 'keep audio in my languages',
+  3: 'keep the best audio track',
+  4: 'keep the best audio track, made small',
+}
 
-/** Human labels for the stored values (the values themselves are unchanged). */
-const CONTAINER_CHOICES = [
-  { value: 'mkv', label: 'MKV' },
-  { value: 'mp4', label: 'MP4' },
-]
-const AUDIO_MODE_CHOICES = [
-  { value: 'keep_all', label: 'Keep every track' },
-  { value: 'keep_preferred', label: 'Keep my languages' },
-  { value: 'keep_best', label: 'Keep the best track' },
-  { value: 'compact', label: 'Keep the best track, make it small' },
-]
-const SUBTITLE_MODE_CHOICES = [
-  { value: 'keep_all', label: 'Keep every track' },
-  { value: 'keep_preferred', label: 'Keep my languages' },
-  { value: 'remove', label: 'Remove all' },
-]
-
-function defaultTarget(lib: { target: Target }): Target {
-  return {
-    video: {
-      codec: lib.target.video.codec || 'hevc',
-      quality: lib.target.video.quality || 3,
-      reencode_if_same_codec: Boolean(lib.target.video.reencode_if_same_codec),
-    },
-    audio: {
-      mode: lib.target.audio.mode || 'keep_all',
-      preferred_languages: lib.target.audio.preferred_languages ?? ['eng'],
-      compact_codec: lib.target.audio.compact_codec || 'aac',
-    },
-    subtitles: {
-      mode: lib.target.subtitles.mode || 'keep_all',
-      preferred_languages: lib.target.subtitles.preferred_languages ?? ['eng'],
-      extract_removed: Boolean(lib.target.subtitles.extract_removed),
-    },
-    container: lib.target.container || 'mkv',
+/** One read-only line describing the rules, e.g. "Easy · Balanced · keep every audio track". */
+function rulesSummary(lib: Library): string {
+  if (lib.flow_source === 'easy') {
+    const easy = parseEasy(lib.easy)
+    const parts = [
+      'Easy',
+      qualityLabel(easy.quality),
+      AUDIO_SUMMARY[easy.audio] ?? AUDIO_SUMMARY[1],
+    ]
+    if (easy.remove_subtitles) parts.push('remove subtitles')
+    return parts.join(' · ')
   }
+  if (lib.flow_source === 'advanced') {
+    return 'Advanced · a visual flow'
+  }
+  return 'Steps · an ordered list'
 }
 
 export default function LibraryEditPage() {
@@ -89,17 +73,12 @@ export default function LibraryEditPage() {
     queryKey: ['library', id],
     queryFn: () => getLibrary(id),
   })
-  // The details element is the source of truth for "exact mode": its open
-  // state decides what Save sends (easy object vs. full target).
-  const advancedRef = useRef<HTMLDetailsElement | null>(null)
-  const [advancedShown, setAdvancedShown] = useState(false)
   const [name, setName] = useState<string | null>(null)
   const [watch, setWatch] = useState<boolean | null>(null)
-  const [easy, setEasy] = useState<ReturnType<typeof parseEasy> | null>(null)
-  const [target, setTarget] = useState<Target | null>(null)
   const [kinds, setKinds] = useState<string[] | null>(null)
   const [picking, setPicking] = useState(false)
   const [path, setPath] = useState<string | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   const save = useMutation({
     mutationFn: (body: LibraryBody) => updateLibrary(id, body),
@@ -110,6 +89,20 @@ export default function LibraryEditPage() {
       void navigate(`/libraries/${id}`)
     },
     onError: (err: unknown) => toast.failure('Saving the library failed', err),
+  })
+
+  const remove = useMutation({
+    mutationFn: () => deleteLibrary(id),
+    onSuccess: () => {
+      setConfirmRemove(false)
+      toast.success('Library removed. The files on disk are untouched.')
+      client.removeQueries({ queryKey: ['library', id] })
+      void client.invalidateQueries({ queryKey: ['libraries'] })
+      void client.invalidateQueries({ queryKey: ['stats'] })
+      void navigate('/libraries')
+    },
+    onError: (err: unknown) =>
+      toast.failure('Removing the library failed', err),
   })
 
   const libraries = { label: 'Libraries', to: '/libraries' }
@@ -131,13 +124,7 @@ export default function LibraryEditPage() {
     )
   }
   const lib = library.data
-  const hasEasy = lib.easy != null
-  // Uncontrolled details: the initial open value only applies to the first
-  // render; afterwards the user's toggling wins (and the ref reports it).
-  const advancedInUse = !hasEasy || (advancedRef.current?.open ?? false)
 
-  const easyState = easy ?? parseEasy(lib.easy)
-  const targetState = target ?? defaultTarget(lib)
   const nameState = name ?? lib.name
   const watchState = watch ?? lib.watch
   const pathState = path ?? lib.path
@@ -151,14 +138,11 @@ export default function LibraryEditPage() {
       watch: watchState,
       file_kinds: kindsState,
     }
-    if (advancedInUse) {
-      body.target = targetState
+    // Resend the rule the library has, unchanged (see the file comment).
+    if (lib.flow_source === 'easy' && lib.easy != null) {
+      body.easy = parseEasy(lib.easy)
     } else {
-      body.easy = {
-        quality: easyState.quality,
-        remove_subtitles: easyState.remove_subtitles,
-        audio: easyState.audio,
-      }
+      body.target = lib.target
     }
     save.mutate(body)
   }
@@ -229,196 +213,22 @@ export default function LibraryEditPage() {
         </p>
       </FormSection>
 
-      {hasEasy && !advancedShown && (
-        <FormSection title="How much to shrink" testId="easy-edit">
-          <QualitySlider
-            value={easyState.quality}
-            onChange={(quality) => setEasy({ ...easyState, quality })}
-          />
-          <AudioSlider
-            value={easyState.audio}
-            onChange={(audio) => setEasy({ ...easyState, audio })}
-          />
-          <RemoveSubtitlesCheckbox
-            checked={easyState.remove_subtitles}
-            onChange={(remove_subtitles) =>
-              setEasy({ ...easyState, remove_subtitles })
-            }
-          />
-        </FormSection>
-      )}
-
-      <FormSection
-        title="Exact settings"
-        description="Replaces the sliders with exact values for this library."
-      >
-        {/* Native details: the browser supplies the keyboard toggle, and the
-            open state is read through the ref on save. */}
-        <details
-          ref={advancedRef}
-          open={!hasEasy}
-          onToggle={(e) =>
-            setAdvancedShown((e.target as HTMLDetailsElement).open)
-          }
-          className="group"
-          data-testid="advanced-panel"
+      <FormSection title="Rules" testId="library-edit-rules">
+        <p
+          className="text-body text-fg"
+          data-testid="library-edit-rules-summary"
         >
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-body font-semibold text-fg [&::-webkit-details-marker]:hidden">
-            Show the exact values
-          </summary>
-          <div
-            className="mt-4 flex flex-col gap-4"
-            data-testid="advanced-fields"
+          {rulesSummary(lib)}
+        </p>
+        <div>
+          <Link
+            to={`/libraries/${lib.id}/rules`}
+            className={btn}
+            data-testid="library-edit-rules-link"
           >
-            <Field label="Video codec" htmlFor="advanced-codec">
-              <select
-                id="advanced-codec"
-                value={targetState.video.codec}
-                onChange={(e) =>
-                  setTarget({
-                    ...targetState,
-                    video: { ...targetState.video, codec: e.target.value },
-                  })
-                }
-                className={`${select} max-w-xs`}
-                data-testid="advanced-codec"
-              >
-                {CODEC_CHOICES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Checkbox
-              checked={targetState.video.reencode_if_same_codec}
-              onChange={(next) =>
-                setTarget({
-                  ...targetState,
-                  video: {
-                    ...targetState.video,
-                    reencode_if_same_codec: next,
-                  },
-                })
-              }
-              label="Re-encode video even when it already matches the target codec"
-              help="Careful: every scan then rewrites the files."
-              testId="advanced-reencode"
-            />
-            <Field label="Video quality (1–5)" htmlFor="advanced-quality">
-              <input
-                id="advanced-quality"
-                type="number"
-                min={1}
-                max={5}
-                value={targetState.video.quality}
-                onChange={(e) =>
-                  setTarget({
-                    ...targetState,
-                    video: {
-                      ...targetState.video,
-                      quality: Number(e.target.value),
-                    },
-                  })
-                }
-                className={`${input} w-32`}
-                data-testid="advanced-quality"
-              />
-            </Field>
-            <Field label="Container" htmlFor="advanced-container">
-              <select
-                id="advanced-container"
-                value={targetState.container}
-                onChange={(e) =>
-                  setTarget({ ...targetState, container: e.target.value })
-                }
-                className={`${select} max-w-xs`}
-                data-testid="advanced-container"
-              >
-                {CONTAINER_CHOICES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Audio tracks" htmlFor="advanced-audio-mode">
-              <select
-                id="advanced-audio-mode"
-                value={targetState.audio.mode}
-                onChange={(e) =>
-                  setTarget({
-                    ...targetState,
-                    audio: { ...targetState.audio, mode: e.target.value },
-                  })
-                }
-                className={`${select} max-w-xs`}
-                data-testid="advanced-audio-mode"
-              >
-                {AUDIO_MODE_CHOICES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field
-              label="Preferred languages (comma separated)"
-              htmlFor="advanced-languages"
-            >
-              <input
-                id="advanced-languages"
-                type="text"
-                value={targetState.audio.preferred_languages.join(', ')}
-                onChange={(e) => {
-                  const langs = e.target.value
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                  setTarget({
-                    ...targetState,
-                    audio: { ...targetState.audio, preferred_languages: langs },
-                    subtitles: {
-                      ...targetState.subtitles,
-                      preferred_languages: langs,
-                    },
-                  })
-                }}
-                className={`${input} w-full`}
-                data-testid="advanced-languages"
-              />
-            </Field>
-            <Field label="Subtitles" htmlFor="advanced-subtitles-mode">
-              <select
-                id="advanced-subtitles-mode"
-                value={targetState.subtitles.mode}
-                onChange={(e) =>
-                  setTarget({
-                    ...targetState,
-                    subtitles: {
-                      ...targetState.subtitles,
-                      mode: e.target.value,
-                    },
-                  })
-                }
-                className={`${select} max-w-xs`}
-                data-testid="advanced-subtitles-mode"
-              >
-                {SUBTITLE_MODE_CHOICES.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {hasEasy && (
-              <p className="text-caption text-fg-muted">
-                Saving with this panel open stores these exact values and leaves
-                the simple sliders behind for this library.
-              </p>
-            )}
-          </div>
-        </details>
+            Change rules
+          </Link>
+        </div>
       </FormSection>
 
       {save.isError && (
@@ -448,6 +258,43 @@ export default function LibraryEditPage() {
           Cancel
         </button>
       </FormActions>
+
+      <FormSection
+        title="Danger zone"
+        description="Removing a library forgets its history. Files on disk are not touched."
+        testId="library-edit-danger"
+      >
+        <div>
+          <button
+            type="button"
+            onClick={() => setConfirmRemove(true)}
+            className={btnDangerGhost}
+            data-testid={`library-delete-${lib.id}`}
+          >
+            Remove library
+          </button>
+        </div>
+      </FormSection>
+
+      {confirmRemove && (
+        <ConfirmDialog
+          title={`Remove “${lib.name}”?`}
+          confirmLabel="Remove library"
+          busy={remove.isPending}
+          onConfirm={() => remove.mutate()}
+          onClose={() => setConfirmRemove(false)}
+          testId="confirm-delete"
+          confirmTestId="confirm-delete-yes"
+          cancelTestId="confirm-delete-cancel"
+        >
+          <p>
+            This removes the library and its job records from the database and
+            forgets what ShrinkYourShit did there. The files in{' '}
+            <span className="text-fg">{lib.path}</span> are not touched —
+            nothing on disk is deleted or renamed.
+          </p>
+        </ConfirmDialog>
+      )}
 
       {picking && (
         <FolderPickerModal
