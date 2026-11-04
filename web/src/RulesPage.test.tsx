@@ -190,3 +190,99 @@ describe('RulesPage tier switching', () => {
     await waitFor(() => screen.getByTestId('easy-replace-warning'))
   })
 })
+
+// --- Task 45: the restyled rules page (spec 5.8). ---
+
+const nodeFs = 'node:fs'
+
+describe('RulesPage restyle (task 45)', () => {
+  it('marks the tier in use with a neutral selection and an In use badge', async () => {
+    mock = installFetchMock(routes('steps'))
+    renderTiers()
+    await waitFor(() => screen.getByTestId('step-stack'))
+    const steps = screen.getByTestId('tier-steps')
+    expect(steps).toHaveAttribute('aria-pressed', 'true')
+    // The selected segment is neutral, not the accent fill.
+    expect(steps.className).toContain('bg-raised')
+    expect(steps.className).not.toContain('bg-accent')
+    expect(screen.getByTestId('tier-steps-in-use')).toHaveTextContent('In use')
+    expect(screen.queryByTestId('tier-easy-in-use')).toBeNull()
+    expect(screen.queryByTestId('tier-advanced-in-use')).toBeNull()
+  })
+
+  it('shows the three-tier caption under the selector', async () => {
+    mock = installFetchMock(routes('steps'))
+    renderTiers()
+    await waitFor(() => screen.getByTestId('step-stack'))
+    expect(
+      screen.getByText(
+        'Easy: three sliders. Steps: an ordered list. Advanced: a visual graph. All three produce the same kind of rules.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('names the save action "Save rules" on the steps tier', async () => {
+    mock = installFetchMock(routes('steps'))
+    renderTiers()
+    await waitFor(() => screen.getByTestId('step-stack'))
+    expect(screen.getByTestId('rules-steps-save')).toHaveTextContent(
+      'Save rules',
+    )
+  })
+
+  it('names the save action "Save rules" and shows the replace banner on the easy tier', async () => {
+    mock = installFetchMock([
+      ...routes('steps'),
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+    ])
+    renderTiers()
+    await waitFor(() => screen.getByTestId('step-stack'))
+    fireEvent.click(screen.getByTestId('tier-easy'))
+    const banner = await waitFor(() =>
+      screen.getByTestId('easy-replace-warning'),
+    )
+    expect(banner).toHaveAttribute('role', 'status')
+    expect(banner.textContent).toContain('replaces the manual steps')
+    expect(screen.getByTestId('rules-easy-save')).toHaveTextContent(
+      'Save rules',
+    )
+  })
+
+  it('gives every step row icon button a 44 px box and an aria-label', async () => {
+    mock = installFetchMock(routes('steps'))
+    renderTiers()
+    await waitFor(() => screen.getByTestId('step-stack'))
+    for (const testId of [
+      'step-up-probe',
+      'step-down-probe',
+      'step-edit-probe',
+      'step-remove-probe',
+    ]) {
+      const button = screen.getByTestId(testId)
+      expect(button.className, testId).toContain('h-11 w-11')
+      expect(button.getAttribute('aria-label'), testId).toBeTruthy()
+    }
+    // Remove is the danger action, not the muted one.
+    expect(screen.getByTestId('step-remove-probe').className).toContain(
+      'text-danger',
+    )
+  })
+
+  it('leaves no rose palette classes in the rules files', async () => {
+    const { readFileSync } = (await import(/* @vite-ignore */ nodeFs)) as {
+      readFileSync: (path: string, encoding: 'utf8') => string
+    }
+    for (const file of [
+      'src/RulesPage.tsx',
+      'src/StepStackEditor.tsx',
+      'src/FlowPreviewPanel.tsx',
+      'src/flowParams.tsx',
+    ]) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(/rose-/)
+    }
+  })
+})

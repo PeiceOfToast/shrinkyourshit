@@ -10,8 +10,12 @@
  * plugins plus a settings form derived from the selected plugin's
  * manifest: one input per setting key, per-step values overriding the
  * stored ones, and a "Use installed value" reset that clears the override.
+ *
+ * Styling (task 45, spec 4.3): the controls come from uiControls, so every
+ * field has the same border, height and focus ring as the rest of the app.
  */
 import type { FlowStep, Plugin, StepParamField } from './api'
+import { btnGhost, input, select } from './uiControls'
 
 export interface ParamFieldProps {
   field: StepParamField
@@ -37,8 +41,8 @@ export default function ParamField({
 }: ParamFieldProps) {
   const params = stepParams(step)
   return (
-    <label className="grid gap-1">
-      <span className="text-xs font-medium text-slate-400">
+    <label className="grid gap-2">
+      <span className="text-body font-medium text-fg">
         {field.label}
         {field.required ? ' *' : ''}
       </span>
@@ -46,7 +50,7 @@ export default function ParamField({
         <select
           value={String(params[field.name] ?? field.default ?? '')}
           onChange={(e) => onChange(field.name, e.target.value)}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
+          className={select}
           data-testid={testId}
         >
           {(field.options ?? []).map((o) => (
@@ -63,7 +67,7 @@ export default function ParamField({
           max={field.max}
           value={Number(params[field.name] ?? field.default ?? 0)}
           onChange={(e) => onChange(field.name, Number(e.target.value))}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
+          className={input}
           data-testid={testId}
         />
       )}
@@ -72,7 +76,7 @@ export default function ParamField({
           type="text"
           value={String(params[field.name] ?? '')}
           onChange={(e) => onChange(field.name, e.target.value)}
-          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
+          className={input}
           data-testid={testId}
         />
       )}
@@ -90,7 +94,7 @@ export default function ParamField({
                 .filter(Boolean),
             )
           }
-          className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
+          className={input}
           data-testid={testId}
         />
       )}
@@ -99,7 +103,7 @@ export default function ParamField({
           type="checkbox"
           checked={Boolean(params[field.name])}
           onChange={(e) => onChange(field.name, e.target.checked)}
-          className="h-4 w-4 accent-emerald-500"
+          className="h-5 w-5 accent-accent"
           data-testid={testId}
         />
       )}
@@ -112,7 +116,7 @@ export default function ParamField({
         />
       )}
       {field.help && (
-        <span className="text-xs text-slate-500">{field.help}</span>
+        <span className="text-caption text-fg-muted">{field.help}</span>
       )}
     </label>
   )
@@ -146,7 +150,7 @@ function PluginParam({
       <select
         value={String(params['plugin'] ?? '')}
         onChange={(e) => onChange('plugin', e.target.value)}
-        className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm"
+        className={select}
         data-testid={testId}
       >
         {plugins.length === 0 && (
@@ -159,11 +163,11 @@ function PluginParam({
         ))}
       </select>
       {selected?.settings?.length ? (
-        <div className="grid gap-2 rounded-lg bg-slate-900/60 p-2">
+        <div className="grid gap-3 rounded-control bg-canvas p-3 ring-1 ring-line">
           {selected.settings.map((s) => (
-            <label key={s.key} className="grid gap-1">
-              <span className="flex items-center justify-between gap-2">
-                <span className="text-xs text-slate-400">
+            <label key={s.key} className="grid gap-2">
+              <span className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-body font-medium text-fg">
                   {s.label}
                   {s.required ? ' *' : ''}
                 </span>
@@ -171,7 +175,7 @@ function PluginParam({
                   <button
                     type="button"
                     onClick={() => setSettings(s.key, '')}
-                    className="rounded px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                    className={btnGhost}
                     data-testid={`${testId}-reset-${s.key}`}
                   >
                     Use installed value
@@ -187,12 +191,12 @@ function PluginParam({
                     : 'unset'
                 }
                 onChange={(e) => setSettings(s.key, e.target.value)}
-                className="w-full rounded-lg bg-slate-800 px-2 py-1.5 text-sm"
+                className={input}
                 data-testid={`${testId}-setting-${s.key}`}
               />
             </label>
           ))}
-          <p className="text-xs text-slate-500">
+          <p className="text-caption text-fg-muted">
             Per-step values override the plugin's stored settings for this step
             only.
           </p>

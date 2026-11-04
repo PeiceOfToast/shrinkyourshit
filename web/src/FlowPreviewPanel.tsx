@@ -6,10 +6,17 @@
  * per step. The server compiles the easy input and renders the lines, so
  * this panel holds no compiler of its own — it is the teaching surface
  * for the step stack.
+ *
+ * Styling (task 45, spec 4.1 and 4.3): a Card-surface disclosure with a
+ * chevron that turns when open, a 44 px summary, and a plain list. It stays
+ * controlled (not the native `details` Disclosure) so the steps are fetched
+ * only when the panel opens, and the closed panel renders no list at all.
  */
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { previewFlow, type EasyInput } from './api'
+import Icon from './Icon'
+import { card } from './uiControls'
 
 export default function FlowPreviewPanel({
   easy,
@@ -34,25 +41,27 @@ export default function FlowPreviewPanel({
   })
 
   return (
-    <section className="rounded-2xl bg-slate-900 ring-1 ring-slate-800">
+    <section className={`${card} flex flex-col`}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between px-6 py-4 text-left"
+        className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-card px-4 text-left text-body font-semibold text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:px-6"
         data-testid="flow-preview-toggle"
       >
-        <span className="font-semibold text-slate-300">What this does</span>
-        <span className="text-xs text-slate-500">{open ? 'Hide' : 'Show'}</span>
+        <span>What this does</span>
+        <Icon
+          name="chevron-right"
+          className={`h-5 w-5 shrink-0 text-fg-muted transition-transform duration-base ${
+            open ? 'rotate-90' : ''
+          }`}
+        />
       </button>
       {open && (
-        <div
-          className="border-t border-slate-800 px-6 py-4"
-          data-testid="flow-preview"
-        >
+        <div className="px-4 pb-4 sm:px-6 sm:pb-6" data-testid="flow-preview">
           {preview.isPending && (
             <p
-              className="text-sm text-slate-500"
+              className="text-body text-fg-muted"
               data-testid="flow-preview-loading"
             >
               Working out the steps…
@@ -60,25 +69,23 @@ export default function FlowPreviewPanel({
           )}
           {preview.isError && (
             <p
-              className="text-sm text-rose-400"
+              className="text-body text-danger"
               data-testid="flow-preview-error"
             >
               Could not show the steps right now.
             </p>
           )}
           {preview.data && (
-            <ol className="space-y-2" data-testid="flow-preview-lines">
+            <ul
+              className="list-disc space-y-1 pl-5 text-body text-fg marker:text-fg-subtle"
+              data-testid="flow-preview-lines"
+            >
               {preview.data.steps.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex gap-3 text-sm text-slate-300"
-                  data-testid="flow-preview-line"
-                >
-                  <span className="text-slate-500">•</span>
-                  <span>{s.plain}</span>
+                <li key={s.id} data-testid="flow-preview-line">
+                  {s.plain}
                 </li>
               ))}
-            </ol>
+            </ul>
           )}
         </div>
       )}

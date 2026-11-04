@@ -196,7 +196,7 @@ describe('StepStackEditor', () => {
     ).toContain('quality')
     // The row is visually marked.
     const row = screen.getByTestId('step-row-transcode_video')
-    expect(row.className).toContain('ring-rose')
+    expect(row.className).toContain('ring-danger')
   })
 
   it('shows the gate condition in muted text', () => {
