@@ -36,11 +36,11 @@ No UI. No changes to how conditions are stored.
 
 ## Acceptance
 
-- [ ] Each condition has a passing and a failing fixture test.
-- [ ] A condition with a child action compiles to the same plan shape the existing
-      `if_bitrate_above` produces, proven by a structural test.
-- [ ] `StepTypes()` exposes all three with help text a non expert can act on.
-- [ ] `make test` green.
+- [x] Each condition has a passing and a failing fixture test. (`TestResolutionGuardPassAndFail`, `TestAudioChannelsGuardPassAndFail`, `TestHDRGuardPassAndFail`; passing)
+- [x] A condition with a child action compiles to the same plan shape the existing
+      `if_bitrate_above` produces, proven by a structural test. (`TestGuardedChildShapeMatchesBitrateGuard`; passing)
+- [x] `StepTypes()` exposes all three with help text a non expert can act on. (`TestStepTypesIncludeGuardPalette`; passing)
+- [x] `make test` green. (exit 0: Go all ok, web 62 files / 444 tests; `make lint` exit 0; see 56-notes.md)
 
 ## Notes
 
