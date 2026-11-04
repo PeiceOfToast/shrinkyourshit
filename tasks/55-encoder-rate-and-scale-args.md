@@ -42,7 +42,7 @@ No per step hardware selection (task 57). No new step types.
 - [x] One test per encoder asserts the exact scale, rate and preset arguments. (cpu, nvenc, qsv, vaapi: `rate_test.go`; videotoolbox: `videotoolbox_test.go`, darwin only, compiled for darwin but not run on this Linux VM)
 - [x] A source that already fits the scale target produces the same argument vector as before
       this task, proven by a golden test, so no library re-encodes after the upgrade.
-- [x] `make test` green, and `go test ./internal/encoders/... ./internal/worker/...` green. (`make` is not installed on this VM: ran `go test ./...` directly, exit 0; `npm run build` and `npx playwright test` also green, 104 passed, 6 skipped)
+- [x] `make test` green, and `go test ./internal/encoders/... ./internal/worker/...` green. (`make test` exit 0: all Go packages ok, web vitest 444 passed in 62 files; `make lint` exit 0: go vet, golangci-lint 0 issues, SPDX check, eslint, prettier clean. Run with `/home/mb/.local/go/bin` on PATH, since a non-login shell does not pick it up)
 
 ## Notes
 

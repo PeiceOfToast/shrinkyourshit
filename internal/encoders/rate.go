@@ -27,7 +27,7 @@ func rateMode(r *flow.RateTarget) string {
 // its own scale), so the registry does not offer it for crf; the chain falls
 // back to a backend that can, and ultimately to cpu.
 func rateModeSupported(encoderName, mode string) bool {
-	return !(encoderName == "videotoolbox" && mode == flow.RateModeCRF)
+	return encoderName != "videotoolbox" || mode != flow.RateModeCRF
 }
 
 // scaleFilter is the scale filter for the spec, or "" when the resize does
