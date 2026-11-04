@@ -82,7 +82,9 @@ func (e *cpuEncoder) SelfTest(ctx context.Context) error {
 }
 
 // BuildArgs maps the quality step onto the x265/SVT-AV1/x264 columns of the
-// quality table. video.codec=copy is handled centrally by buildCommand.
+// quality table in quality mode. crf mode passes the Target's CRF, bitrate
+// mode passes -b:v, and the bitrate cap and speed preset apply to all three.
+// video.codec=copy is handled centrally by buildCommand.
 func (e *cpuEncoder) BuildArgs(spec Spec) []string {
 	if spec.Target.Video.Codec == flow.CodecCopy {
 		return buildCommand(spec, nil, nil)
@@ -92,11 +94,35 @@ func (e *cpuEncoder) BuildArgs(spec Spec) []string {
 	var video []string
 	switch codec {
 	case flow.CodecHEVC:
-		video = []string{"-c:v", "libx265", "-crf", itoa(q.X265CRF), "-preset", "medium"}
+		video = cpuVideoArgs(spec, "libx265", q.X265CRF, presetFor(spec, x26xPresets))
 	case flow.CodecAV1:
-		video = []string{"-c:v", "libsvtav1", "-crf", itoa(q.SVTAV1CRF), "-preset", "6"}
+		video = cpuVideoArgs(spec, "libsvtav1", q.SVTAV1CRF, presetFor(spec, svtAV1Presets))
 	case flow.CodecH264:
-		video = []string{"-c:v", "libx264", "-crf", itoa(q.X264CRF), "-preset", "medium"}
+		video = cpuVideoArgs(spec, "libx264", q.X264CRF, presetFor(spec, x26xPresets))
 	}
 	return buildCommand(spec, nil, video)
+}
+
+// x26xPresets maps the named Target presets onto the libx264/libx265 names,
+// which are the same words; medium is the balanced default.
+var x26xPresets = map[string]string{
+	"veryfast": "veryfast", "faster": "faster", "fast": "fast", "medium": "medium",
+	"slow": "slow", "slower": "slower", "veryslow": "veryslow",
+}
+
+// cpuVideoArgs is the software encoder's video option list: the rate mode's
+// option (quality CRF from the table, the Target CRF, or -b:v), the bitrate
+// cap, then the preset. In quality mode the list is the pre-task-55 vector.
+func cpuVideoArgs(spec Spec, name string, qualityCRF int, preset string) []string {
+	args := []string{"-c:v", name}
+	switch rateMode(spec.Rate) {
+	case flow.RateModeCRF:
+		args = append(args, "-crf", crfString(spec))
+	case flow.RateModeBitrate:
+		args = append(args, bitrateArgs(spec)...)
+	default:
+		args = append(args, "-crf", itoa(qualityCRF))
+	}
+	args = append(args, capArgs(spec)...)
+	return append(args, "-preset", preset)
 }

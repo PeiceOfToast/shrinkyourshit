@@ -47,7 +47,9 @@ func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
 		// (DECISIONS.md B2 satisfied rule).
 		args = append(args, "-c:v", "copy")
 	} else {
-		args = append(args, videoArgs...)
+		// Every encoder's video options pass through here, so the scale
+		// filter (task 55) is applied once for all backends.
+		args = append(args, withScale(spec, videoArgs)...)
 	}
 	args = append(args, audioArgs(spec)...)
 	args = append(args, subtitleArgs(spec)...)
@@ -62,9 +64,10 @@ func buildCommand(spec Spec, preInputArgs, videoArgs []string) []string {
 
 // videoShouldCopy reports whether the video must be remuxed instead of
 // re-encoded: an explicit copy target, or the satisfied rule (DECISIONS.md
-// B2) — the file's video already is the target codec and
-// reencode_if_same_codec is off. In both cases the output only needs track
-// and container changes, and re-encoding would add generational loss for
+// B2) — the file's video already is the target codec, reencode_if_same_codec
+// is off and no scale would change the picture. An explicit copy ignores any
+// scale (it never re-encodes). Otherwise the output only needs track and
+// container changes, and re-encoding would add generational loss for
 // nothing.
 func videoShouldCopy(spec Spec) bool {
 	if spec.Target.Video.Codec == flow.CodecCopy {
@@ -74,8 +77,11 @@ func videoShouldCopy(spec Spec) bool {
 		return false
 	}
 	// 0:V:0 maps the first real video stream, which is info.Video[0].
+	// A scale that would change the picture needs a re-encode, so the
+	// satisfied copy is not taken for it (task 55).
 	return spec.Info.Video[0].Codec == spec.Target.Video.Codec &&
-		!spec.Target.Video.ReencodeIfSameCodec
+		!spec.Target.Video.ReencodeIfSameCodec &&
+		!flow.ScaleApplies(spec.Info.Video[0].Height, spec.Scale)
 }
 
 // audioArgs picks a codec per kept audio stream: copy, or the compact

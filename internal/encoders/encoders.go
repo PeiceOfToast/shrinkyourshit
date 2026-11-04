@@ -102,6 +102,13 @@ type Spec struct {
 	// keep_preferred tracks that do not match).
 	KeepAudio []int
 	KeepSubs  []int
+	// Scale, Rate and Preset are copied from Target.Video by NewSpec, so the
+	// encoder builders read them from one place. Nil Scale means no resize;
+	// nil Rate means quality (Target.Video.Quality); empty Preset means the
+	// balanced default.
+	Scale  *flow.ScaleTarget
+	Rate   *flow.RateTarget
+	Preset string
 }
 
 // NewSpec fills a Spec from a probe result, using the flow selection
@@ -114,6 +121,9 @@ func NewSpec(input, output string, info probe.MediaInfo, target flow.Target) Spe
 		Target:    target,
 		KeepAudio: flow.SelectAudio(info, target),
 		KeepSubs:  flow.SelectSubtitles(info, target),
+		Scale:     target.Video.Scale,
+		Rate:      target.Video.Rate,
+		Preset:    target.Video.Preset,
 	}
 }
 
@@ -146,6 +156,7 @@ var allEncoders = []Encoder{NVENC, QSV, VAAPI, VideoToolbox, CPU}
 // only supports some codecs in this ffmpeg build, is not offered here.
 func Registry(target flow.Target, caps Capability) []Encoder {
 	codec := target.Video.Codec
+	mode := rateMode(target.Video.Rate)
 	var list []Encoder
 	if codec != flow.CodecCopy {
 		for _, enc := range allEncoders {
@@ -155,6 +166,9 @@ func Registry(target flow.Target, caps Capability) []Encoder {
 			info := caps.find(enc.Name())
 			if info == nil || !contains(info.Codecs, codec) {
 				continue
+			}
+			if !rateModeSupported(enc.Name(), mode) {
+				continue // the backend cannot honour this rate mode; fall back
 			}
 			list = append(list, enc)
 		}

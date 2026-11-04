@@ -39,10 +39,10 @@ No per step hardware selection (task 57). No new step types.
 
 ## Acceptance
 
-- [ ] One test per encoder asserts the exact scale, rate and preset arguments.
-- [ ] A source that already fits the scale target produces the same argument vector as before
+- [x] One test per encoder asserts the exact scale, rate and preset arguments. (cpu, nvenc, qsv, vaapi: `rate_test.go`; videotoolbox: `videotoolbox_test.go`, darwin only, compiled for darwin but not run on this Linux VM)
+- [x] A source that already fits the scale target produces the same argument vector as before
       this task, proven by a golden test, so no library re-encodes after the upgrade.
-- [ ] `make test` green, and `go test ./internal/encoders/... ./internal/worker/...` green.
+- [x] `make test` green, and `go test ./internal/encoders/... ./internal/worker/...` green. (`make` is not installed on this VM: ran `go test ./...` directly, exit 0; `npm run build` and `npx playwright test` also green, 104 passed, 6 skipped)
 
 ## Notes
 

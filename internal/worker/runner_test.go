@@ -1172,3 +1172,38 @@ func TestRunnerNonMediaMediaOnlyFlowSkips(t *testing.T) {
 	_, err := os.Stat(src.Path)
 	require.NoError(t, err, "the original is untouched")
 }
+
+// TestRunnerPassesScaleAndRateToEncode (task 55): a flow with a scale step
+// and a crf transcode reaches the ffmpeg argument vector. The source is 2160p,
+// so the 720 scale applies: the filter lands in the video options and the
+// crf in the libx265 options. The flow is resolved from the graph, so this
+// proves the runner feeds the resolved Effective Target to the encoder.
+func TestRunnerPassesScaleAndRateToEncode(t *testing.T) {
+	api := newFakeAPI(t, "key")
+	dir := t.TempDir()
+	_, spec := defaultSpec(t, dir, "job1")
+	g := flow.Graph{
+		Schema: flow.FlowSchema,
+		Nodes: []flow.Step{
+			{ID: "probe", Type: flow.StepProbe},
+			{ID: "encode", Type: flow.StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3,"rate_mode":"crf","crf":22}`)},
+			{ID: "scale", Type: flow.StepScale, Params: json.RawMessage(`{"height":720}`)},
+			{ID: "remux", Type: flow.StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		},
+		Edges: []flow.Edge{{From: "probe", To: "encode"}, {From: "encode", To: "scale"}, {From: "scale", To: "remux"}},
+	}
+	spec.Flow = &g
+	api.enqueue("job1", spec)
+
+	tall := srcInfoF()
+	tall.Video[0].Height = 2160
+	var seen []string
+	r := newRunner(t, api, filepath.Join(dir, "scratch"), runnerOpts{
+		byBase: map[string]probe.MediaInfo{"source.mp4": tall, "output.mkv": outInfoF()},
+		run:    writeRun("OUTPUT-DATA", &seen),
+	})
+	require.NoError(t, r.run(context.Background(), spec, newCancelFlag()))
+
+	require.Len(t, seen, 1, "one encode ran")
+	require.Contains(t, seen[0], "-c:v libx265 -crf 22 -preset medium -vf scale=-2:720 ")
+}
