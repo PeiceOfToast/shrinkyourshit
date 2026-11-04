@@ -71,5 +71,5 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 | 49 | 49-encode-app-settings.md | done | PR #52 https://github.com/PeiceOfToast/shrinkyourshit/pull/52, v1.9, CI green (9 checks), checklist ticked; 2 owner questions in notes (worker_concurrency unread, w-32 vs w-full) |
 | 50 | 50-integrations-plugins.md | done | PR #53 https://github.com/PeiceOfToast/shrinkyourshit/pull/53, v1.9, CI green (9 checks), checklist ticked |
 | 51 | 51-setup-login.md | done | PR #54 https://github.com/PeiceOfToast/shrinkyourshit/pull/54, v1.9, CI green (9 checks incl. e2e), checklist ticked |
-| 52 | 52-copy-sweep.md | in_progress | branch task/52-copy-sweep (pushed, PR not opened: gh not installed on VM 201; e2e not run locally, CI is the gate) |
+| 52 | 52-copy-sweep.md | done | PR #56 https://github.com/PeiceOfToast/shrinkyourshit/pull/56, v1.9, CI green (8 checks), checklist ticked |
 | 53 | 53-guardrail-lint-audit.md | todo |  |
