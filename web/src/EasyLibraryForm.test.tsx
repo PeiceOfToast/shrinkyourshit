@@ -136,7 +136,7 @@ describe('EasyLibraryForm', () => {
     renderForm()
     expect(screen.getByTestId('easy-start')).toBeDisabled()
     expect(screen.getByTestId('easy-folder-empty')).toHaveTextContent(
-      'No folder chosen yet.',
+      'No folder chosen yet',
     )
   })
 
