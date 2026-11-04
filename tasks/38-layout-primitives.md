@@ -13,12 +13,12 @@ new `Icon.tsx`, `PageHeader.tsx`, `Card.tsx`, `FormSection.tsx`, `EmptyState.tsx
 
 ## Acceptance
 
-- [ ] PageHeader renders one h1, breadcrumb `nav[aria-label=Breadcrumb]` with links, a skeleton when `title` is undefined, and actions in order.
-- [ ] Field wires `aria-describedby` and `aria-invalid`.
-- [ ] EmptyState renders title, body and action.
-- [ ] Banner has `role="status"` for info and success and `role="alert"` for danger.
-- [ ] Disclosure toggles via the keyboard.
-- [ ] Every page still renders (the existing page tests pass with the new PageContainer).
+- [x] PageHeader renders one h1, breadcrumb `nav[aria-label=Breadcrumb]` with links, a skeleton when `title` is undefined, and actions in order.
+- [x] Field wires `aria-describedby` and `aria-invalid`.
+- [x] EmptyState renders title, body and action.
+- [x] Banner has `role="status"` for info and success and `role="alert"` for danger.
+- [x] Disclosure toggles via the keyboard.
+- [x] Every page still renders (the existing page tests pass with the new PageContainer).
 
 ## Rules for this wave
 
