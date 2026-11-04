@@ -316,3 +316,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T10:46:42Z pm: task 50 started, build run 5676b4de on haiku, branch task/50-integrations-plugins
 - 2026-11-04T11:26:10Z pm: task 50 verified, PR #53 squash-merged (a4a70f0), 9/9 checks green incl go and docker-arm64, make lint + make test green on VM 201, DECISIONS.md unchanged vs origin/main, checklist 6/6 ticked
 - 2026-11-04T11:26:10Z pm: task 50 closed; next task is 51-setup-login.md (depends on 50, done), to start on the next tick
+- 2026-11-04T11:35:29Z pm: task 50 closed; main CI green on squash a4a70f0 and on log commit 9f90bc3 (run 41820607539, all checks green)
+- 2026-11-04T11:35:29Z pm: task 51 started, build run 20261104-113403-5c9467dd on haiku, branch task/51-setup-login
