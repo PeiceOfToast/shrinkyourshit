@@ -7,6 +7,12 @@
  * path to any action.
  */
 import type { StepTypeInfo } from './api'
+import { card, cardPad } from './uiControls'
+
+// The entry and the plugin hint share one look: a 44 px row on the canvas
+// surface, with the label and a caption description.
+const entry =
+  'flex min-h-11 w-full flex-col items-start rounded-control bg-canvas px-3 py-2 text-left ring-1 ring-line transition-colors duration-fast ease-standard hover:bg-raised'
 
 function PaletteEntry({
   info,
@@ -19,15 +25,15 @@ function PaletteEntry({
     <button
       type="button"
       onClick={() => onAdd(info.type)}
-      className="w-full rounded-xl bg-slate-900 px-3 py-2 text-left ring-1 ring-slate-800 hover:bg-slate-800"
+      className={entry}
       data-testid={`palette-add-${info.type}`}
       aria-label={`Add ${info.label}`}
     >
-      <span className="block text-sm font-semibold text-slate-200">
+      <span className="block text-body font-semibold text-fg">
         {info.label}
       </span>
       {info.description && (
-        <span className="mt-0.5 block text-xs text-slate-500">
+        <span className="mt-0.5 block text-caption text-fg-muted">
           {info.description}
         </span>
       )}
@@ -56,24 +62,26 @@ export default function FlowPalette({
     pluginInfo !== undefined && pluginOptions(pluginInfo).length > 0
   return (
     <aside
-      className="space-y-4 rounded-2xl bg-slate-950/60 p-3 ring-1 ring-slate-800"
+      className={`flex flex-col gap-4 ${card} ${cardPad}`}
       data-testid="flow-palette"
       aria-label="Step palette"
     >
-      <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Add a step
-      </h2>
+      <h2 className="text-heading text-fg">Add a step</h2>
       {conditions.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="px-1 text-xs text-slate-500">Conditions</h3>
+        <section className="flex flex-col gap-2">
+          <h3 className="text-caption font-medium uppercase tracking-wider text-fg-muted">
+            Conditions
+          </h3>
           {conditions.map((info) => (
             <PaletteEntry key={info.type} info={info} onAdd={onAdd} />
           ))}
         </section>
       )}
       {actions.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="px-1 text-xs text-slate-500">Steps</h3>
+        <section className="flex flex-col gap-2">
+          <h3 className="text-caption font-medium uppercase tracking-wider text-fg-muted">
+            Steps
+          </h3>
           {actions.map((info) =>
             info.type === 'plugin' && !hasStepPlugins ? (
               <PalettePluginHint key={info.type} info={info} />
@@ -94,13 +102,13 @@ function PalettePluginHint({ info }: { info: StepTypeInfo }) {
   return (
     <a
       href="/integrations?tab=plugins"
-      className="block w-full rounded-xl bg-slate-900 px-3 py-2 text-left ring-1 ring-slate-800 hover:bg-slate-800"
+      className={entry}
       data-testid="palette-plugin-hint"
     >
-      <span className="block text-sm font-semibold text-slate-200">
+      <span className="block text-body font-semibold text-fg">
         {info.label}
       </span>
-      <span className="mt-0.5 block text-xs text-slate-500">
+      <span className="mt-0.5 block text-caption text-fg-muted">
         No step plugin is installed and enabled yet. Install one on the
         Integrations page's plugins tab, then come back here.
       </span>

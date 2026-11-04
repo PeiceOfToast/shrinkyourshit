@@ -8,7 +8,13 @@
  * unsaved-changes guard. The validate mock mirrors the server's rules —
  * the client itself never decides validity.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -464,9 +470,12 @@ describe('FlowCanvas editing (phase 2)', () => {
       from: 'if_codec_not',
       to: 'transcode_video',
     })
-    // The refetched flow reports the new source.
+    // The refetched flow reports the new source: the Advanced tier shows
+    // "In use" (the source pill is replaced by the tier badge, spec 5.9).
     await waitFor(() =>
-      expect(screen.getByTestId('flow-source').textContent).toBe('advanced'),
+      expect(screen.getByTestId('tier-advanced-in-use').textContent).toBe(
+        'In use',
+      ),
     )
   })
 
@@ -485,7 +494,7 @@ describe('FlowCanvas unsaved-changes guard', () => {
     fireEvent.click(screen.getByTestId('palette-add-if_codec_not'))
     await waitFor(() => screen.getByTestId('flow-dirty'))
     // Stay: the dialog cancels the navigation.
-    fireEvent.click(screen.getByTestId('flow-back'))
+    fireEvent.click(screen.getByTestId('tier-steps'))
     await waitFor(() => screen.getByTestId('flow-guard-dialog'))
     fireEvent.click(screen.getByTestId('flow-guard-stay'))
     await waitFor(() =>
@@ -493,7 +502,7 @@ describe('FlowCanvas unsaved-changes guard', () => {
     )
     expect(screen.getByTestId('flow-canvas-page')).toBeInTheDocument()
     // Leave: the dialog navigates.
-    fireEvent.click(screen.getByTestId('flow-back'))
+    fireEvent.click(screen.getByTestId('tier-steps'))
     await waitFor(() => screen.getByTestId('flow-guard-dialog'))
     fireEvent.click(screen.getByTestId('flow-guard-leave'))
     await waitFor(() => screen.getByTestId('rules-stub'))
@@ -541,6 +550,14 @@ describe('FlowCanvas mobile (task 22)', () => {
     expect(screen.queryByTestId('flow-edit-banner')).not.toBeInTheDocument()
     expect(screen.queryByTestId('flow-save')).not.toBeInTheDocument()
     expect(screen.queryByTestId('flow-readonly-banner')).not.toBeInTheDocument()
+    // The notice is a Banner (a status region, tinted info), not a loose box.
+    expect(screen.getByTestId('flow-mobile-notice')).toHaveAttribute(
+      'role',
+      'status',
+    )
+    expect(screen.getByTestId('flow-mobile-notice').className).toContain(
+      'ring-info/30',
+    )
     // The graph itself is still readable: same node count as desktop.
     expect(screen.getByTestId('flow-summary').textContent).toBe(
       '5 steps · 4 connections',
@@ -559,5 +576,78 @@ describe('FlowCanvas mobile (task 22)', () => {
     expect(screen.getByRole('button', { name: 'Zoom In' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Zoom Out' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Fit View' })).toBeInTheDocument()
+  })
+})
+
+describe('FlowCanvas page header (task 46, spec 5.9)', () => {
+  it('shares the Rules header: breadcrumb, Rules title and the tier control', async () => {
+    mock = installFetchMock(standardRoutes('advanced'))
+    renderFlow()
+    await waitFor(() => screen.getByTestId('flow-canvas-page'))
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Rules')
+    const crumbs = within(
+      screen.getByRole('navigation', { name: 'Breadcrumb' }),
+    )
+    expect(crumbs.getByRole('link', { name: 'Libraries' })).toHaveAttribute(
+      'href',
+      '/libraries',
+    )
+    expect(crumbs.getByRole('link', { name: 'Movies' })).toHaveAttribute(
+      'href',
+      '/libraries/lib-1',
+    )
+    // The tier control is the Rules one: Easy and Steps lead to the rules
+    // page, Advanced is this route and carries the In use badge.
+    expect(screen.getByRole('group', { name: 'Rule editor' })).toBeTruthy()
+    expect(screen.getByTestId('tier-easy')).toHaveAttribute(
+      'href',
+      '/libraries/lib-1/rules',
+    )
+    expect(screen.getByTestId('tier-steps')).toHaveAttribute(
+      'href',
+      '/libraries/lib-1/rules',
+    )
+    expect(screen.getByTestId('tier-advanced')).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByTestId('tier-advanced-in-use').textContent).toBe(
+      'In use',
+    )
+    expect(screen.queryByTestId('tier-easy-in-use')).not.toBeInTheDocument()
+    // The document title follows the Rules page.
+    expect(document.title).toBe('Rules · Movies · ShrinkYourShit')
+  })
+
+  it('has exactly one Edit flow button and no duplicate in the banner', async () => {
+    mock = installFetchMock(standardRoutes('easy'))
+    renderFlow()
+    await waitFor(() => screen.getByTestId('flow-readonly-banner'))
+    expect(screen.getAllByRole('button', { name: 'Edit flow' })).toHaveLength(1)
+    expect(screen.queryByTestId('flow-edit-banner')).not.toBeInTheDocument()
+  })
+
+  it('keeps the step id off the node face and shows it in the inspector', async () => {
+    mock = installFetchMock(standardRoutes('easy'))
+    renderFlow()
+    await waitFor(() => screen.getByTestId('canvas-node-probe'))
+    const face = screen.getByTestId('canvas-node-probe')
+    // No element on the face reads exactly as the step id.
+    expect(within(face).queryByText('probe')).toBeNull()
+    expect(face.textContent).toContain('Check the file')
+    // The inspector names the step by its id (same click retry as above).
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('canvas-node-probe'))
+      screen.getByTestId('flow-inspector-id')
+    })
+    expect(screen.getByTestId('flow-inspector-id').textContent).toBe('probe')
+  })
+
+  it('says "Save rules" on the edit action and keeps the step count caption', async () => {
+    await enterEditMode('advanced')
+    expect(screen.getByTestId('flow-save').textContent).toBe('Save rules')
+    expect(screen.getByTestId('flow-summary').textContent).toBe(
+      '5 steps · 4 connections',
+    )
   })
 })
