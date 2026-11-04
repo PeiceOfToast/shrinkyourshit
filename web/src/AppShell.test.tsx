@@ -8,7 +8,13 @@
  * 390 px there is no fixed 224 px sidebar and the content column is the
  * full-width flexible one, with the nav one tap away in the drawer.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -171,8 +177,8 @@ describe('AppShell narrow (phone, min-width: 768px = false)', () => {
     const nav = drawer.querySelector('nav')
     expect(nav).not.toBeNull()
     expect(navLabels(nav as HTMLElement)).toEqual([
-      'Dash',
-      'Library',
+      'Dashboard',
+      'Libraries',
       'Nodes',
       'Encode settings',
       'Integrations',
@@ -180,7 +186,7 @@ describe('AppShell narrow (phone, min-width: 768px = false)', () => {
     ])
     // Touch targets: every drawer link keeps at least 44 px of height.
     for (const link of (nav as HTMLElement).querySelectorAll('a')) {
-      expect(link.className).toContain('min-h-[44px]')
+      expect(link.className).toContain('min-h-11')
     }
   })
 
@@ -217,7 +223,7 @@ describe('AppShell narrow (phone, min-width: 768px = false)', () => {
       expect(screen.getByTestId('menu-button')).toBeInTheDocument(),
     )
     fireEvent.click(screen.getByTestId('menu-button'))
-    fireEvent.click(screen.getByRole('link', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Libraries' }))
     await waitFor(() => {
       expect(screen.queryByTestId('nav-drawer')).not.toBeInTheDocument()
     })
@@ -284,8 +290,8 @@ describe('AppShell wide (md and up, min-width: 768px = true)', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Main' })
     expect(navLabels(nav)).toEqual([
-      'Dash',
-      'Library',
+      'Dashboard',
+      'Libraries',
       'Nodes',
       'Encode settings',
       'Integrations',
@@ -371,5 +377,167 @@ describe('AppShell rail override (task 21)', () => {
     expect(screen.getByTestId('nav-rail').className).toContain('w-56')
     expect(screen.getByText('Encode settings')).toBeInTheDocument()
     expect(localStorage.getItem('sys.rail')).toBe('bogus')
+  })
+})
+
+describe('AppShell layout (task 40)', () => {
+  it('has no top header at md and up, and the rail is sticky', async () => {
+    media = stubMatchMedia(true)
+    renderShell('/')
+    await waitFor(() => {
+      expect(screen.getByTestId('nav-rail')).toBeInTheDocument()
+    })
+    expect(document.querySelector('header')).toBeNull()
+    expect(screen.getByTestId('nav-rail').className).toContain('sticky')
+  })
+
+  it('puts EncodingStatus, logout and the version in the rail footer', async () => {
+    // mock.restore() unstubs every global, so the media stub comes after it.
+    mock.restore()
+    media = stubMatchMedia(true)
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/setup\/status$/,
+        body: { setup_complete: true, login_enabled: true },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/auth\/me$/,
+        body: { username: 'admin' },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/health$/,
+        body: { status: 'ok', version: 'v9.9.9' },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderShell('/')
+    const rail = await screen.findByTestId('nav-rail')
+    await waitFor(() => {
+      expect(within(rail).getByTestId('version')).toHaveTextContent('v9.9.9')
+    })
+    expect(
+      within(rail).getByRole('switch', { name: 'Encoding' }),
+    ).toBeInTheDocument()
+    expect(within(rail).getByTestId('logout')).toHaveAttribute(
+      'aria-label',
+      'Log out',
+    )
+    expect(within(rail).getByText('admin')).toBeInTheDocument()
+  })
+
+  it('has a skip link as the first focusable element that targets main#content', async () => {
+    media = stubMatchMedia(true)
+    renderShell('/')
+    await waitFor(() => {
+      expect(screen.getByTestId('nav-rail')).toBeInTheDocument()
+    })
+    const skip = screen.getByRole('link', { name: 'Skip to content' })
+    expect(skip).toHaveAttribute('href', '#content')
+    expect(document.querySelector('main')).toHaveAttribute('id', 'content')
+    const first = screen.getByTestId('app-shell').querySelector('a, button')
+    expect(first).toBe(skip)
+  })
+
+  it('uses a 56 px top bar with the menu, brand and compact pill, and no pause label', async () => {
+    mock.restore()
+    media = stubMatchMedia(false)
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/setup\/status$/, body: openNoLogin },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/health$/,
+        body: { status: 'ok', version: 'v0.0.0' },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: {
+          items: [{ id: 'n1', name: 'n1', desired_state: 'stopped' }],
+          total: 1,
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderShell('/')
+    const bar = document.querySelector('header') as HTMLElement
+    expect(bar).not.toBeNull()
+    expect(bar.className).toContain('h-14')
+    expect(within(bar).getByTestId('menu-button')).toBeInTheDocument()
+    expect(within(bar).getByText('ShrinkYourShit')).toBeInTheDocument()
+    expect(await within(bar).findByText('Paused')).toBeInTheDocument()
+    expect(screen.queryByText('Pause all encoding')).not.toBeInTheDocument()
+  })
+
+  it('the drawer holds the nav, the EncodingStatus switch and logout', async () => {
+    media = stubMatchMedia(false)
+    renderShell('/')
+    await waitFor(() =>
+      expect(screen.getByTestId('menu-button')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('menu-button'))
+    const drawer = screen.getByTestId('nav-drawer')
+    expect(
+      within(drawer).getByRole('navigation', { name: 'Main' }),
+    ).toBeInTheDocument()
+    expect(
+      within(drawer).getByRole('switch', { name: 'Encoding' }),
+    ).toBeInTheDocument()
+    // Login is off in this fixture, so there is no logout control to show.
+    // The setup status loads after the drawer opens; once it does, the
+    // logout control is gone.
+    await waitFor(() => {
+      expect(within(drawer).queryByTestId('logout')).not.toBeInTheDocument()
+    })
+  })
+})
+
+describe('AppShell drawer logout (task 40)', () => {
+  it('shows logout in the drawer when login is enabled', async () => {
+    mock.restore()
+    media = stubMatchMedia(false)
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/setup\/status$/,
+        body: { setup_complete: true, login_enabled: true },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/auth\/me$/,
+        body: { username: 'admin' },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/health$/,
+        body: { status: 'ok', version: 'v0.0.0' },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderShell('/')
+    await waitFor(() =>
+      expect(screen.getByTestId('menu-button')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('menu-button'))
+    const drawer = screen.getByTestId('nav-drawer')
+    expect(await within(drawer).findByTestId('logout')).toHaveAttribute(
+      'aria-label',
+      'Log out',
+    )
+    expect(await within(drawer).findByText('admin')).toBeInTheDocument()
   })
 })

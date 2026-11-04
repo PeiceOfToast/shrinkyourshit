@@ -13,16 +13,16 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] No `<header>` at `md+`.
-- [ ] The rail is sticky and keeps `w-56`/`w-16` and the `sys.rail` behaviour.
-- [ ] The rail footer holds EncodingStatus, logout (`data-testid=logout`) and version (`data-testid=version`).
-- [ ] Nav labels are Dashboard, Libraries, Nodes, Encode settings, Integrations, App settings.
-- [ ] `job-indicator` shows "1 running" for one running job.
-- [ ] The switch shows on = running and calls pauseAll/resumeAll.
-- [ ] The mobile top bar is 56 px with the menu, brand and compact pill, without the label "Pause all encoding".
-- [ ] The drawer contains nav, the EncodingStatus switch and logout.
-- [ ] A skip link exists.
-- [ ] Test updates: `AppShell.test.tsx:174-175, 220, 287-288` and `e2e/layout.spec.ts:25-26` ('Dash' → 'Dashboard', 'Library' → 'Libraries').
+- [x] No `<header>` at `md+`.
+- [x] The rail is sticky and keeps `w-56`/`w-16` and the `sys.rail` behaviour.
+- [x] The rail footer holds EncodingStatus, logout (`data-testid=logout`) and version (`data-testid=version`).
+- [x] Nav labels are Dashboard, Libraries, Nodes, Encode settings, Integrations, App settings.
+- [x] `job-indicator` shows "1 running" for one running job.
+- [x] The switch shows on = running and calls pauseAll/resumeAll.
+- [x] The mobile top bar is 56 px with the menu, brand and compact pill, without the label "Pause all encoding".
+- [x] The drawer contains nav, the EncodingStatus switch and logout.
+- [x] A skip link exists.
+- [x] Test updates: `AppShell.test.tsx:174-175, 220, 287-288` and `e2e/layout.spec.ts:25-26` ('Dash' → 'Dashboard', 'Library' → 'Libraries').
 
 ## Rules for this wave
 

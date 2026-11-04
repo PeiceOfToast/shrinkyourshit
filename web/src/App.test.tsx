@@ -143,15 +143,15 @@ describe('route guard', () => {
         screen.getByRole('navigation', { name: 'Main' }),
       ).toBeInTheDocument()
     })
-    // Six entries (task 10 + task 23): Dash, Library, Nodes, Encode
+    // Six entries (task 10 + task 23): Dashboard, Libraries, Nodes, Encode
     // settings, Integrations, App settings.
     const nav = screen.getByRole('navigation', { name: 'Main' })
     const links = nav.querySelectorAll('a')
     expect(links).toHaveLength(6)
     const labels = Array.from(links).map((a) => a.textContent)
     expect(labels).toEqual([
-      'Dash',
-      'Library',
+      'Dashboard',
+      'Libraries',
       'Nodes',
       'Encode settings',
       'Integrations',

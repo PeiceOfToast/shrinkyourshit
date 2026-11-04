@@ -1,89 +1,60 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * App shell (task 10): responsive, five-page navigation.
+ * App shell (tasks 10, 21 and 40): responsive, six-destination navigation.
  *
- * - Under `md`: a top bar with the product name, a menu button that opens
- *   the nav as a slide-over drawer, and a live job indicator. The drawer
- *   closes on route change and on Escape.
- * - `md` and up: the left rail. It shows labels at `lg` and up and icons
- *   only below that (task 21); the toggle sets an explicit override that
- *   sticks across reloads in `localStorage` under `sys.rail`.
+ * - `lg` and up: a labelled left rail, sticky, with no top bar. Its footer
+ *   holds EncodingStatus, the user and logout, the version and the rail
+ *   toggle (spec 3.1).
+ * - `md` to `lg`: the same rail as icons only (`w-16`). The toggle sets an
+ *   explicit override that sticks across reloads in `localStorage`
+ *   under `sys.rail`.
+ * - Under `md`: a 56 px top bar with the menu, the brand and a compact
+ *   EncodingStatus pill. The menu opens the nav as a drawer, which holds
+ *   the EncodingStatus switch and logout as well. The drawer closes on
+ *   route change and on Escape.
  *
+ * A skip link is the first focusable element and targets `main#content`.
  * The shell paints `min-h-dvh` so mobile browser chrome cannot clip it;
- * the page background itself is painted on html/body (index.css) so no
- * region outside the shell renders white.
+ * the page background itself is painted on html/body (index.css).
  */
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  getHealth,
-  getJobs,
-  getNodes,
-  logout,
-  pauseAllNodes,
-  resumeAllNodes,
-  type Job,
-} from './api'
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
+import { getHealth, logout } from './api'
+import Icon, { type IconName } from './Icon'
 import ModalDialog from './dialog'
+import EncodingStatus from './EncodingStatus'
 import { LiveEvents } from './events'
 import { meKey, useMe, useSetupStatus } from './queries'
 import { useToast } from './toastContext'
 import { useMediaQuery } from './useMediaQuery'
+import { btnIcon } from './uiControls'
 
-/** Nav links keep at least a 44 px touch target (task 10). */
-const touchLink =
-  'flex min-h-[44px] items-center rounded-lg px-3 text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white'
-const navItemActive = 'bg-slate-800 text-white'
+/** Nav item base, from spec 3.1. Active adds the 2 px accent bar. */
+const navBase =
+  'flex min-h-11 items-center gap-3 rounded-control px-3 text-body font-medium text-fg-muted hover:bg-raised hover:text-fg'
+const navActive =
+  'relative bg-raised text-fg before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-accent'
 
-/** Minimal stroke icons; no icon dependency is on the stack. */
-function Icon({
-  path,
-  className = 'h-5 w-5 shrink-0',
-}: {
-  path: string
-  className?: string
-}) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d={path} />
-    </svg>
-  )
-}
-
-const ICONS = {
-  menu: 'M4 6h16M4 12h16M4 18h16',
-  close: 'M6 6l12 12M18 6 6 18',
-  collapse: 'M11 17l-5-5 5-5M18 17l-5-5 5-5',
-  expand: 'M13 17l5-5-5-5M6 17l5-5-5-5',
-  dash: 'M3 10.5 12 3l9 7.5M5 9.5V21h5v-6h4v6h5V9.5',
-  library:
-    'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z',
-  nodes: 'M4 5h16v6H4zM4 13h16v6H4zM7.5 8h.01M7.5 16h.01',
-  encode: 'M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M11 16v4',
-  app: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 17.7l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 17.7l-1.4 1.4',
-  // Integrations (task 23): an outgoing arrow into a node.
-  integrations:
-    'M12 4v6m0 0-3-3m3 3 3-3M5 10v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6m-4 4h-4m-4 0h.01',
-}
-
-const NAV_ITEMS = [
-  { to: '/', label: 'Dash', end: true, icon: ICONS.dash },
-  { to: '/libraries', label: 'Library', icon: ICONS.library },
-  { to: '/nodes', label: 'Nodes', icon: ICONS.nodes },
-  { to: '/encode', label: 'Encode settings', icon: ICONS.encode },
-  { to: '/integrations', label: 'Integrations', icon: ICONS.integrations },
-  { to: '/app', label: 'App settings', icon: ICONS.app },
+const NAV_ITEMS: Array<{
+  to: string
+  label: string
+  end?: boolean
+  icon: IconName
+}> = [
+  { to: '/', label: 'Dashboard', end: true, icon: 'dash' },
+  { to: '/libraries', label: 'Libraries', icon: 'library' },
+  { to: '/nodes', label: 'Nodes', icon: 'nodes' },
+  { to: '/encode', label: 'Encode settings', icon: 'encode' },
+  { to: '/integrations', label: 'Integrations', icon: 'integrations' },
+  { to: '/app', label: 'App settings', icon: 'app' },
 ]
 
 function NavLinks({ showLabels }: { showLabels: boolean }) {
@@ -96,20 +67,45 @@ function NavLinks({ showLabels }: { showLabels: boolean }) {
           end={item.end}
           title={showLabels ? undefined : item.label}
           className={({ isActive }) =>
-            `${touchLink} ${showLabels ? '' : 'justify-center'} ${
-              isActive ? navItemActive : ''
+            `${navBase} ${showLabels ? '' : 'justify-center'} ${
+              isActive ? navActive : ''
             }`
           }
         >
-          <Icon path={item.icon} />
-          {showLabels && <span className="ml-3">{item.label}</span>}
+          <Icon name={item.icon} />
+          {showLabels && <span>{item.label}</span>}
         </NavLink>
       ))}
     </nav>
   )
 }
 
-function LogoutButton() {
+/** The mark (always) and the wordmark (only when there is room for it). */
+function Brand({ showWord }: { showWord: boolean }) {
+  if (!showWord) {
+    return (
+      <span
+        role="img"
+        aria-label="ShrinkYourShit"
+        title="ShrinkYourShit"
+        className="inline-flex shrink-0"
+      >
+        <Icon name="brand" className="h-5 w-5 shrink-0 text-accent-text" />
+      </span>
+    )
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-fg">
+      <Icon name="brand" className="h-5 w-5 shrink-0 text-accent-text" />
+      <span className="truncate text-heading font-semibold tracking-tight">
+        ShrinkYourShit
+      </span>
+    </span>
+  )
+}
+
+/** Logout as an icon button, with the user's name beside it when labels show. */
+function LogoutControl({ showName }: { showName: boolean }) {
   const navigate = useNavigate()
   const client = useQueryClient()
   const toast = useToast()
@@ -129,114 +125,46 @@ function LogoutButton() {
     return null
   }
   return (
-    <button
-      type="button"
-      className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700"
-      onClick={() => doLogout.mutate()}
-      data-testid="logout"
-    >
-      Log out
-      {me.data?.username ? ` (${me.data.username})` : ''}
-    </button>
+    <div className="flex min-w-0 items-center gap-2">
+      {showName && (
+        <span className="min-w-0 truncate text-body text-fg-muted">
+          {me.data?.username ?? ''}
+        </span>
+      )}
+      <button
+        type="button"
+        className={btnIcon}
+        onClick={() => doLogout.mutate()}
+        aria-label="Log out"
+        title="Log out"
+        data-testid="logout"
+      >
+        <Icon name="logout" />
+      </button>
+    </div>
   )
 }
 
-/**
- * Live job indicator (task 10): counts running and claimed jobs. The
- * shell's SSE subscription invalidates the `jobs` prefix on job.updated,
- * so the pill follows the queue without polling. Hidden when idle.
- */
-function JobIndicator() {
-  const jobs = useQuery({
-    queryKey: ['jobs', 'indicator'],
-    queryFn: () => getJobs({ limit: 50 }),
-  })
-  const active = (jobs.data?.items ?? []).filter((j: Job) => {
-    return j.status === 'running' || j.status === 'claimed'
-  }).length
-  if (active === 0) {
+/** The running version, linking to App settings. Hidden until loaded. */
+function VersionLink({ version }: { version?: string }) {
+  if (!version) {
     return null
   }
   return (
-    <span
-      className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full bg-sky-950 px-2.5 py-1 text-xs font-medium text-sky-300"
-      data-testid="job-indicator"
+    <Link
+      to="/app"
+      title="App settings"
+      className="min-w-0 truncate text-caption text-fg-muted hover:text-fg"
+      data-testid="version"
     >
-      <span
-        className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400"
-        aria-hidden="true"
-      />
-      {active} running
-    </span>
-  )
-}
-
-const brand = (
-  <span className="text-lg font-bold tracking-tight">ShrinkYourShit</span>
-)
-
-/**
- * Global "Pause all encoding" switch (task 11): stops every node in one
- * click and restores the previous per-node intent when turned off. ON
- * means every node is stopped/draining; off means at least one is running.
- */
-function PauseAllSwitch() {
-  const client = useQueryClient()
-  const toast = useToast()
-  const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
-  const items = nodes.data?.items ?? []
-  const paused =
-    items.length > 0 && items.every((n) => n.desired_state !== 'running')
-
-  const invalidate = () => {
-    void client.invalidateQueries({ queryKey: ['nodes'] })
-  }
-  const pause = useMutation({
-    mutationFn: pauseAllNodes,
-    onSuccess: ({ paused: n }) => {
-      toast.success(
-        n > 0
-          ? `Encoding paused on ${n} node${n === 1 ? '' : 's'}.`
-          : 'Encoding paused.',
-      )
-      invalidate()
-    },
-    onError: (err: unknown) => toast.failure('Pausing all nodes failed', err),
-  })
-  const resume = useMutation({
-    mutationFn: resumeAllNodes,
-    onSuccess: ({ resumed: n }) => {
-      toast.success(
-        n > 0
-          ? `Encoding resumed on ${n} node${n === 1 ? '' : 's'}.`
-          : 'Nothing to resume.',
-      )
-      invalidate()
-    },
-    onError: (err: unknown) => toast.failure('Resuming all nodes failed', err),
-  })
-  const busy = pause.isPending || resume.isPending
-
-  return (
-    <label
-      className="flex cursor-pointer select-none items-center gap-2 text-xs font-medium text-slate-300"
-      data-testid="pause-all-switch"
-    >
-      <input
-        type="checkbox"
-        checked={paused}
-        disabled={busy || items.length === 0}
-        onChange={() => (paused ? resume.mutate() : pause.mutate())}
-        className="h-4 w-4 rounded accent-amber-500"
-        data-testid="pause-all-checkbox"
-      />
-      Pause all encoding
-    </label>
+      {version}
+    </Link>
   )
 }
 
 export default function AppShell() {
   const health = useQuery({ queryKey: ['health'], queryFn: getHealth })
+  const version = health.data?.version
   const isDesktop = useMediaQuery('(min-width: 768px)')
   const wide = useMediaQuery('(min-width: 1024px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -276,82 +204,77 @@ export default function AppShell() {
   }, [isDesktop])
 
   return (
-    <div
-      className="flex min-h-dvh bg-slate-950 text-slate-100"
-      data-testid="app-shell"
-    >
+    <div className="flex min-h-dvh bg-canvas text-fg" data-testid="app-shell">
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-toast focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-control focus:bg-accent focus:px-4 focus:text-body focus:font-medium focus:text-accent-fg"
+      >
+        Skip to content
+      </a>
       <LiveEvents />
 
       {isDesktop && (
         <aside
-          className={`flex shrink-0 flex-col border-r border-slate-800 bg-slate-900 ${
+          className={`sticky top-0 flex h-dvh shrink-0 flex-col border-r border-line bg-surface z-rail ${
             showLabels ? 'w-56' : 'w-16'
           }`}
           data-testid="nav-rail"
         >
-          <div className={`py-5 ${showLabels ? 'px-4' : 'px-2 text-center'}`}>
-            {showLabels ? (
-              brand
-            ) : (
-              <span
-                className="text-lg font-bold tracking-tight"
-                title="ShrinkYourShit"
-              >
-                SYS
-              </span>
-            )}
+          <div
+            className={`flex py-5 ${showLabels ? 'px-4' : 'justify-center px-2'}`}
+          >
+            <Brand showWord={showLabels} />
           </div>
           <NavLinks showLabels={showLabels} />
-          <div className={`mt-auto p-3 ${showLabels ? '' : 'px-2'}`}>
-            <button
-              type="button"
-              onClick={toggleRail}
-              aria-label={showLabels ? 'Collapse navigation' : 'Show labels'}
-              aria-expanded={showLabels}
-              className="flex min-h-[44px] w-full items-center justify-center rounded-lg px-3 text-slate-400 hover:bg-slate-800 hover:text-white"
-              data-testid="nav-toggle"
+          <div className="mt-auto flex flex-col gap-3 border-t border-line p-3">
+            <EncodingStatus variant={showLabels ? 'rail' : 'icon'} />
+            <LogoutControl showName={showLabels} />
+            <div
+              className={`flex items-center ${
+                showLabels ? 'justify-between gap-2' : 'flex-col gap-1'
+              }`}
             >
-              <Icon path={showLabels ? ICONS.collapse : ICONS.expand} />
-            </button>
+              <VersionLink version={version} />
+              <button
+                type="button"
+                onClick={toggleRail}
+                aria-label={showLabels ? 'Collapse navigation' : 'Show labels'}
+                aria-expanded={showLabels}
+                className={btnIcon}
+                data-testid="nav-toggle"
+              >
+                <Icon name={showLabels ? 'collapse' : 'expand'} />
+              </button>
+            </div>
           </div>
         </aside>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {isDesktop ? (
-          <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-3">
-            <span className="text-sm text-slate-400" data-testid="version">
-              {health.data ? health.data.version : ''}
-            </span>
-            <div className="flex items-center gap-3">
-              <JobIndicator />
-              <PauseAllSwitch />
-              <div className="w-auto">
-                <LogoutButton />
-              </div>
-            </div>
-          </header>
-        ) : (
-          <header className="flex items-center justify-between gap-2 border-b border-slate-800 bg-slate-900 px-3 py-2">
+        {!isDesktop && (
+          <header className="sticky top-0 z-topbar flex h-14 items-center gap-2 border-b border-line bg-surface/95 px-2 backdrop-blur">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
               aria-expanded={drawerOpen}
-              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white"
+              className={btnIcon}
               data-testid="menu-button"
             >
-              <Icon path={ICONS.menu} className="h-6 w-6" />
+              <Icon name="menu" className="h-6 w-6 shrink-0" />
             </button>
-            {brand}
-            <div className="flex items-center gap-2">
-              <PauseAllSwitch />
-              <JobIndicator />
+            <div className="min-w-0 flex-1">
+              <Brand showWord />
             </div>
+            <EncodingStatus variant="compact" />
           </header>
         )}
 
-        <main className="min-w-0 flex-1 py-4 sm:py-6 lg:py-8">
+        <main
+          id="content"
+          tabIndex={-1}
+          className="min-w-0 flex-1 py-4 sm:py-6 lg:py-8"
+        >
           <Outlet />
         </main>
       </div>
@@ -364,23 +287,25 @@ export default function AppShell() {
           label="Navigation"
           testId="nav-drawer"
           dismissOnBackdrop
-          className="m-0 flex h-dvh w-72 max-w-[85vw] flex-col rounded-r-2xl bg-slate-900 text-slate-100 shadow-xl"
+          className="m-0 flex h-dvh w-72 max-w-[85vw] flex-col rounded-r-overlay bg-surface text-fg shadow-overlay"
         >
-          <div className="flex items-center justify-between border-b border-slate-800 py-2 pl-4 pr-2">
-            {brand}
+          <div className="flex items-center justify-between gap-2 border-b border-line py-2 pl-4 pr-2">
+            <Brand showWord />
             <button
               type="button"
               onClick={() => setDrawerOpen(false)}
               aria-label="Close menu"
-              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white"
+              className={btnIcon}
               data-testid="close-menu"
             >
-              <Icon path={ICONS.close} className="h-6 w-6" />
+              <Icon name="close" className="h-6 w-6 shrink-0" />
             </button>
           </div>
           <NavLinks showLabels />
-          <div className="mt-auto border-t border-slate-800 p-3">
-            <LogoutButton />
+          <div className="mt-auto flex flex-col gap-3 border-t border-line p-3">
+            <EncodingStatus variant="rail" />
+            <LogoutControl showName />
+            <VersionLink version={version} />
           </div>
         </ModalDialog>
       )}
