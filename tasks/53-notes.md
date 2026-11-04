@@ -60,8 +60,9 @@ None. No existing assertion was edited or deleted.
   414 and 768 px across `/`, `/libraries`, `/libraries/new`, the library detail, edit, rules
   and flow routes, `/nodes`, `/encode`, `/app` and `/integrations`. Each width passed the
   overflow, 44 px and single-h1 checks.
-- Lint throwaway proof: see the commit log on the branch (a `text-slate-500` commit, a failing
-  `npm run lint`, then `git revert`).
+- Lint throwaway proof: commit `fa5d9cf` added `web/src/LintProof.tsx` with
+  `className="text-slate-500"`. `npm run lint` exited 1 with `no-restricted-syntax` on line 3.
+  Commit `f94e5be` reverted it, and `npm run lint` exited 0 again.
 
 ### Environment caveats
 
