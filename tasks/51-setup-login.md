@@ -13,12 +13,12 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] One h1 per screen.
-- [ ] Visual stepper with `aria-current="step"`.
-- [ ] "Join an existing server" is a `button` (test id kept).
-- [ ] Inputs and buttons from uiControls (44 px).
-- [ ] `min-h-dvh`.
-- [ ] Login error as a Banner (`login-error` kept).
+- [x] One h1 per screen.
+- [x] Visual stepper with `aria-current="step"`.
+- [x] "Join an existing server" is a `button` (test id kept).
+- [x] Inputs and buttons from uiControls (44 px).
+- [x] `min-h-dvh`.
+- [x] Login error as a Banner (`login-error` kept).
 
 ## Rules for this wave
 
