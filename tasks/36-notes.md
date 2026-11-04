@@ -29,6 +29,7 @@ Installed version: `^5.3.0` (licence confirmed as OFL-1.1 with `npm view`).
 3. **Stylesheets are read from disk in the test.** Vitest blanks every `.css` import, including `?raw` (tried `?raw` on both files, and `css.include` in the Vitest config; both return an empty string). The test reads `src/index.css` and `node_modules/@xyflow/react/dist/style.css` with `node:fs`, loaded through a variable specifier so tsc needs no Node typings. Paths are relative to `web/`, where `make test-web` and `npm run test` run.
 4. **The mirrored `bg-slate-950` class.** The spec says to keep it and note the exception in a code comment. The note is in `index.css` beside the html/body rule, because `App.tsx` is a component file and the scope says no component changes.
 5. **Colour count is 20, not 21.** The spec's 2.2 table has 20 `--c-*` variables. The test asserts 20.
+6. **PM decision:** Deviation 1 accepted. The `index.css` latin `@font-face` is the required form, because the acceptance item mandates exactly one Inter woff2 (latin). The `main.tsx` import line in the task scope is superseded by the acceptance item.
 
 ## Changed assertions
 

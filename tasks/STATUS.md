@@ -55,7 +55,7 @@ Spec: `docs/design/ui-redesign-2026-11-04.md`. Web only. Same rules as above; ta
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 36 | 36-design-tokens-font-motion.md | in_progress |  |
+| 36 | 36-design-tokens-font-motion.md | done | PR #39, v1.9 |
 | 37 | 37-control-classes-format-helpers.md | todo |  |
 | 38 | 38-layout-primitives.md | todo |  |
 | 39 | 39-control-primitives.md | todo |  |
