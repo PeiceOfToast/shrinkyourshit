@@ -211,8 +211,8 @@ describe('route guard', () => {
     await waitFor(() => {
       expect(screen.getByTestId('empty-dashboard')).toBeInTheDocument()
     })
-    // Read only (task 10): one line and a link, nothing to fill in.
-    expect(screen.getByRole('link', { name: 'Add one' })).toHaveAttribute(
+    // Read only (task 10): one EmptyState and a link, nothing to fill in.
+    expect(screen.getByRole('link', { name: 'Add library' })).toHaveAttribute(
       'href',
       '/libraries/new',
     )
