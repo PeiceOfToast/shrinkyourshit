@@ -13,10 +13,10 @@ Where the spec gives a class string, use that exact string.
 
 ## Acceptance
 
-- [ ] The Edit page has FormSections Library, File types, Rules (summary plus link) and Danger zone.
-- [ ] The easy sliders and the Exact settings panel are gone from Edit.
-- [ ] Their tests move to `RulesPage.test.tsx` or are replaced by Steps-tier tests proving the same settings are reachable.
-- [ ] Remove library works from the Danger zone with the same ConfirmDialog test ids.
+- [x] The Edit page has FormSections Library, File types, Rules (summary plus link) and Danger zone.
+- [x] The easy sliders and the Exact settings panel are gone from Edit.
+- [x] Their tests move to `RulesPage.test.tsx` or are replaced by Steps-tier tests proving the same settings are reachable.
+- [x] Remove library works from the Danger zone with the same ConfirmDialog test ids.
 
 ## Rules for this wave
 

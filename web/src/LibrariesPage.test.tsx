@@ -200,6 +200,23 @@ describe('LibrariesPage', () => {
     }
   })
 
+  it('offers no Remove on the row: removing moved to the Edit page (task 47)', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [lib('lib-1', 'Movies')], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
+    ])
+    renderPage()
+    await screen.findByTestId('libraries-table')
+    expect(screen.queryByTestId('library-delete-lib-1')).toBeNull()
+    expect(screen.queryByTestId('library-delete-lib-1-card')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull()
+    expect(screen.getByTestId('library-edit-lib-1')).toBeInTheDocument()
+  })
+
   it('scans a library on request', async () => {
     mock = installFetchMock([
       {
@@ -268,57 +285,6 @@ describe('LibrariesPage', () => {
     const toast = await screen.findByTestId('toast')
     expect(toast).toHaveTextContent('Scan failed (409, scan_running)')
     expect(toast).toHaveTextContent('a scan is already running')
-  })
-
-  it('deletes only after confirmation, promising the files stay on disk', async () => {
-    let deleted = false
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries$/,
-        body: { items: [lib('lib-1', 'Movies')], total: 1 },
-      },
-      { method: 'GET', match: /\/api\/v1\/stats$/, body: stats },
-      {
-        method: 'DELETE',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        status: 204,
-        bodyFn: () => {
-          deleted = true
-          return null
-        },
-      },
-    ])
-    renderPage()
-    fireEvent.click(await screen.findByTestId('library-delete-lib-1'))
-
-    const dialog = screen.getByTestId('confirm-delete')
-    expect(dialog).toHaveTextContent('Remove “Movies”?')
-    expect(dialog).toHaveTextContent('/media/movies')
-    expect(dialog).toHaveTextContent('are not touched')
-
-    // Cancelling keeps the library.
-    fireEvent.click(screen.getByTestId('confirm-delete-cancel'))
-    await waitFor(() =>
-      expect(screen.queryByTestId('confirm-delete')).not.toBeInTheDocument(),
-    )
-    expect(deleted).toBe(false)
-
-    // Confirming sends exactly one DELETE to the library endpoint —
-    // never anything that would touch files on disk.
-    fireEvent.click(screen.getByTestId('library-delete-lib-1'))
-    fireEvent.click(screen.getByTestId('confirm-delete-yes'))
-    await waitFor(() => expect(deleted).toBe(true))
-    expect(mock.calls('DELETE', /\/api\/v1\/libraries\/lib-1$/)).toHaveLength(1)
-    expect(mock.requests.filter((r) => r.method === 'DELETE')).toHaveLength(1)
-    await waitFor(() =>
-      expect(screen.queryByTestId('confirm-delete')).not.toBeInTheDocument(),
-    )
-    // The removal is announced, and the message repeats the promise the
-    // dialog made.
-    const toast = await screen.findByTestId('toast')
-    expect(toast).toHaveTextContent('Library removed')
-    expect(toast).toHaveTextContent('files on disk are untouched')
   })
 
   it('offers the easy-mode form when there are no libraries', async () => {

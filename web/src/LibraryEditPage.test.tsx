@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * Library edit tests (task 07): easy sliders reopen for easy-shaped
- * libraries; the collapsed Advanced panel is the only place codec names
- * appear; saving sends easy or target depending on the mode.
+ * Library edit tests. Task 07 and 41 covered the sliders and the exact
+ * panel; task 47 (spec 5.7) makes the page properties only: Library, File
+ * types, a Rules summary with a link, and a Danger zone that removes the
+ * library. The slider and Steps-tier checks now live in RulesPage.test.tsx.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -14,32 +15,41 @@ import LibraryEditPage from './LibraryEditPage'
 import { ToastProvider } from './toast'
 import { installFetchMock, type FetchMock } from './test/fetchMock'
 
-function library(easy: unknown) {
+const STORED_TARGET: Target = {
+  video: { codec: 'hevc', quality: 3, reencode_if_same_codec: false },
+  audio: {
+    mode: 'keep_preferred',
+    preferred_languages: ['eng'],
+    compact_codec: 'aac',
+  },
+  subtitles: {
+    mode: 'remove',
+    preferred_languages: ['eng'],
+    extract_removed: false,
+  },
+  container: 'mkv',
+}
+
+function library(
+  easy: unknown,
+  flowSource = 'steps',
+  overrides: Record<string, unknown> = {},
+) {
   return {
     id: 'lib-1',
     name: 'Movies',
     path: '/media/movies',
-    target: {
-      video: { codec: 'hevc', quality: 3, reencode_if_same_codec: false },
-      audio: {
-        mode: 'keep_preferred',
-        preferred_languages: ['eng'],
-        compact_codec: 'aac',
-      },
-      subtitles: {
-        mode: 'remove',
-        preferred_languages: ['eng'],
-        extract_removed: false,
-      },
-      container: 'mkv',
-    },
+    target: STORED_TARGET,
     easy,
+    flow: null,
+    flow_source: flowSource,
     watch: true,
     schedule: '',
     result_policy: 'replace_if_smaller',
     file_kinds: ['video'],
     created_at: '',
     updated_at: '',
+    ...overrides,
   }
 }
 
@@ -53,6 +63,9 @@ function renderPage() {
         <MemoryRouter initialEntries={['/libraries/lib-1/edit']}>
           <Routes>
             <Route path="/libraries/:id/edit" element={<LibraryEditPage />} />
+            <Route path="/libraries/:id/rules" element={<p>rules page</p>} />
+            <Route path="/libraries/:id" element={<p>detail page</p>} />
+            <Route path="/libraries" element={<p>libraries page</p>} />
           </Routes>
         </MemoryRouter>
       </ToastProvider>
@@ -64,13 +77,13 @@ let mock: FetchMock
 
 afterEach(() => mock?.restore())
 
-describe('LibraryEditPage', () => {
-  it('reopens the easy sliders for an easy library and saves the easy object', async () => {
+describe('LibraryEditPage saves the rule the library already has (task 47)', () => {
+  it('resends the stored easy object unchanged when the easy tier owns the flow', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library({ quality: 3, remove_subtitles: false, audio: 1 }),
+        body: library({ quality: 3, remove_subtitles: true, audio: 2 }, 'easy'),
       },
       {
         method: 'PUT',
@@ -79,94 +92,150 @@ describe('LibraryEditPage', () => {
       },
     ])
     renderPage()
-
-    // Sliders reflect the stored easy state.
-    await waitFor(() =>
-      expect(screen.getByTestId('easy-edit')).toBeInTheDocument(),
-    )
-    expect(screen.getByTestId('quality-slider')).toHaveValue('3')
-    expect(screen.getByTestId('subtitles-checkbox')).not.toBeChecked()
-
-    // Move to best quality, tick remove subtitles, save.
-    fireEvent.click(screen.getByTestId('quality-stop-5'))
-    fireEvent.click(screen.getByTestId('subtitles-checkbox'))
+    await screen.findByTestId('library-edit-save')
     fireEvent.click(screen.getByTestId('library-edit-save'))
 
     await waitFor(() => {
       const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
       expect(puts).toHaveLength(1)
-      expect(puts[0].body).toMatchObject({
+      expect(puts[0].body).toEqual({
         name: 'Movies',
         path: '/media/movies',
         watch: true,
-        easy: { quality: 5, remove_subtitles: true, audio: 1 },
+        file_kinds: ['video'],
+        easy: { quality: 3, remove_subtitles: true, audio: 2 },
       })
-      expect((puts[0].body as Record<string, unknown>).target).toBeUndefined()
     })
   })
 
-  it('exposes the raw Target only inside the collapsed Advanced panel', async () => {
+  it('resends the stored target and no easy object for a Steps library', async () => {
     mock = installFetchMock([
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library({ quality: 3, remove_subtitles: true, audio: 2 }),
+        body: library(null, 'steps'),
       },
       {
         method: 'PUT',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null),
+        body: library(null, 'steps'),
       },
     ])
     renderPage()
-    await waitFor(() =>
-      expect(screen.getByTestId('easy-edit')).toBeInTheDocument(),
-    )
-
-    // Advanced starts collapsed; the codec fields are hidden.
-    expect(screen.getByTestId('advanced-panel')).toBeInTheDocument()
-    expect(screen.queryByTestId('advanced-fields')).not.toBeVisible()
-
-    fireEvent.click(screen.getByTestId('advanced-codec')) // inside details; opens it
-    fireEvent.click(
-      screen.getByTestId('advanced-panel').querySelector('summary')!,
-    )
-
-    const fields = screen.getByTestId('advanced-fields')
-    expect(fields).toBeVisible()
-    expect(screen.getByTestId('advanced-codec')).toHaveValue('hevc')
-    expect(screen.getByTestId('advanced-container')).toHaveValue('mkv')
-    expect(screen.getByTestId('advanced-reencode')).not.toBeChecked()
-    expect(screen.getByTestId('advanced-languages')).toHaveValue('eng')
-
-    // Saving with Advanced open sends the full target and no easy object.
-    fireEvent.change(screen.getByTestId('advanced-languages'), {
-      target: { value: 'eng, deu' },
-    })
+    await screen.findByTestId('library-edit-save')
     fireEvent.click(screen.getByTestId('library-edit-save'))
+
     await waitFor(() => {
       const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
       expect(puts).toHaveLength(1)
       const body = puts[0].body as { easy?: unknown; target?: Target }
       expect(body.easy).toBeUndefined()
-      expect(body.target).toEqual({
-        video: { codec: 'hevc', quality: 3, reencode_if_same_codec: false },
-        audio: {
-          mode: 'keep_preferred',
-          preferred_languages: ['eng', 'deu'],
-          compact_codec: 'aac',
-        },
-        subtitles: {
-          mode: 'remove',
-          preferred_languages: ['eng', 'deu'],
-          extract_removed: false,
-        },
-        container: 'mkv',
-      })
+      expect(body.target).toEqual(STORED_TARGET)
     })
   })
 
-  it('shows only the advanced editor for a hand-tuned library', async () => {
+  it('never sends a leftover easy object when the Steps tier owns the flow', async () => {
+    // A library saved on the Easy tier and later moved to Steps still has
+    // its easy object stored. An easy save would regenerate the hand-made
+    // steps, so the stored target goes instead.
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(
+          { quality: 2, remove_subtitles: false, audio: 1 },
+          'steps',
+        ),
+      },
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(null, 'steps'),
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-edit-save')
+    fireEvent.click(screen.getByTestId('library-edit-save'))
+
+    await waitFor(() => {
+      const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
+      expect(puts).toHaveLength(1)
+      const body = puts[0].body as { easy?: unknown; target?: Target }
+      expect(body.easy).toBeUndefined()
+      expect(body.target).toEqual(STORED_TARGET)
+    })
+  })
+})
+
+describe('LibraryEditPage properties only (task 47, spec 5.7)', () => {
+  it('has Library, File types, Rules and Danger zone sections and no rule controls', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(
+          { quality: 3, remove_subtitles: false, audio: 1 },
+          'easy',
+        ),
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-edit-save')
+    for (const title of ['Library', 'File types', 'Rules', 'Danger zone']) {
+      expect(
+        screen.getByRole('heading', { level: 2, name: title }),
+      ).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('heading', { name: 'Exact settings' })).toBeNull()
+    expect(screen.queryByText('Advanced', { exact: false })).toBeNull()
+    // The sliders and the exact-values panel are gone from Edit.
+    expect(screen.queryByTestId('easy-edit')).toBeNull()
+    expect(screen.queryByTestId('quality-stop-3')).toBeNull()
+    expect(screen.queryByTestId('audio-stop-1')).toBeNull()
+    expect(screen.queryByTestId('subtitles-checkbox')).toBeNull()
+    expect(screen.queryByTestId('advanced-panel')).toBeNull()
+    expect(screen.queryByTestId('advanced-codec')).toBeNull()
+  })
+
+  it('summarises the easy rules and links to the Rules page', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(
+          { quality: 3, remove_subtitles: false, audio: 1 },
+          'easy',
+        ),
+      },
+    ])
+    renderPage()
+    expect(
+      await screen.findByTestId('library-edit-rules-summary'),
+    ).toHaveTextContent('Easy · Balanced · keep every audio track')
+    const link = screen.getByTestId('library-edit-rules-link')
+    expect(link).toHaveTextContent('Change rules')
+    expect(link).toHaveAttribute('href', '/libraries/lib-1/rules')
+  })
+
+  it('keeps the file-type help line and the Save and Cancel bar sticky', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(null),
+      },
+    ])
+    renderPage()
+    await screen.findByTestId('library-edit-save')
+    const bar = screen.getByTestId('library-edit-save').parentElement!
+    expect(bar.className).toContain('sticky')
+    expect(
+      screen.getByText('Files of other types stay untouched.'),
+    ).toBeInTheDocument()
+  })
+
+  it('removes the library from the Danger zone after confirmation only', async () => {
+    let deleted = false
     mock = installFetchMock([
       {
         method: 'GET',
@@ -174,18 +243,90 @@ describe('LibraryEditPage', () => {
         body: library(null),
       },
       {
-        method: 'PUT',
+        method: 'DELETE',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null),
+        status: 204,
+        bodyFn: () => {
+          deleted = true
+          return null
+        },
       },
     ])
     renderPage()
-
-    await waitFor(() =>
-      expect(screen.getByTestId('library-edit')).toBeInTheDocument(),
+    const danger = await screen.findByTestId('library-edit-danger')
+    expect(danger).toHaveTextContent(
+      'Removing a library forgets its history. Files on disk are not touched.',
     )
-    expect(screen.queryByTestId('easy-edit')).not.toBeInTheDocument()
-    expect(screen.getByTestId('advanced-fields')).toBeVisible()
+
+    fireEvent.click(screen.getByTestId('library-delete-lib-1'))
+    const dialog = screen.getByTestId('confirm-delete')
+    expect(dialog).toHaveTextContent('Remove “Movies”?')
+    expect(dialog).toHaveTextContent('/media/movies')
+    expect(dialog).toHaveTextContent('are not touched')
+
+    // Cancelling keeps the library.
+    fireEvent.click(screen.getByTestId('confirm-delete-cancel'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('confirm-delete')).not.toBeInTheDocument(),
+    )
+    expect(deleted).toBe(false)
+
+    // Confirming sends exactly one DELETE to the library endpoint.
+    fireEvent.click(screen.getByTestId('library-delete-lib-1'))
+    fireEvent.click(screen.getByTestId('confirm-delete-yes'))
+    await waitFor(() => expect(deleted).toBe(true))
+    expect(mock.calls('DELETE', /\/api\/v1\/libraries\/lib-1$/)).toHaveLength(1)
+    expect(mock.requests.filter((r) => r.method === 'DELETE')).toHaveLength(1)
+    const toast = await screen.findByTestId('toast')
+    expect(toast).toHaveTextContent('Library removed')
+    expect(toast).toHaveTextContent('files on disk are untouched')
+    expect(await screen.findByText('libraries page')).toBeInTheDocument()
+  })
+})
+
+describe('LibraryEditPage rules summary (task 47)', () => {
+  it('names the Steps and Advanced tiers in plain language', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(null, 'steps'),
+      },
+    ])
+    const first = renderPage()
+    expect(
+      await screen.findByTestId('library-edit-rules-summary'),
+    ).toHaveTextContent('Steps · an ordered list')
+    first.unmount()
+
+    mock.restore()
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(null, 'advanced'),
+      },
+    ])
+    renderPage()
+    expect(
+      await screen.findByTestId('library-edit-rules-summary'),
+    ).toHaveTextContent('Advanced · a visual flow')
+  })
+
+  it('adds the subtitle choice to the Easy summary', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library({ quality: 5, remove_subtitles: true, audio: 4 }, 'easy'),
+      },
+    ])
+    renderPage()
+    expect(
+      await screen.findByTestId('library-edit-rules-summary'),
+    ).toHaveTextContent(
+      'Easy · Best quality · keep the best audio track, made small · remove subtitles',
+    )
   })
 })
 
@@ -247,70 +388,5 @@ describe('LibraryEditPage file kinds (task 34)', () => {
       (screen.getByTestId('library-edit-kind-video') as HTMLInputElement)
         .checked,
     ).toBe(true)
-  })
-})
-
-describe('LibraryEditPage layout (task 41)', () => {
-  it('names the exact panel "Exact settings" and labels options in plain language', async () => {
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library({ quality: 3, remove_subtitles: true, audio: 2 }),
-      },
-    ])
-    renderPage()
-    await screen.findByTestId('advanced-panel')
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Exact settings' }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText('Advanced', { exact: false })).toBeNull()
-
-    // Labels change; the stored values do not.
-    const audio = screen.getByTestId('advanced-audio-mode') as HTMLSelectElement
-    expect(audio.value).toBe('keep_preferred')
-    expect(
-      Array.from(audio.options).map((o) => [o.value, o.textContent]),
-    ).toEqual([
-      ['keep_all', 'Keep every track'],
-      ['keep_preferred', 'Keep my languages'],
-      ['keep_best', 'Keep the best track'],
-      ['compact', 'Keep the best track, make it small'],
-    ])
-    const subs = screen.getByTestId(
-      'advanced-subtitles-mode',
-    ) as HTMLSelectElement
-    expect(Array.from(subs.options).map((o) => o.textContent)).toEqual([
-      'Keep every track',
-      'Keep my languages',
-      'Remove all',
-    ])
-    expect(
-      Array.from(
-        (screen.getByTestId('advanced-container') as HTMLSelectElement).options,
-      ).map((o) => o.textContent),
-    ).toEqual(['MKV', 'MP4'])
-  })
-
-  it('keeps Save and Cancel in a sticky action bar and gives the sections their titles', async () => {
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null),
-      },
-    ])
-    renderPage()
-    await screen.findByTestId('library-edit-save')
-    const bar = screen.getByTestId('library-edit-save').parentElement!
-    expect(bar.className).toContain('sticky')
-    for (const title of ['Library', 'File types', 'Exact settings']) {
-      expect(
-        screen.getByRole('heading', { level: 2, name: title }),
-      ).toBeInTheDocument()
-    }
-    expect(
-      screen.getByText('Files of other types stay untouched.'),
-    ).toBeInTheDocument()
   })
 })

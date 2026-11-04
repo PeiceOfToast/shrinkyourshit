@@ -286,3 +286,129 @@ describe('RulesPage restyle (task 45)', () => {
     }
   })
 })
+
+// --- Task 47: the Edit page's rule controls moved here (spec 5.7, 8.4). ---
+
+function easyLibrary(easy: {
+  quality: number
+  remove_subtitles: boolean
+  audio: number
+}) {
+  return { ...libraryDoc('easy'), easy }
+}
+
+describe('RulesPage holds the rule controls moved from Edit (task 47)', () => {
+  it('the Easy tier sliders save the easy object and no target', async () => {
+    const lib = easyLibrary({ quality: 3, remove_subtitles: false, audio: 1 })
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/libraries\/lib-1$/, body: lib },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/flow$/,
+        body: { library_id: 'lib-1', source: 'easy', graph: stepsGraph() },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/flows\/step-types$/,
+        body: { items: PALETTE, total: PALETTE.length },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+      {
+        method: 'PUT',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: lib,
+      },
+    ])
+    renderTiers()
+    await screen.findByTestId('rules-easy-save')
+
+    fireEvent.click(screen.getByTestId('quality-stop-5'))
+    fireEvent.click(screen.getByTestId('subtitles-checkbox'))
+    fireEvent.click(screen.getByTestId('rules-easy-save'))
+
+    await waitFor(() => {
+      const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
+      expect(puts).toHaveLength(1)
+      expect(puts[0].body).toMatchObject({
+        name: 'Movies',
+        path: '/media/movies',
+        watch: false,
+        easy: { quality: 5, remove_subtitles: true, audio: 1 },
+      })
+      expect((puts[0].body as Record<string, unknown>).target).toBeUndefined()
+    })
+  })
+
+  it('the Easy tier names its audio choices in plain language', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: easyLibrary({ quality: 3, remove_subtitles: false, audio: 2 }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/flow$/,
+        body: { library_id: 'lib-1', source: 'easy', graph: stepsGraph() },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/flows\/step-types$/,
+        body: { items: PALETTE, total: PALETTE.length },
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/flows\/preview$/,
+        body: { steps: [] },
+      },
+    ])
+    renderTiers()
+    await screen.findByTestId('rules-easy-save')
+    expect(screen.getByTestId('audio-stop-1')).toHaveTextContent(
+      'Keep everything',
+    )
+    expect(screen.getByTestId('audio-stop-2')).toHaveTextContent(
+      'Keep my languages',
+    )
+    expect(screen.getByTestId('audio-stop-3')).toHaveTextContent(
+      'Keep the best track',
+    )
+    expect(screen.getByTestId('audio-stop-4')).toHaveTextContent(
+      'Keep the best track, make it small',
+    )
+    // The stored value is unchanged: option 2 is the selected stop.
+    expect(screen.getByTestId('audio-stop-2')).toHaveClass('font-semibold')
+  })
+
+  it('the Steps tier reaches the codec, quality and container settings', async () => {
+    mock = installFetchMock(routes('steps'))
+    renderTiers()
+    await screen.findByTestId('step-stack')
+
+    fireEvent.click(screen.getByTestId('step-edit-transcode_video'))
+    const codec = (await screen.findByTestId(
+      'step-param-codec',
+    )) as HTMLSelectElement
+    expect(codec.value).toBe('hevc')
+    expect(Array.from(codec.options).map((o) => o.value)).toEqual([
+      'hevc',
+      'av1',
+      'h264',
+    ])
+    expect(screen.getByTestId('step-param-quality')).toHaveValue(3)
+
+    fireEvent.click(screen.getByTestId('step-edit-remux_container'))
+    const container = (await screen.findByTestId(
+      'step-param-container',
+    )) as HTMLSelectElement
+    expect(container.value).toBe('mkv')
+    expect(Array.from(container.options).map((o) => o.value)).toEqual([
+      'mkv',
+      'mp4',
+    ])
+  })
+})
