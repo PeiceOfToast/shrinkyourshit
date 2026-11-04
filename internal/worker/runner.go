@@ -149,6 +149,9 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	policy := spec.ResultPolicy
 	rename := ""
 	var hc *flow.HealthCheckSpec
+	// hardware and hardwareStep are the transcode step's encoder choice
+	// (task 57); empty means the global policy, the same as auto.
+	hardware, hardwareStep := "", ""
 	working := local // the working file the chain operates on
 	cur := srcInfo   // the current probe of the working file
 	if spec.Flow == nil {
@@ -208,6 +211,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		}
 		rename = eff.Rename
 		hc = eff.HealthCheck
+		hardware, hardwareStep = eff.Hardware, eff.HardwareStep
 	}
 	sink.sysf("target: %s container, %s video, %s audio", target.Container,
 		target.Video.Codec, target.Audio.Mode)
@@ -218,6 +222,10 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	// step may have replaced it, task 32) with the re-probed view.
 	output := filepath.Join(dir, "output."+containerExt(target.Container))
 	sp := encoders.NewSpec(working, output, cur, target)
+	encs, err := r.registryFor(target, hardware, hardwareStep)
+	if err != nil {
+		return fail("%v", err)
+	}
 	state := newProgressState()
 
 	runCtx, cancelRun := context.WithCancel(ctx)
@@ -229,7 +237,7 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 		r.reportLoop(stopReport, runCtx, spec, state, cur.DurationSeconds, cancelled, cancelRun, mode, output)
 	}()
 
-	res, encErr := encoders.RunWithFallback(runCtx, r.registryFor(target), sp,
+	res, encErr := encoders.RunWithFallback(runCtx, encs, sp,
 		func(ctx context.Context, args []string) error {
 			return r.execEncode(ctx, args, state, tail, sink)
 		})
@@ -242,7 +250,12 @@ func (r *runner) run(ctx context.Context, spec *server.JobSpec, cancelled *atomi
 	if encErr != nil {
 		return fail("encode failed: %v", encErr)
 	}
-	sink.sysf("encoder chosen: %s", res.EncoderUsed)
+	chosen := fmt.Sprintf("encoder chosen: %s", res.EncoderUsed)
+	if hardware != "" && hardware != flow.HardwareAuto {
+		// A per step choice is named here so it can be audited later (task 57).
+		chosen += fmt.Sprintf(" (step %s set hardware to %s)", hardwareStep, hardware)
+	}
+	sink.sysf("%s", chosen)
 	for _, fb := range res.Fallbacks {
 		sink.warnf("encoder %s failed, falling back: %s", fb.Encoder, fb.Error)
 	}
@@ -714,12 +727,31 @@ func execFFmpeg(ctx context.Context, ffmpegPath string, args []string, stdout, s
 
 // registryFor returns the encoders to try for the target, each wrapped so
 // progress reports can name the backend currently being tried.
-func (r *runner) registryFor(target flow.Target) []encoders.Encoder {
+//
+// hardware is the transcode step's choice (task 57). "" or auto keeps the
+// global policy list unchanged. An explicit encoder keeps only that
+// encoder, with no fallback to software, so a QSV step never quietly
+// becomes a six hour CPU encode. software keeps only cpu. A choice the node
+// cannot provide is an error that names the step.
+func (r *runner) registryFor(target flow.Target, hardware, step string) ([]encoders.Encoder, error) {
 	list := r.encs
 	if list == nil {
 		list = encoders.Registry(target, r.caps)
 	}
-	return r.tracker.wrap(list)
+	if hardware == "" || hardware == flow.HardwareAuto {
+		return r.tracker.wrap(list), nil
+	}
+	want := hardware
+	if hardware == flow.HardwareSoftware {
+		want = encoders.CPU.Name()
+	}
+	for _, e := range list {
+		if e.Name() == want {
+			return r.tracker.wrap([]encoders.Encoder{e}), nil
+		}
+	}
+	return nil, fmt.Errorf("step %s: hardware %s is not available on this node (no %s encoder for %s); set the step's hardware to auto or run the job on a node that has it",
+		step, hardware, want, target.Video.Codec)
 }
 
 // encoderTracker remembers which encoder BuildArgs was last called on.

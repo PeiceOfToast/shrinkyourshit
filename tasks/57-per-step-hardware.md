@@ -36,11 +36,15 @@ No UI for the field (task 61 and 62).
 
 ## Acceptance
 
-- [ ] A graph with `hardware: auto` behaves identically to today, proven by an existing test that
-      does not change.
-- [ ] `hardware: qsv` on a node with no QSV fails the job with an error naming the step.
-- [ ] `hardware: software` on a node that has QSV uses libx265 and the log says so.
-- [ ] `make test` green.
+- [x] A graph with `hardware: auto` behaves identically to today, proven by an existing test that
+      does not change. Evidence: `TestRunnerPassesScaleAndRateToEncode` and `TestRunnerFallbackReasonsRecorded`
+      are unchanged (`git diff` on `runner_test.go` only adds lines) and pass in `go test ./internal/worker/`.
+- [x] `hardware: qsv` on a node with no QSV fails the job with an error naming the step. Evidence:
+      `TestRunnerHardwareQSVOnNodeWithoutQSVFailsNamingStep` passes (error contains `step encode` and `qsv`, zero encodes ran).
+- [x] `hardware: software` on a node that has QSV uses libx265 and the log says so. Evidence:
+      `TestRunnerHardwareSoftwareOnQSVNodeUsesLibx265` passes (args contain `libx265`, log contains
+      `encoder chosen: cpu (step encode set hardware to software)`).
+- [x] `make test` green. Evidence: `make test` exit 0; 62 web files and 444 tests passed; 13 Go packages `ok`.
 
 ## Notes
 

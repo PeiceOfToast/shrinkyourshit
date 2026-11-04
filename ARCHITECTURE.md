@@ -292,8 +292,12 @@ Edge{ from, to, when }
     after `quality` is optional (task 54). Rate fields must match their
     mode: `crf` mode needs a `crf` above 0, `bitrate` mode needs
     `bitrate_kbps`, a rate value set outside its mode is an error, and
-    `max_kbps` in quality mode is an error. `hardware` is validated and
-    described here; the plan carries it from task 57.
+    `max_kbps` in quality mode is an error. `hardware` is validated, and the
+    plan carries it as the step's encoder choice (task 57): `auto` or empty
+    follows the global encoder policy; `software` runs on the cpu encoder;
+    `qsv`, `vaapi` or `videotoolbox` run on that encoder only, with no
+    fallback, and the job fails with an error naming the step when the node
+    does not have it.
   - `scale {height: 2160|1440|1080|720|480, only_if_larger: bool (default
     true), allow_upscale: bool (default false)}` — sets the video's scale
     on the Target. At most one per graph. Its guard is the encode's guard
