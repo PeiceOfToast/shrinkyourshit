@@ -27,6 +27,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { FlowGraph, StepTypeInfo } from './api'
+import Badge from './Badge'
 import { chipsFor, conditionText, paletteFor } from './flowModel'
 import {
   edgeKey,
@@ -55,47 +56,39 @@ type StepNode = Node<StepNodeData, 'step'>
  * parameters as chips, and the server's validation error when there is
  * one. Handles on top (in) and bottom (out) form the chain. */
 function StepNodeView({ data, selected }: NodeProps<StepNode>) {
+  // The step id is not on the face (spec 4.3): it lives in the inspector.
+  const ring = data.error
+    ? 'ring-2 ring-danger'
+    : selected
+      ? 'ring-2 ring-accent'
+      : 'ring-1 ring-line'
   return (
     <div
       data-testid={`canvas-node-${data.stepId}`}
-      className={`min-w-[15rem] max-w-[17rem] rounded-2xl bg-slate-900 px-4 py-3 ring-1 ${
-        data.error
-          ? 'ring-rose-500/70'
-          : selected
-            ? 'ring-emerald-500'
-            : 'ring-slate-700'
-      }`}
+      className={`min-w-[15rem] max-w-[17rem] rounded-card bg-surface px-4 py-3 ${ring}`}
     >
       <Handle
         type="target"
         position={Position.Top}
-        className="!h-2.5 !w-2.5 !border-slate-600 !bg-slate-500"
+        className="!h-2.5 !w-2.5 !border-surface !bg-line-strong"
         isConnectable={!data.readOnly}
       />
-      <div className="flex items-baseline gap-2">
-        <span className="font-semibold text-slate-100">{data.label}</span>
-        <span className="truncate text-[10px] text-slate-500">
-          {data.stepId}
-        </span>
-      </div>
+      <span className="block text-body font-semibold text-fg">
+        {data.label}
+      </span>
       {data.condition && (
-        <p className="mt-1 text-xs text-slate-500">{data.condition}</p>
+        <p className="mt-1 text-caption text-fg-muted">{data.condition}</p>
       )}
       {data.chips.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {data.chips.map((chip, i) => (
-            <span
-              key={i}
-              className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300"
-            >
-              {chip}
-            </span>
+            <Badge key={i}>{chip}</Badge>
           ))}
         </div>
       )}
       {data.error && (
         <p
-          className="mt-2 text-xs text-rose-400"
+          className="mt-2 text-caption text-danger"
           data-testid={`canvas-node-error-${data.stepId}`}
         >
           {data.error}
@@ -104,7 +97,7 @@ function StepNodeView({ data, selected }: NodeProps<StepNode>) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!h-2.5 !w-2.5 !border-slate-600 !bg-slate-500"
+        className="!h-2.5 !w-2.5 !border-surface !bg-line-strong"
         isConnectable={!data.readOnly}
       />
     </div>
@@ -112,6 +105,9 @@ function StepNodeView({ data, selected }: NodeProps<StepNode>) {
 }
 
 const nodeTypes = { step: StepNodeView }
+
+/** The minimap shows from this many nodes; below it the canvas is the map. */
+const MINIMAP_MIN_NODES = 10
 
 export interface FlowCanvasProps {
   graph: FlowGraph
@@ -297,14 +293,24 @@ export default function FlowCanvas({
         deleteKeyCode={editing ? ['Backspace', 'Delete'] : null}
         multiSelectionKeyCode={null}
         fitView
-        fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
+        // minZoom 0.85 keeps node text at or above about 10 px after fitView
+        // (spec 4.3); the old 0.2 let a big flow shrink to unreadable chips.
+        fitViewOptions={{ padding: 0.2, minZoom: 0.85, maxZoom: 1 }}
         minZoom={0.2}
         maxZoom={1.75}
         colorMode="dark"
       >
         <Background variant={BackgroundVariant.Dots} gap={28} />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable className="!hidden md:!block" />
+        {/* A minimap earns its space only on a large graph (spec 5.9). */}
+        {nodes.length >= MINIMAP_MIN_NODES && (
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor="rgb(var(--c-raised))"
+            className="!hidden md:!block"
+          />
+        )}
       </ReactFlow>
     </div>
   )

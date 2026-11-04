@@ -17,7 +17,9 @@ import {
   removeSteps,
   type CanvasSelection,
 } from './flowCanvasModel'
+import Badge from './Badge'
 import ParamField from './flowParams'
+import { btn, btnBlock, btnDangerGhost, select } from './uiControls'
 
 export interface FlowInspectorProps {
   graph: FlowGraph
@@ -63,16 +65,19 @@ export default function FlowInspector({
     }
     return (
       <div className="space-y-4" data-testid="flow-inspector">
-        <header>
-          <h2 className="text-sm font-semibold text-slate-200">
-            {info?.label ?? node.type}
-          </h2>
-          <p className="text-xs text-slate-500">{node.id}</p>
+        <header className="flex flex-col gap-1">
+          <h2 className="text-heading text-fg">{info?.label ?? node.type}</h2>
+          <p
+            className="break-all font-mono text-caption text-fg-muted"
+            data-testid="flow-inspector-id"
+          >
+            {node.id}
+          </p>
         </header>
 
         {!editing && (
           <p
-            className="text-xs text-slate-500"
+            className="text-caption text-fg-muted"
             data-testid="flow-inspector-readonly-note"
           >
             Read only — choose “Edit flow” to change this flow.
@@ -80,7 +85,7 @@ export default function FlowInspector({
         )}
 
         {info && info.condition && (
-          <p className="text-xs text-slate-500">
+          <p className="text-caption text-fg-muted">
             {conditionText(node, [], info)}
           </p>
         )}
@@ -100,7 +105,9 @@ export default function FlowInspector({
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-500">This step has no settings.</p>
+            <p className="text-caption text-fg-muted">
+              This step has no settings.
+            </p>
           )
         ) : (
           info &&
@@ -110,29 +117,24 @@ export default function FlowInspector({
               data-testid={`flow-inspector-chips-${node.id}`}
             >
               {chipsFor(node, info).map((chip, i) => (
-                <span
-                  key={i}
-                  className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300"
-                >
-                  {chip}
-                </span>
+                <Badge key={i}>{chip}</Badge>
               ))}
             </div>
           )
         )}
 
         {editing && (
-          <div className="grid gap-3 border-t border-slate-800 pt-3">
+          <div className="flex flex-col gap-4 border-t border-line pt-4">
             {others.length > 0 && (
-              <div className="grid gap-1">
-                <span className="text-xs font-medium text-slate-400">
+              <div className="flex flex-col gap-2">
+                <span className="text-body font-medium text-fg">
                   Connect this step to
                 </span>
                 <div className="flex gap-2">
                   <select
                     value={connectTarget}
                     onChange={(e) => setConnectTarget(e.target.value)}
-                    className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm"
+                    className={`${select} min-w-0 flex-1`}
                     aria-label="Step to connect to"
                     data-testid="flow-inspector-connect-select"
                   >
@@ -153,13 +155,13 @@ export default function FlowInspector({
                       onChange(applyConnect(graph, node.id, connectTarget))
                       setConnectTarget('')
                     }}
-                    className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                    className={btn}
                     data-testid="flow-inspector-connect"
                   >
                     Connect
                   </button>
                 </div>
-                <span className="text-xs text-slate-500">
+                <span className="text-caption text-fg-muted">
                   Connecting replaces the connection it displaces — the chain
                   stays a single line.
                 </span>
@@ -171,7 +173,7 @@ export default function FlowInspector({
                 onClick={() =>
                   onChange(removeEdge(graph, outEdge.from, outEdge.to))
                 }
-                className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"
+                className={`${btn} ${btnBlock}`}
                 data-testid="flow-inspector-disconnect"
               >
                 Disconnect the next step
@@ -180,7 +182,7 @@ export default function FlowInspector({
             <button
               type="button"
               onClick={() => onChange(removeSteps(graph, [node.id]))}
-              className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-rose-400 hover:bg-slate-700"
+              className={`${btnDangerGhost} ${btnBlock}`}
               data-testid="flow-inspector-remove"
             >
               Remove this step
@@ -199,9 +201,9 @@ export default function FlowInspector({
     return (
       <div className="space-y-4" data-testid="flow-inspector">
         <header>
-          <h2 className="text-sm font-semibold text-slate-200">Connection</h2>
+          <h2 className="text-heading text-fg">Connection</h2>
         </header>
-        <p className="text-sm text-slate-300" data-testid="flow-inspector-edge">
+        <p className="text-body text-fg" data-testid="flow-inspector-edge">
           {label(from)} → {label(to)}
         </p>
         {editing && (
@@ -212,7 +214,7 @@ export default function FlowInspector({
                 removeEdge(graph, selection.edge!.from, selection.edge!.to),
               )
             }
-            className="w-full rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-rose-400 hover:bg-slate-700"
+            className={`${btnDangerGhost} ${btnBlock}`}
             data-testid="flow-inspector-remove-edge"
           >
             Remove connection
@@ -224,12 +226,12 @@ export default function FlowInspector({
 
   return (
     <div className="space-y-2" data-testid="flow-inspector-empty">
-      <h2 className="text-sm font-semibold text-slate-400">Nothing selected</h2>
-      <p className="text-xs text-slate-500">
-        Select a step on the canvas to see its settings.
+      <h2 className="text-heading text-fg">Nothing selected</h2>
+      <p className="text-caption text-fg-muted">
+        Select a step to see its settings.
       </p>
       {editing && (
-        <p className="text-xs text-slate-500">
+        <p className="text-caption text-fg-muted">
           Add a step from the palette, then connect it into the chain.
         </p>
       )}

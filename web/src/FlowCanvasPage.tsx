@@ -14,7 +14,7 @@
  * is invalid. Saving writes the whole graph with source=advanced.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ApiError,
@@ -27,6 +27,8 @@ import {
   type FlowFieldError,
   type FlowGraph,
 } from './api'
+import Badge from './Badge'
+import Banner from './Banner'
 import ErrorBox from './ErrorBox'
 import FlowCanvas from './FlowCanvas'
 import FlowInspector from './FlowInspector'
@@ -38,12 +40,15 @@ import {
   type CanvasSelection,
 } from './flowCanvasModel'
 import PageContainer from './PageContainer'
+import PageHeader from './PageHeader'
+import SegmentedControl from './SegmentedControl'
 import ConfirmDialog from './ConfirmDialog'
 import { SkeletonRows } from './skeleton'
+import { useDocumentTitle } from './useDocumentTitle'
 import { useToast } from './toastContext'
 import { useUnsavedGuard } from './useUnsavedGuard'
 import { useMediaQuery } from './useMediaQuery'
-import { btn, btnGhost, btnPrimary } from './uiControls'
+import { btnGhost, btnPrimary, card, cardPad } from './uiControls'
 
 /** Every change re-validates; the debounce keeps typing in the inspector
  * from firing a request per keystroke. */
@@ -66,10 +71,48 @@ function parseFieldErrors(raw: string | undefined): FlowFieldError[] {
   }
 }
 
+type Tier = 'easy' | 'steps' | 'advanced'
+
+/** The three tiers of the Rules page (spec 5.8). Easy and Steps leave for
+ * the rules page, where they are edited; Advanced is this route. */
+const TIERS: Array<{
+  id: Tier
+  label: string
+  testId: string
+  to: (id: string) => string
+}> = [
+  {
+    id: 'easy',
+    label: 'Easy',
+    testId: 'tier-easy',
+    to: (id) => `/libraries/${id}/rules`,
+  },
+  {
+    id: 'steps',
+    label: 'Steps',
+    testId: 'tier-steps',
+    to: (id) => `/libraries/${id}/rules`,
+  },
+  {
+    id: 'advanced',
+    label: 'Advanced',
+    testId: 'tier-advanced',
+    to: (id) => `/libraries/${id}/flow`,
+  },
+]
+
+/** The tier a flow source belongs to, as the Rules page maps it. */
+function tierOf(source: string): Tier {
+  if (source === 'easy') return 'easy'
+  if (source === 'advanced') return 'advanced'
+  return 'steps'
+}
+
 export default function FlowCanvasPage() {
   const { id = '' } = useParams()
   const client = useQueryClient()
   const toast = useToast()
+  const libraryCrumb = { label: 'Libraries', to: '/libraries' }
 
   const library = useQuery({
     queryKey: ['library', id],
@@ -100,6 +143,8 @@ export default function FlowCanvasPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [validity, setValidity] = useState<Validity | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+
+  useDocumentTitle(['Rules', library.data?.name])
 
   // First load: the graph is exactly the object the API returned.
   useEffect(() => {
@@ -225,8 +270,8 @@ export default function FlowCanvasPage() {
     library.isPending || flow.isPending || palette.isPending || !graph
   if (loading) {
     return (
-      <PageContainer className="space-y-6" data-testid="flow-loading">
-        <h1 className="text-2xl font-bold">Flow</h1>
+      <PageContainer className="pb-8" data-testid="flow-loading">
+        <PageHeader breadcrumb={[libraryCrumb]} title="Rules" />
         <SkeletonRows rows={4} />
       </PageContainer>
     )
@@ -240,10 +285,16 @@ export default function FlowCanvasPage() {
     !lib
   ) {
     return (
-      <PageContainer className="space-y-6" data-testid="flow-canvas-page">
+      <PageContainer className="pb-8" data-testid="flow-canvas-page">
+        <PageHeader breadcrumb={[libraryCrumb]} title="Rules" />
         <ErrorBox
           title="Cannot load the flow."
           error={library.error ?? flow.error ?? palette.error}
+          onRetry={() => {
+            void library.refetch()
+            void flow.refetch()
+            void palette.refetch()
+          }}
         />
       </PageContainer>
     )
@@ -263,143 +314,149 @@ export default function FlowCanvasPage() {
           : !dirty
             ? 'No changes to save.'
             : null
+  const inUse = tierOf(flow.data.source)
 
   return (
-    <PageContainer className="space-y-4 pb-8" data-testid="flow-canvas-page">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold">Flow “{lib.name}”</h1>
-          <p className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-            <span data-testid="flow-summary">
+    <PageContainer className="pb-8" data-testid="flow-canvas-page">
+      <PageHeader
+        breadcrumb={[
+          libraryCrumb,
+          { label: lib.name, to: `/libraries/${lib.id}` },
+        ]}
+        title="Rules"
+        meta={
+          <>
+            <span
+              className="text-caption text-fg-muted tabular-nums"
+              data-testid="flow-summary"
+            >
               {graph!.nodes.length} steps · {graph!.edges.length} connections
             </span>
-            <span
-              className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300"
-              data-testid="flow-source"
-            >
-              {flow.data.source}
-            </span>
             {dirty && (
-              <span className="text-xs text-amber-400" data-testid="flow-dirty">
+              <Badge tone="warning" testId="flow-dirty">
                 Unsaved changes
-              </span>
+              </Badge>
             )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {wide &&
-            (editing ? (
-              <>
+          </>
+        }
+        actions={
+          wide &&
+          (editing ? (
+            <>
+              {dirty ? (
                 <button
                   type="button"
-                  onClick={() => save.mutate()}
-                  disabled={!canSave}
-                  title={saveReason ?? undefined}
-                  className={btnPrimary}
-                  data-testid="flow-save"
+                  onClick={() => setConfirmDiscard(true)}
+                  className={btnGhost}
+                  data-testid="flow-discard"
                 >
-                  {save.isPending ? 'Saving…' : 'Save flow'}
+                  Discard changes
                 </button>
-                {dirty ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDiscard(true)}
-                    className={btn}
-                    data-testid="flow-discard"
-                  >
-                    Discard changes
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingRequested(false)}
-                    className={btn}
-                    data-testid="flow-done"
-                  >
-                    Done editing
-                  </button>
-                )}
-              </>
-            ) : (
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingRequested(false)}
+                  className={btnGhost}
+                  data-testid="flow-done"
+                >
+                  Done editing
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setEditingRequested(true)}
+                onClick={() => save.mutate()}
+                disabled={!canSave}
+                title={saveReason ?? undefined}
                 className={btnPrimary}
-                data-testid="flow-edit"
+                data-testid="flow-save"
               >
-                Edit flow
+                {save.isPending ? 'Saving…' : 'Save rules'}
               </button>
-            ))}
-          <Link
-            to={`/libraries/${id}/rules`}
-            className={btnGhost}
-            data-testid="flow-back"
-          >
-            Back to rules
-          </Link>
-        </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditingRequested(true)}
+              className={btnPrimary}
+              data-testid="flow-edit"
+            >
+              Edit flow
+            </button>
+          ))
+        }
+      />
+
+      <div className="flex flex-col gap-2" data-testid="tier-selector">
+        <SegmentedControl
+          label="Rule editor"
+          value="advanced"
+          options={TIERS.map((t) => ({
+            id: t.id,
+            label: t.label,
+            testId: t.testId,
+            to: t.to(lib.id),
+            badge:
+              inUse === t.id ? (
+                <Badge tone="success" testId={`${t.testId}-in-use`}>
+                  In use
+                </Badge>
+              ) : undefined,
+          }))}
+        />
       </div>
 
       {wide && !editing && (
-        <div
-          className="flex flex-wrap items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 ring-1 ring-slate-800"
-          data-testid="flow-readonly-banner"
-        >
-          <p className="min-w-[16rem] flex-1 text-sm text-slate-300">
-            You are viewing the flow this library runs. Nothing can be changed
-            here.
-            {flow.data.source === 'easy' &&
-              ' The rules come from the easy settings on the rules page.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => setEditingRequested(true)}
-            className={btn}
-            data-testid="flow-edit-banner"
-          >
-            Edit flow
-          </button>
-        </div>
+        <Banner tone="info" testId="flow-readonly-banner">
+          This is the flow this library runs.{' '}
+          {flow.data.source === 'easy'
+            ? 'The rules come from the Easy settings. Edit the flow to take over manually.'
+            : 'Edit the flow to change it.'}
+        </Banner>
       )}
 
       {!wide && (
-        <div
-          className="rounded-xl bg-slate-900 p-3 text-sm text-slate-300 ring-1 ring-slate-800"
-          data-testid="flow-mobile-notice"
-        >
+        <Banner tone="info" testId="flow-mobile-notice">
           Viewing only on a phone. Editing the flow needs a desktop browser.
-        </div>
+        </Banner>
       )}
 
       {editing && flow.data.source === 'easy' && (
-        <p
-          className="rounded-lg bg-amber-500/10 px-4 py-3 text-sm text-amber-300"
-          data-testid="flow-edit-warning"
-        >
+        <Banner tone="warning" testId="flow-edit-warning">
           Saving here replaces the generated rules with your own flow. The easy
           sliders will no longer drive this library.
-        </p>
+        </Banner>
       )}
 
       {editing && saveReason && (
-        <p className="text-sm text-amber-400" data-testid="flow-save-reason">
+        <p className="text-body text-warning" data-testid="flow-save-reason">
           {saveReason}
         </p>
       )}
       {errors['graph'] && (
-        <p className="text-sm text-rose-400" data-testid="flow-graph-error">
+        <p className="text-body text-danger" data-testid="flow-graph-error">
           {errors['graph']}
         </p>
       )}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
+      <div
+        className={`grid gap-6 ${
+          wide && editing
+            ? 'lg:grid-cols-[14rem_minmax(0,1fr)_20rem]'
+            : wide
+              ? 'lg:grid-cols-[minmax(0,1fr)_20rem]'
+              : ''
+        }`}
+      >
         {wide && editing && (
-          <div className="shrink-0 lg:w-56">
+          // Below lg the palette comes after the canvas and the inspector.
+          <div className="order-last min-w-0 lg:order-none">
             <FlowPalette palette={paletteItems} onAdd={addToGraph} />
           </div>
         )}
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="h-[55vh] min-h-[24rem] lg:h-[68vh]">
+        <div className="min-w-0">
+          <div
+            className={`${card} h-[calc(100dvh-16rem)] min-h-[28rem] overflow-hidden`}
+          >
             <FlowCanvas
               graph={graph!}
               palette={paletteItems}
@@ -412,17 +469,15 @@ export default function FlowCanvasPage() {
           </div>
         </div>
         {wide && (
-          <div className="shrink-0 lg:w-80">
-            <div className="rounded-2xl bg-slate-950/60 p-4 ring-1 ring-slate-800">
-              <FlowInspector
-                graph={graph!}
-                palette={paletteItems}
-                plugins={enabledStepPlugins}
-                selection={selection}
-                editing={editing}
-                onChange={applyGraph}
-              />
-            </div>
+          <div className={`${card} ${cardPad} min-w-0`}>
+            <FlowInspector
+              graph={graph!}
+              palette={paletteItems}
+              plugins={enabledStepPlugins}
+              selection={selection}
+              editing={editing}
+              onChange={applyGraph}
+            />
           </div>
         )}
       </div>
