@@ -257,3 +257,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T02:31:10Z task 36: verified PR #39 (9/9 checks green, make test 245 web tests plus go suites, make lint, npm run build emits one latin Inter woff2, checklist ticked), merged squash, main at 9bf7ff1
 - 2026-11-04T02:31:10Z task 36: PM decision, deviation 1 accepted: latin @font-face in index.css instead of main.tsx wght.css import, because the acceptance item requires exactly one Inter woff2; recorded in tasks/36-notes.md
 - 2026-11-04T02:31:10Z pm: v1.9 next task is 37 (control classes and format helpers), starts next tick
+- 2026-11-04T02:48:35Z started task 37 (control classes + format helpers), run 20261104-024618-10bd43cf, claude haiku build

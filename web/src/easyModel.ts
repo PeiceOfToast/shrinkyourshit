@@ -7,6 +7,10 @@
  * rule 14); they only appear in the library editor's Advanced panel.
  */
 import type { EasyInput, Library } from './api'
+import { formatBytes, formatEta } from './format'
+
+// Moved to format.ts (task 37). Re-exported so existing imports keep working.
+export { formatBytes, formatEta }
 
 export interface Stop {
   value: number
@@ -166,31 +170,6 @@ export const STATUS_LABELS: Record<string, string> = {
 
 export function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status
-}
-
-/** "1.5 GB" style byte counts for the UI. */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1000 && unit < units.length - 1) {
-    value /= 1000
-    unit++
-  }
-  const digits = value >= 100 || unit === 0 ? 0 : 1
-  return `${value.toFixed(digits)} ${units[unit]}`
-}
-
-/** "2m 30s" style duration for the UI. */
-export function formatEta(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return ''
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  const m = Math.floor(seconds / 60)
-  const s = Math.round(seconds % 60)
-  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`
-  const h = Math.floor(m / 60)
-  return `${h}h ${m % 60}m`
 }
 
 /**
