@@ -293,3 +293,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-04T07:15:35Z pm: superseding an earlier note, local Playwright does work on the coding VM when run with LD_LIBRARY_PATH=/home/mb/.local/chromium-deps/lib and SHRINK_E2E_PORT set; the agent ran the full suite that way (58 passed, 6 skipped) including the 44 px mobile audit on /libraries/:id
 - 2026-11-04T07:15:35Z pm: task 44 left four owner questions in tasks/44-notes.md (History versus Log plus History, Scan now also on the Libraries row, no library level Shrunk chip, btnIcon missing min-h-11); none block task 45, all are UI choices, not DECISIONS.md changes
 - 2026-11-04T07:15:35Z pm: v1.9 next task is 45 (rules page), starts next tick
+- 2026-11-04T07:20:00Z pm: killed lingering sleeping claude process (pid 1485782, run 20261104-064620-d5bb521a) after status reported done and its work was merged; working tree was clean, no uncommitted work lost
