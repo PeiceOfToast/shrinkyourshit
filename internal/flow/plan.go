@@ -15,26 +15,52 @@ import (
 // consecutive `if_*` steps AND together: every condition must pass for the
 // guarded step to run.
 type Condition struct {
-	// Kind is "codec_not" or "bitrate_above" (the two guard step types).
+	// Kind is the guard step type that produced it (if_codec_not,
+	// if_bitrate_above, if_resolution_above, if_audio_channels_above or if_hdr).
 	Kind string `json:"kind"`
 	// Codec applies to kind "codec_not": the codec the video must NOT be.
 	Codec string `json:"codec,omitempty"`
 	// BitrateMBPS applies to kind "bitrate_above": the threshold.
 	BitrateMBPS float64 `json:"bitrate_mbps,omitempty"`
+	// Height applies to kind "resolution_above": the video must be taller
+	// than this many pixels.
+	Height int `json:"height,omitempty"`
+	// Channels applies to kind "audio_channels_above": some audio track must
+	// have more channels than this.
+	Channels int `json:"channels,omitempty"`
+	// IsHDR applies to kind "hdr": true requires HDR video, false requires
+	// video that is not HDR.
+	IsHDR bool `json:"is_hdr,omitempty"`
 }
 
 // pass evaluates the condition against a probed file. A file without a
 // real video stream never passes a video condition: there is nothing to
-// guard (the encode would copy nothing anyway).
+// guard (the encode would copy nothing anyway). The audio condition reads
+// the audio streams only, so an audio-only file can pass it.
 func (c Condition) pass(info probe.MediaInfo) bool {
-	if len(info.Video) == 0 {
-		return false
+	switch c.Kind {
+	case StepIfCodecNot, StepIfBitrateAbove, StepIfResolutionAbove, StepIfHDR:
+		if len(info.Video) == 0 {
+			return false
+		}
 	}
 	switch c.Kind {
 	case StepIfCodecNot:
 		return info.Video[0].Codec != c.Codec
 	case StepIfBitrateAbove:
 		return info.Video[0].Bitrate > int64(c.BitrateMBPS*1_000_000)
+	case StepIfResolutionAbove:
+		return info.Video[0].Height > c.Height
+	case StepIfHDR:
+		return info.Video[0].HDR == c.IsHDR
+	case StepIfAudioChannelsAbove:
+		// Any track counts: a file with a surround track passes even when
+		// its first track is stereo.
+		for _, a := range info.Audio {
+			if a.Channels > c.Channels {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -110,6 +136,27 @@ func Compile(g Graph) (Plan, error) {
 				return Plan{}, fmt.Errorf("flow: step %s: %w", n.ID, err)
 			}
 			pending = append(pending, Condition{Kind: StepIfBitrateAbove, BitrateMBPS: p.MBPS})
+		case StepIfResolutionAbove:
+			var p ifResolutionAboveParams
+			if err := decodeParams(n.Params, &p); err != nil {
+				return Plan{}, fmt.Errorf("flow: step %s: %w", n.ID, err)
+			}
+			pending = append(pending, Condition{Kind: StepIfResolutionAbove, Height: p.Height})
+		case StepIfAudioChannelsAbove:
+			var p ifAudioChannelsAboveParams
+			if err := decodeParams(n.Params, &p); err != nil {
+				return Plan{}, fmt.Errorf("flow: step %s: %w", n.ID, err)
+			}
+			pending = append(pending, Condition{Kind: StepIfAudioChannelsAbove, Channels: p.Channels})
+		case StepIfHDR:
+			var p ifHDRParams
+			if err := decodeParams(n.Params, &p); err != nil {
+				return Plan{}, fmt.Errorf("flow: step %s: %w", n.ID, err)
+			}
+			if p.IsHDR == nil {
+				return Plan{}, fmt.Errorf("flow: step %s: is_hdr is required", n.ID)
+			}
+			pending = append(pending, Condition{Kind: StepIfHDR, IsHDR: *p.IsHDR})
 		default:
 			plan.Steps = append(plan.Steps, PlanStep{
 				ID:     n.ID,
@@ -540,6 +587,15 @@ func ParseParams(s Step) (any, error) {
 	case StepIfBitrateAbove:
 		var p ifBitrateAboveParams
 		return p, decodeParams(s.Params, &p)
+	case StepIfResolutionAbove:
+		var p ifResolutionAboveParams
+		return p, decodeParams(s.Params, &p)
+	case StepIfAudioChannelsAbove:
+		var p ifAudioChannelsAboveParams
+		return p, decodeParams(s.Params, &p)
+	case StepIfHDR:
+		var p ifHDRParams
+		return p, decodeParams(s.Params, &p)
 	case StepTranscodeVideo:
 		var p transcodeVideoParams
 		return p, decodeParams(s.Params, &p)
@@ -593,7 +649,7 @@ func describeStep(s PlanStep) string {
 		return "Look inside the file to see what it is."
 	case StepIfCodecNot:
 		return guard + "(nothing follows)"
-	case StepIfBitrateAbove:
+	case StepIfBitrateAbove, StepIfResolutionAbove, StepIfAudioChannelsAbove, StepIfHDR:
 		return guard + "(nothing follows)"
 	case StepTranscodeVideo:
 		var p transcodeVideoParams
@@ -717,9 +773,27 @@ func describeConditions(when []Condition) string {
 			parts = append(parts, fmt.Sprintf("the video is not %s", codecLabel(c.Codec)))
 		case StepIfBitrateAbove:
 			parts = append(parts, fmt.Sprintf("the video bitrate is above %s megabits per second", trimFloat(c.BitrateMBPS)))
+		case StepIfResolutionAbove:
+			parts = append(parts, fmt.Sprintf("the video is taller than %dp", c.Height))
+		case StepIfAudioChannelsAbove:
+			parts = append(parts, fmt.Sprintf("the audio has more than %s", channelCount(c.Channels)))
+		case StepIfHDR:
+			if c.IsHDR {
+				parts = append(parts, "the video is HDR")
+			} else {
+				parts = append(parts, "the video is not HDR")
+			}
 		}
 	}
 	return "Only when " + strings.Join(parts, " and ") + ":"
+}
+
+// channelCount renders an audio channel count for plain language.
+func channelCount(n int) string {
+	if n == 1 {
+		return "1 channel"
+	}
+	return fmt.Sprintf("%d channels", n)
 }
 
 // codecLabel maps a target codec to its friendly name. These names appear
@@ -842,6 +916,38 @@ func StepTypes() []StepTypeInfo {
 				Name: "mbps", Label: "megabits per second", Kind: "number",
 				Min: floatPtr(1), Required: true, Default: 10,
 				Help: "Bitrate threshold in megabits per second.",
+			}},
+		},
+		{
+			Type:        StepIfResolutionAbove,
+			Label:       "If the video is taller than…",
+			Description: "Runs the step after it only when the video is taller than this many pixels. 1080 is full HD, 2160 is 4K.",
+			Condition:   true,
+			Params: []ParamField{{
+				Name: "height", Label: "height in pixels", Kind: "number",
+				Min: floatPtr(ResolutionAboveMin), Max: floatPtr(ResolutionAboveMax), Required: true, Default: 1080,
+				Help: "A video counts only when it is taller than this height. 1080 is full HD, 2160 is 4K.",
+			}},
+		},
+		{
+			Type:        StepIfAudioChannelsAbove,
+			Label:       "If the audio has more channels than…",
+			Description: "Runs the step after it only when an audio track has more channels than this. 2 is stereo, 6 is 5.1 surround.",
+			Condition:   true,
+			Params: []ParamField{{
+				Name: "channels", Label: "channels", Kind: "number",
+				Min: floatPtr(ChannelsAboveMin), Max: floatPtr(ChannelsAboveMax), Required: true, Default: 2,
+				Help: "An audio track counts only when it has more channels than this. 2 is stereo, 6 is 5.1 surround.",
+			}},
+		},
+		{
+			Type:        StepIfHDR,
+			Label:       "If the video is HDR",
+			Description: "Runs the step after it only when the video is HDR (or only when it is not, if turned off).",
+			Condition:   true,
+			Params: []ParamField{{
+				Name: "is_hdr", Label: "video is HDR", Kind: "toggle", Required: true, Default: true,
+				Help: "On: runs only for HDR video. Off: runs only for video that is not HDR.",
 			}},
 		},
 		{

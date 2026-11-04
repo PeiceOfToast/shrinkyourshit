@@ -5,6 +5,7 @@ package flow
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
@@ -509,4 +510,103 @@ func TestStepTypesScaleAndTranscodeOptions(t *testing.T) {
 	require.Equal(t, []string{"quality", "crf", "bitrate"}, tv.Params[2].Options)
 	require.Equal(t, []string{"veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}, tv.Params[6].Options)
 	require.Equal(t, []string{"auto", "qsv", "vaapi", "videotoolbox", "software"}, tv.Params[7].Options)
+}
+
+/* ------------------------------------------------------------------ */
+/* Resolution, audio channel and HDR guards (task 56)                  */
+/* ------------------------------------------------------------------ */
+
+// TestValidateGuardParamBounds: each guard accepts its bounds and rejects
+// one step past them, with the field named in the error.
+func TestValidateGuardParamBounds(t *testing.T) {
+	cases := []struct {
+		name, typ, params, field string
+		valid                    bool
+	}{
+		{"height min", StepIfResolutionAbove, `{"height":480}`, "", true},
+		{"height max", StepIfResolutionAbove, `{"height":4320}`, "", true},
+		{"height below", StepIfResolutionAbove, `{"height":479}`, "params.height", false},
+		{"height above", StepIfResolutionAbove, `{"height":4321}`, "params.height", false},
+		{"height unknown field", StepIfResolutionAbove, `{"height":1080,"width":1920}`, "params", false},
+		{"channels min", StepIfAudioChannelsAbove, `{"channels":1}`, "", true},
+		{"channels max", StepIfAudioChannelsAbove, `{"channels":8}`, "", true},
+		{"channels zero", StepIfAudioChannelsAbove, `{"channels":0}`, "params.channels", false},
+		{"channels nine", StepIfAudioChannelsAbove, `{"channels":9}`, "params.channels", false},
+		{"hdr true", StepIfHDR, `{"is_hdr":true}`, "", true},
+		{"hdr false", StepIfHDR, `{"is_hdr":false}`, "", true},
+		{"hdr missing", StepIfHDR, `{}`, "params.is_hdr", false},
+		{"hdr wrong type", StepIfHDR, `{"is_hdr":"yes"}`, "params", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			errs := Validate(guardedEncode(c.typ, c.params))
+			if c.valid {
+				require.Empty(t, errs)
+				return
+			}
+			require.NotEmpty(t, errs)
+			found := false
+			for _, e := range errs {
+				if strings.HasSuffix(e.Path, c.field) {
+					found = true
+				}
+			}
+			require.True(t, found, "want an error on %s, got %v", c.field, errs)
+		})
+	}
+}
+
+// TestValidateGuardMustHaveFollowingStep: a guard placed last has nothing to
+// gate, the rule every guard shares.
+func TestValidateGuardMustHaveFollowingStep(t *testing.T) {
+	g := Graph{
+		Schema: FlowSchema,
+		Nodes: []Step{
+			{ID: "probe", Type: StepProbe},
+			{ID: "hdr", Type: StepIfHDR, Params: json.RawMessage(`{"is_hdr":true}`)},
+		},
+		Edges: []Edge{{From: "probe", To: "hdr"}},
+	}
+	require.NotEmpty(t, Validate(g))
+}
+
+// TestStepTypesIncludeGuardPalette: the three guards are palette entries
+// marked as conditions, with help a non expert can act on.
+func TestStepTypesIncludeGuardPalette(t *testing.T) {
+	byType := map[string]StepTypeInfo{}
+	for _, st := range StepTypes() {
+		byType[st.Type] = st
+	}
+
+	res, ok := byType[StepIfResolutionAbove]
+	require.True(t, ok)
+	require.True(t, res.Condition)
+	require.NotEmpty(t, res.Description)
+	require.Len(t, res.Params, 1)
+	require.Equal(t, "height", res.Params[0].Name)
+	require.Equal(t, "number", res.Params[0].Kind)
+	require.Equal(t, float64(ResolutionAboveMin), *res.Params[0].Min)
+	require.Equal(t, float64(ResolutionAboveMax), *res.Params[0].Max)
+	require.Equal(t, 1080, res.Params[0].Default)
+	require.NotEmpty(t, res.Params[0].Help)
+
+	ch, ok := byType[StepIfAudioChannelsAbove]
+	require.True(t, ok)
+	require.True(t, ch.Condition)
+	require.NotEmpty(t, ch.Description)
+	require.Len(t, ch.Params, 1)
+	require.Equal(t, "channels", ch.Params[0].Name)
+	require.Equal(t, float64(ChannelsAboveMin), *ch.Params[0].Min)
+	require.Equal(t, float64(ChannelsAboveMax), *ch.Params[0].Max)
+	require.NotEmpty(t, ch.Params[0].Help)
+
+	hdr, ok := byType[StepIfHDR]
+	require.True(t, ok)
+	require.True(t, hdr.Condition)
+	require.NotEmpty(t, hdr.Description)
+	require.Len(t, hdr.Params, 1)
+	require.Equal(t, "is_hdr", hdr.Params[0].Name)
+	require.Equal(t, "toggle", hdr.Params[0].Kind)
+	require.Equal(t, true, hdr.Params[0].Default)
+	require.NotEmpty(t, hdr.Params[0].Help)
 }

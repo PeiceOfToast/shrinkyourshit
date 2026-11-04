@@ -4,9 +4,11 @@ package flow
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -286,4 +288,158 @@ func TestStepTypesScaleIsPaletteEntry(t *testing.T) {
 		return
 	}
 	require.Fail(t, "scale is missing from StepTypes")
+}
+
+/* ------------------------------------------------------------------ */
+/* Resolution, audio channel and HDR guards (task 56)                  */
+/* ------------------------------------------------------------------ */
+
+// guardedEncode is probe → guard → transcode (hevc) → remux (mkv): the one
+// action sits behind the guard, the way a Moderate tree child does.
+func guardedEncode(guardType, guardParams string) Graph {
+	return Graph{
+		Schema: FlowSchema,
+		Nodes: []Step{
+			{ID: "probe", Type: StepProbe},
+			{ID: "guard", Type: guardType, Params: json.RawMessage(guardParams)},
+			{ID: "tv", Type: StepTranscodeVideo, Params: json.RawMessage(`{"codec":"hevc","quality":3}`)},
+			{ID: "remux", Type: StepRemuxContainer, Params: json.RawMessage(`{"container":"mkv"}`)},
+		},
+		Edges: []Edge{
+			{From: "probe", To: "guard"}, {From: "guard", To: "tv"}, {From: "tv", To: "remux"},
+		},
+	}
+}
+
+// encodesWith compiles the guarded graph and reports whether the transcode
+// ran for the probed file (the video becomes the encode codec when it did).
+func encodesWith(t *testing.T, g Graph, info probe.MediaInfo) bool {
+	t.Helper()
+	require.Empty(t, Validate(g))
+	plan, err := Compile(g)
+	require.NoError(t, err)
+	eff, err := ResolvePlan(plan, info, probe.KindVideo)
+	require.NoError(t, err)
+	return eff.Target.Video.Codec == CodecHEVC
+}
+
+// TestResolutionGuardPassAndFail: a 1080p video passes "taller than 720"
+// and fails "taller than 1080" (the threshold is exclusive, like bitrate).
+func TestResolutionGuardPassAndFail(t *testing.T) {
+	fhd := probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264, Height: 1080}}}
+	sd := probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264, Height: 480}}}
+
+	taller := guardedEncode(StepIfResolutionAbove, `{"height":720}`)
+	assert.True(t, encodesWith(t, taller, fhd), "1080 is taller than 720: the child runs")
+	assert.False(t, encodesWith(t, taller, sd), "480 is not taller than 720: the child is skipped")
+
+	exact := guardedEncode(StepIfResolutionAbove, `{"height":1080}`)
+	assert.False(t, encodesWith(t, exact, fhd), "1080 is not taller than 1080")
+}
+
+// TestAudioChannelsGuardPassAndFail: a 5.1 track passes "more than 2
+// channels", a stereo-only file fails, and one surround track among stereo
+// tracks is enough.
+func TestAudioChannelsGuardPassAndFail(t *testing.T) {
+	video := []probe.VideoStream{{Codec: CodecH264, Height: 1080}}
+	stereo := probe.MediaInfo{Video: video, Audio: []probe.AudioStream{{Codec: "aac", Channels: 2}}}
+	surround := probe.MediaInfo{Video: video, Audio: []probe.AudioStream{{Codec: "aac", Channels: 2}, {Codec: "eac3", Channels: 6}}}
+
+	more := guardedEncode(StepIfAudioChannelsAbove, `{"channels":2}`)
+	assert.False(t, encodesWith(t, more, stereo), "stereo is not more than 2 channels")
+	assert.True(t, encodesWith(t, more, surround), "a 5.1 track is more than 2 channels")
+}
+
+// TestHDRGuardPassAndFail: is_hdr true runs only for HDR video, false only
+// for video that is not HDR.
+func TestHDRGuardPassAndFail(t *testing.T) {
+	hdr := probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264, Height: 2160, HDR: true}}}
+	sdr := probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264, Height: 2160, HDR: false}}}
+
+	onlyHDR := guardedEncode(StepIfHDR, `{"is_hdr":true}`)
+	assert.True(t, encodesWith(t, onlyHDR, hdr))
+	assert.False(t, encodesWith(t, onlyHDR, sdr))
+
+	onlySDR := guardedEncode(StepIfHDR, `{"is_hdr":false}`)
+	assert.False(t, encodesWith(t, onlySDR, hdr))
+	assert.True(t, encodesWith(t, onlySDR, sdr))
+}
+
+// TestGuardChildSkippedKeepsRestOfChain: the Moderate tree case. A false
+// condition skips its indented child (the encode) and the rest of the chain
+// (the container step) still runs; a true condition runs both.
+func TestGuardChildSkippedKeepsRestOfChain(t *testing.T) {
+	g := guardedEncode(StepIfHDR, `{"is_hdr":true}`)
+	plan, err := Compile(g)
+	require.NoError(t, err)
+	sdr := probe.MediaInfo{Video: []probe.VideoStream{{Codec: CodecH264, Height: 1080}}}
+
+	walk := FreshEffective()
+	ran := map[string]bool{}
+	for _, s := range plan.Steps {
+		ok, err := ApplyStep(&walk, s, sdr, probe.KindVideo)
+		require.NoError(t, err)
+		ran[s.ID] = ok
+	}
+	assert.False(t, ran["tv"], "the child action is skipped when the condition fails")
+	assert.True(t, ran["remux"], "the step after the skipped child still runs")
+	assert.Equal(t, CodecCopy, walk.Target.Video.Codec, "the video stays copy")
+	assert.Equal(t, ContainerMKV, walk.Target.Container)
+}
+
+// TestGuardedChildShapeMatchesBitrateGuard: a condition followed by a child
+// action compiles to the same plan shape whichever guard type gates it, the
+// shape if_bitrate_above has always produced.
+func TestGuardedChildShapeMatchesBitrateGuard(t *testing.T) {
+	shape := func(g Graph) []string {
+		plan, err := Compile(g)
+		require.NoError(t, err)
+		out := make([]string, 0, len(plan.Steps))
+		for _, s := range plan.Steps {
+			out = append(out, fmt.Sprintf("%s/%s/when=%d", s.ID, s.Type, len(s.When)))
+		}
+		return out
+	}
+	want := []string{"probe/probe/when=0", "tv/transcode_video/when=1", "remux/remux_container/when=0"}
+	require.Equal(t, want, shape(guardedEncode(StepIfBitrateAbove, `{"mbps":10}`)))
+	require.Equal(t, want, shape(guardedEncode(StepIfResolutionAbove, `{"height":1080}`)))
+	require.Equal(t, want, shape(guardedEncode(StepIfAudioChannelsAbove, `{"channels":2}`)))
+	require.Equal(t, want, shape(guardedEncode(StepIfHDR, `{"is_hdr":true}`)))
+}
+
+// TestNewGuardsNeedMediaAndSkipNonMedia: the three guards read streams, so
+// on a file that is not media they skip with the same rule as the others.
+func TestNewGuardsNeedMediaAndSkipNonMedia(t *testing.T) {
+	for _, typ := range []string{StepIfResolutionAbove, StepIfAudioChannelsAbove, StepIfHDR} {
+		assert.True(t, StepNeedsMedia(typ), typ)
+		assert.True(t, isGuard(typ), typ)
+	}
+	plan, err := Compile(guardedEncode(StepIfHDR, `{"is_hdr":false}`))
+	require.NoError(t, err)
+	eff := FreshEffective()
+	ran, err := ApplyStep(&eff, plan.Steps[1], probe.MediaInfo{}, probe.KindImage)
+	require.NoError(t, err)
+	assert.False(t, ran)
+}
+
+// TestGuardClausesDescribeInPlainLanguage: each guard names its rule.
+func TestGuardClausesDescribeInPlainLanguage(t *testing.T) {
+	cases := map[string]struct {
+		guard, params, want string
+	}{
+		"resolution": {StepIfResolutionAbove, `{"height":1080}`, "Only when the video is taller than 1080p: Encode the video as HEVC"},
+		"channels":   {StepIfAudioChannelsAbove, `{"channels":6}`, "Only when the audio has more than 6 channels: Encode the video as HEVC"},
+		"mono":       {StepIfAudioChannelsAbove, `{"channels":1}`, "Only when the audio has more than 1 channel: Encode the video as HEVC"},
+		"hdr":        {StepIfHDR, `{"is_hdr":true}`, "Only when the video is HDR: Encode the video as HEVC"},
+		"not hdr":    {StepIfHDR, `{"is_hdr":false}`, "Only when the video is not HDR: Encode the video as HEVC"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := Compile(guardedEncode(c.guard, c.params))
+			require.NoError(t, err)
+			lines := plan.Describe()
+			require.Len(t, lines, 3)
+			require.Contains(t, lines[1], c.want)
+		})
+	}
 }
