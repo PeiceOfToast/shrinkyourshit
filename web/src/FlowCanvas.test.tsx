@@ -135,6 +135,68 @@ const PALETTE: StepTypeInfo[] = [
   },
 ]
 
+/** A resolution condition and the scale step (task 54), as the server sends them. */
+const SCALE_TYPES: StepTypeInfo[] = [
+  {
+    type: 'if_resolution_above',
+    label: 'If the video is above…',
+    description:
+      'Runs the step after it only when the video is taller than this.',
+    condition: true,
+    params: [
+      {
+        name: 'height',
+        label: 'height',
+        kind: 'select',
+        options: ['720', '1080'],
+        required: true,
+        default: '1080',
+      },
+    ],
+  },
+  {
+    type: 'scale',
+    label: 'Scale the video',
+    description: 'Shrink the picture to a height.',
+    condition: false,
+    params: [
+      {
+        name: 'height',
+        label: 'height',
+        kind: 'select',
+        options: ['720', '1080'],
+        required: true,
+        default: '1080',
+      },
+    ],
+  },
+]
+
+/** The raw_args entry as the server sends it (task 58): unsafe, with a note. */
+const RAW_ARGS: StepTypeInfo = {
+  type: 'raw_args',
+  label: 'Raw ffmpeg arguments',
+  description:
+    'Advanced and unsafe: add ffmpeg options that no other step offers.',
+  condition: false,
+  unsafe: true,
+  params: [
+    {
+      name: 'stage',
+      label: 'where',
+      kind: 'select',
+      options: ['input', 'output'],
+      required: true,
+      default: 'output',
+    },
+    { name: 'args', label: 'arguments', kind: 'text', required: true },
+    { name: 'note', label: 'note', kind: 'text' },
+  ],
+}
+
+/** Every type the server's palette can send in these tests. */
+const FULL_PALETTE: StepTypeInfo[] = [...PALETTE, ...SCALE_TYPES, RAW_ARGS]
+
 /** The graph an easy-mode library generates (task 14 compiler shape). */
 function easyGraph(): FlowGraph {
   return {
@@ -189,7 +251,7 @@ const SHAPING = new Set([
 function flowProblems(graph: FlowGraph): FlowFieldError[] {
   const errors: FlowFieldError[] = []
   graph.nodes.forEach((n, i) => {
-    if (!PALETTE.some((p) => p.type === n.type)) {
+    if (!FULL_PALETTE.some((p) => p.type === n.type)) {
       errors.push({
         path: `nodes[${i}].type`,
         message: `unknown step type "${n.type}"`,
@@ -286,6 +348,7 @@ function flowDoc(source: string, graph: FlowGraph) {
 function standardRoutes(
   source = 'easy',
   graph: FlowGraph = easyGraph(),
+  palette: StepTypeInfo[] = PALETTE,
 ): MockRoute[] {
   return [
     {
@@ -301,7 +364,7 @@ function standardRoutes(
     {
       method: 'GET',
       match: /\/api\/v1\/flows\/step-types$/,
-      body: { items: PALETTE, total: PALETTE.length },
+      body: { items: palette, total: palette.length },
     },
     validateRoute(),
   ]
@@ -649,5 +712,112 @@ describe('FlowCanvas page header (task 46, spec 5.9)', () => {
     expect(screen.getByTestId('flow-summary').textContent).toBe(
       '5 steps · 4 connections',
     )
+  })
+})
+
+function stepCount(): number {
+  const m = screen
+    .getByTestId('flow-summary')
+    .textContent?.match(/^(\d+) steps/)
+  return Number(m?.[1] ?? -1)
+}
+
+describe('FlowCanvas palette and the raw args node (task 61)', () => {
+  it('every palette type can be added to the canvas', async () => {
+    mock = installFetchMock(
+      standardRoutes('advanced', easyGraph(), FULL_PALETTE),
+    )
+    renderFlow()
+    await waitFor(() => screen.getByTestId('flow-edit'))
+    fireEvent.click(screen.getByTestId('flow-edit'))
+    await waitFor(() => screen.getByTestId('flow-palette'))
+    for (const info of FULL_PALETTE) {
+      const before = stepCount()
+      fireEvent.click(screen.getByTestId(`palette-add-${info.type}`))
+      expect(stepCount(), info.type).toBe(before + 1)
+    }
+    expect(stepCount()).toBe(5 + FULL_PALETTE.length)
+    expect(screen.getByTestId('palette-add-raw_args')).toBeInTheDocument()
+    expect(screen.getByTestId('palette-add-scale')).toBeInTheDocument()
+  })
+})
+
+const RAW_GRAPH: FlowGraph = {
+  schema: 1,
+  nodes: [
+    { id: 'probe', type: 'probe' },
+    {
+      id: 'raw',
+      type: 'raw_args',
+      params: { stage: 'output', args: '-threads 2', note: 'Keep threads low' },
+    },
+  ],
+  edges: [{ from: 'probe', to: 'raw' }],
+}
+
+describe('FlowCanvas raw_args node (task 61)', () => {
+  it('draws the raw_args node distinct, with its warning and note on the face', async () => {
+    mock = installFetchMock(standardRoutes('advanced', RAW_GRAPH, FULL_PALETTE))
+    renderFlow()
+    await waitFor(() => screen.getByTestId('canvas-node-raw'))
+    const node = screen.getByTestId('canvas-node-raw')
+    expect(node).toHaveAttribute('data-unsafe', 'true')
+    expect(node.className).toContain('ring-warning')
+    expect(screen.getByTestId('canvas-node-warning-raw').textContent).toBe(
+      'Passes arguments the app does not model.',
+    )
+    expect(screen.getByTestId('canvas-node-note-raw').textContent).toBe(
+      'Note: Keep threads low',
+    )
+    // The note is on the face once: its chip is dropped, the note line stays.
+    expect(node.textContent?.split('Keep threads low').length).toBe(2)
+    // The ordinary step carries none of it.
+    const probe = screen.getByTestId('canvas-node-probe')
+    expect(probe).not.toHaveAttribute('data-unsafe')
+    expect(screen.queryByTestId('canvas-node-warning-probe')).toBeNull()
+  })
+
+  it('shows the warning in the inspector for a selected raw_args step', async () => {
+    mock = installFetchMock(standardRoutes('advanced', RAW_GRAPH, FULL_PALETTE))
+    renderFlow()
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('canvas-node-raw'))
+      screen.getByTestId('flow-inspector-unsafe')
+    })
+    expect(screen.getByTestId('flow-inspector-unsafe').textContent).toContain(
+      'does not model',
+    )
+  })
+
+  it('a server field error on the raw_args node lands on that node', async () => {
+    const routes = standardRoutes('advanced', RAW_GRAPH, FULL_PALETTE).map(
+      (r) =>
+        r.match.source.includes('validate')
+          ? {
+              method: 'POST',
+              match: r.match,
+              status: 400,
+              body: {
+                error: 'the flow has errors',
+                code: 'invalid_flow',
+                errors: [
+                  {
+                    path: 'nodes[1].params.args',
+                    message: 'shell characters are refused',
+                  },
+                ],
+              },
+            }
+          : r,
+    )
+    mock = installFetchMock(routes)
+    renderFlow()
+    await waitFor(() =>
+      expect(screen.getByTestId('canvas-node-error-raw').textContent).toBe(
+        'params.args: shell characters are refused',
+      ),
+    )
+    // The warning stays on the node next to the error.
+    expect(screen.getByTestId('canvas-node-warning-raw')).toBeInTheDocument()
   })
 })

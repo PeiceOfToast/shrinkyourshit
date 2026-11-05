@@ -15,7 +15,12 @@ import type {
   FlowStep,
   StepTypeInfo,
 } from './api'
-import { gatesFor, orderedSteps, stepFromPalette } from './flowModel'
+import {
+  gatesFor,
+  orderedSteps,
+  paletteFor,
+  stepFromPalette,
+} from './flowModel'
 
 /** One node's place on the canvas. Presentation only. */
 export interface XYPosition {
@@ -56,6 +61,18 @@ export function gateMap(graph: FlowGraph): Record<string, FlowStep[]> {
     out[n.id] = graph.edges.some((e) => e.to === n.id) ? gatesFor(chain, i) : []
   }
   return out
+}
+
+/**
+ * The steps that hand the engine words the app does not model (task 61):
+ * the palette marks them `unsafe` (task 58, only raw_args). Task 62 lists
+ * the flows of a library with this helper.
+ */
+export function unsafeSteps(
+  graph: FlowGraph,
+  palette: StepTypeInfo[],
+): FlowStep[] {
+  return graph.nodes.filter((n) => paletteFor(palette, n.type)?.unsafe === true)
 }
 
 /** The canvas id of one edge. */

@@ -35,10 +35,10 @@ No tier switching. No changes to how the graph is stored.
 
 ## Acceptance
 
-- [ ] A test iterates the fetched palette and asserts every type can be added to the canvas.
-- [ ] The `raw_args` node is visually distinct and its warning text is asserted.
-- [ ] Playwright test adds one `raw_args` node, saves, reloads and shows the warning again.
-- [ ] `npm run build` and `npx playwright test` green.
+- [x] A test iterates the fetched palette and asserts every type can be added to the canvas.
+- [x] The `raw_args` node is visually distinct and its warning text is asserted.
+- [x] Playwright test adds one `raw_args` node, saves, reloads and shows the warning again.
+- [x] `npm run build` and `npx playwright test` green.
 
 ## Notes
 

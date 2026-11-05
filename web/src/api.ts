@@ -779,6 +779,8 @@ export interface StepTypeInfo {
   label: string
   description: string
   condition: boolean
+  /** Set only on raw_args (task 58): the step passes words the app does not model. */
+  unsafe?: boolean
   params: StepParamField[]
 }
 

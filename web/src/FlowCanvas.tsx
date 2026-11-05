@@ -48,6 +48,10 @@ interface StepNodeData extends Record<string, unknown> {
   chips: string[]
   error?: string
   readOnly: boolean
+  /** The palette marks the step unsafe (raw_args, task 58). */
+  unsafe: boolean
+  /** The step's own note, shown on the face of an unsafe step (task 61). */
+  note: string
 }
 
 type StepNode = Node<StepNodeData, 'step'>
@@ -59,12 +63,15 @@ function StepNodeView({ data, selected }: NodeProps<StepNode>) {
   // The step id is not on the face (spec 4.3): it lives in the inspector.
   const ring = data.error
     ? 'ring-2 ring-danger'
-    : selected
-      ? 'ring-2 ring-accent'
-      : 'ring-1 ring-line'
+    : data.unsafe
+      ? 'ring-2 ring-warning'
+      : selected
+        ? 'ring-2 ring-accent'
+        : 'ring-1 ring-line'
   return (
     <div
       data-testid={`canvas-node-${data.stepId}`}
+      data-unsafe={data.unsafe ? 'true' : undefined}
       className={`min-w-[15rem] max-w-[17rem] rounded-card bg-surface px-4 py-3 ${ring}`}
     >
       <Handle
@@ -78,6 +85,22 @@ function StepNodeView({ data, selected }: NodeProps<StepNode>) {
       </span>
       {data.condition && (
         <p className="mt-1 text-caption text-fg-muted">{data.condition}</p>
+      )}
+      {data.unsafe && (
+        <p
+          className="mt-2 text-caption font-medium text-warning"
+          data-testid={`canvas-node-warning-${data.stepId}`}
+        >
+          Passes arguments the app does not model.
+        </p>
+      )}
+      {data.unsafe && data.note && (
+        <p
+          className="mt-1 text-caption text-fg-muted"
+          data-testid={`canvas-node-note-${data.stepId}`}
+        >
+          Note: {data.note}
+        </p>
       )}
       {data.chips.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -156,6 +179,13 @@ export default function FlowCanvas({
     () =>
       graph.nodes.map((n) => {
         const info = paletteFor(palette, n.type)
+        const unsafe = info?.unsafe === true
+        const note = unsafe ? String(n.params?.note ?? '') : ''
+        // The note has its own line on an unsafe step; drop its chip.
+        const noteAt = unsafe
+          ? (info?.params.findIndex((f) => f.name === 'note') ?? -1)
+          : -1
+        const chips = chipsFor(n, info).filter((_, i) => i !== noteAt)
         return {
           id: n.id,
           type: 'step' as const,
@@ -168,9 +198,11 @@ export default function FlowCanvas({
             stepId: n.id,
             label: info?.label ?? n.type,
             condition: conditionText(n, conditions[n.id] ?? [], info),
-            chips: chipsFor(n, info),
+            chips,
             error: errors[n.id],
             readOnly: !editing,
+            unsafe,
+            note,
           },
         }
       }),
