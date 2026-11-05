@@ -335,6 +335,16 @@ Edge{ from, to, when }
     (`nodes[i].type`, 400 `invalid_flow`). The full denylist and its reasons
     are in `tasks/58-notes.md`.
   - `skip_if_smaller` and `probe` take no parameters.
+- Job log lines the flow engine writes (task 63 verified them on real encodes; the
+  timestamp prefix is omitted here). Each is a `sys` line in the job log:
+  - `raw_args step <id> (<input|output> stage): "<token>" ...`, one per raw_args step,
+    before the encode. Tokens are Go-quoted, so each keeps its spaces.
+  - `encoder chosen: <encoder>`, plus ` (step <id> set hardware to <value>)` when a
+    transcode step set `hardware` explicitly. `auto` or an empty value adds nothing.
+  - The ffmpeg command line itself is NOT written to the job log. ffmpeg's stderr is
+    (`Output #0 ... Stream #0:0: Video: hevc, ... 1280x720`, the x265 rate control line
+    such as `CRF-24.0` or `ABR-1500 kbps`, and output metadata such as `title : ...`).
+    Assertions about the argv must read these lines. See `tasks/63-notes.md`, gap 1.
 - At most one step of each shaping type (transcode, container, audio,
   subtitles, rename, skip, health check, move); a graph always describes
   one policy.

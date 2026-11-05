@@ -718,7 +718,14 @@ Tier storage and the representability check (spec sections 6 and 8, decision 4).
   the setting never moves existing libraries. A library save (`PUT
   /libraries/{id}`) keeps the tier the library has.
 - `PUT /libraries/{id}/flow` does not check the library's tier yet: the tier
-  editors enforce it (tasks 60 to 62).
+  editors enforce it (tasks 60 to 62). Observed in task 63: a graph with a
+  `raw_args` step saved on a library whose tier was `basic` answered 200 with
+  `"tier":"basic"` and was stored. This stays an open owner question
+  (`tasks/63-notes.md`, gap 3).
+- Verified in task 63: the `GET .../flow` reply carries `library_id`, `source`,
+  `tier`, `graph` and `unrepresentable`. The `PUT .../tier` reply carries `tier`
+  and `unrepresentable`. A downgrade leaves the stored `flow_json` byte-identical
+  (`tasks/63-notes.md`, the round trip).
 
 ### Task 58
 

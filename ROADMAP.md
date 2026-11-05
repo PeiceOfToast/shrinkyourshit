@@ -159,7 +159,7 @@ v1.3 to v1.8.
 
 Multi-user accounts, SSO, roles, Postgres, any paid tier.
 
-## v1.10 encode settings tiers (scheduled 2026-11-04)
+## v1.10 encode settings tiers (scheduled 2026-11-04, delivered 2026-11-05)
 
 Three editors over one canonical flow graph, per library, with an app wide default tier.
 Specification: `docs/design/encode-settings-tiers-2026-11-04.md`. Tasks 54 to 63.
@@ -171,3 +171,9 @@ Specification: `docs/design/encode-settings-tiers-2026-11-04.md`. Tasks 54 to 63
   arguments escape hatch.
 - A library can be moved down a tier without losing any step: the lower tier renders read only and
   says which tier can edit what it cannot express.
+
+Delivered (task 63, evidence in `tasks/63-notes.md`): three real encodes on the CPU encoder (Basic,
+Moderate with a condition, scale and per step hardware, Advanced with `raw_args`), output heights
+confirmed by ffprobe, and a downgrade that leaves the stored graph byte-identical. Open owner
+questions, not built: the ffmpeg command line is not in the job log (only ffmpeg's own echo and the
+`raw_args` token line), and `PUT /libraries/{id}/flow` does not check the library's tier yet.
