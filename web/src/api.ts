@@ -118,6 +118,9 @@ export function getMe(): Promise<SetupStatus> {
   return api<SetupStatus>('/api/v1/auth/me')
 }
 
+/** The editor a library offers (task 59, spec 6). */
+export type RuleTier = 'basic' | 'moderate' | 'advanced'
+
 /** GET /settings — settings values (no secrets). */
 export interface Settings {
   worker_concurrency: number
@@ -127,6 +130,8 @@ export interface Settings {
   admin_username?: string
   preferred_languages: string[]
   default_video_codec: string
+  /** The tier a new library inherits (task 59). */
+  default_rule_tier?: RuleTier
   /** Update settings (task 16); the About card edits the first two. */
   update_check: boolean
   update_channel: string
@@ -148,6 +153,7 @@ export interface SettingsUpdate {
   default_result_policy?: string
   preferred_languages?: string[]
   default_video_codec?: string
+  default_rule_tier?: RuleTier
   login_enabled?: boolean
   admin_username?: string
   /** Initial password when enabling login, or a password change. */
@@ -232,6 +238,8 @@ export interface Library {
   flow: FlowGraph | null
   /** Who owns the flow: easy, steps or advanced. */
   flow_source: string
+  /** The editor the library offers (task 59); independent of the graph. */
+  rule_tier?: RuleTier
   watch: boolean
   schedule: string
   result_policy: string
@@ -724,6 +732,10 @@ export interface FlowResponse {
   library_id: string
   source: string
   graph: FlowGraph
+  /** The tier the graph was judged at, and the steps it cannot express
+   * there (task 59). Empty list when the tier can edit every step. */
+  tier?: RuleTier
+  unrepresentable?: FlowFieldError[]
 }
 
 export function getLibraryFlow(id: string): Promise<FlowResponse> {

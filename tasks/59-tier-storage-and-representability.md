@@ -46,11 +46,11 @@ No UI (60 to 62).
 
 ## Acceptance
 
-- [ ] Migration applied to a database created by the current release leaves every library with a
+- [x] Migration applied to a database created by the current release leaves every library with a
       tier that matches its `flow_source`.
-- [ ] `RepresentableAt` has a test per rule, three tiers times the step set.
-- [ ] The downgrade test proves the stored graph is byte identical after the tier change.
-- [ ] `make test` green and the OpenAPI document regenerated if the project generates one.
+- [x] `RepresentableAt` has a test per rule, three tiers times the step set.
+- [x] The downgrade test proves the stored graph is byte identical after the tier change.
+- [x] `make test` green and the OpenAPI document regenerated if the project generates one.
 
 ## Notes
 

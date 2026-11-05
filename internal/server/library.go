@@ -95,6 +95,11 @@ func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Li
 	if err != nil {
 		return nil, err
 	}
+	// A new library inherits the app wide default tier (task 59).
+	lib.RuleTier, err = m.defaultRuleTier(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if err := m.st.CreateLibrary(ctx, lib); err != nil {
 		return nil, fmt.Errorf("library: create: %w", err)
 	}
@@ -166,6 +171,44 @@ func (m *LibraryManager) List(ctx context.Context) ([]*store.Library, error) {
 }
 
 // build validates params into a store.Library. old is nil for create.
+// defaultRuleTier is the tier a new library inherits: the default_rule_tier
+// setting, or basic when no settings service is wired (tests).
+func (m *LibraryManager) defaultRuleTier(ctx context.Context) (string, error) {
+	if m.settings == nil {
+		return string(flow.TierBasic), nil
+	}
+	vals, err := m.settings.Get(ctx)
+	if err != nil {
+		return "", fmt.Errorf("library: default rule tier: %w", err)
+	}
+	return vals.DefaultRuleTier, nil
+}
+
+// SetRuleTier stores the library's rule tier (task 59) and reports the steps
+// of its current graph that the tier cannot express. It writes the tier
+// column only, so the stored graph is byte identical afterwards, whatever the
+// tier. A non empty list is not an error: a downgrade is allowed and the UI
+// shows the steps that now open read only (decision 4).
+func (m *LibraryManager) SetRuleTier(ctx context.Context, id string, tier flow.Tier) (*store.Library, []flow.FieldError, error) {
+	if _, err := flow.ParseTier(string(tier)); err != nil {
+		return nil, nil, err
+	}
+	if err := m.st.SetLibraryRuleTier(ctx, id, string(tier)); err != nil {
+		return nil, nil, err
+	}
+	lib, err := m.st.GetLibrary(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	m.log.Info("library rule tier set", "library", lib.ID, "tier", tier)
+	m.publish(EventLibraryUpdated, NewLibraryDTO(lib))
+	g, _, err := LibraryFlow(lib)
+	if err != nil {
+		return nil, nil, err
+	}
+	return lib, flow.RepresentableAt(g, tier), nil
+}
+
 func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Library, error) {
 	if p.Name == "" {
 		return nil, fmt.Errorf("library name must not be empty")
@@ -250,6 +293,9 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		lib.CreatedAt = old.CreatedAt
 		lib.FlowJSON = old.FlowJSON
 		lib.FlowSource = old.FlowSource
+		// The tier is not an editable field of a library save: it keeps
+		// its own value (task 59), changed only by SetRuleTier.
+		lib.RuleTier = old.RuleTier
 	}
 	// The flow must match the rule this save produced: regenerate it from
 	// the compiled Target when the rule changed. An easy save always

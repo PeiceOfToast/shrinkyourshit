@@ -157,6 +157,7 @@ type settingsBody struct {
 	DefaultResultPolicy *string   `json:"default_result_policy"`
 	PreferredLanguages  *[]string `json:"preferred_languages"`
 	DefaultVideoCodec   *string   `json:"default_video_codec"`
+	DefaultRuleTier     *string   `json:"default_rule_tier"`
 	UpdateCheck         *bool     `json:"update_check"`
 	UpdateChannel       *string   `json:"update_channel"`
 	BackupBeforeUpdate  *bool     `json:"backup_before_update"`
@@ -193,6 +194,7 @@ func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultResultPolicy: body.DefaultResultPolicy,
 		PreferredLanguages:  body.PreferredLanguages,
 		DefaultVideoCodec:   body.DefaultVideoCodec,
+		DefaultRuleTier:     body.DefaultRuleTier,
 		UpdateCheck:         body.UpdateCheck,
 		UpdateChannel:       body.UpdateChannel,
 		BackupBeforeUpdate:  body.BackupBeforeUpdate,

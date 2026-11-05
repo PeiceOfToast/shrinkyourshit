@@ -286,13 +286,16 @@ paths:
     get:
       tags: [flows]
       summary: The library's flow graph (null while the library uses the easy screen).
+      parameters:
+        - { name: tier, in: query, required: false, schema: { type: string, enum: [basic, moderate, advanced] }, description: Judge the graph at this tier (task 59). Defaults to the library's own tier. }
       responses:
         '200':
-          description: The flow graph and its source.
+          description: The flow graph, its source, the tier it was judged at and the steps that tier cannot express.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LibraryFlow'
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [flows]
@@ -310,6 +313,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LibraryFlow'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/libraries/{id}/tier:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [flows]
+      summary: Set the library's rule tier (basic, moderate or advanced). Never rewrites the stored graph; a downgrade is allowed and lists the steps the new tier cannot express.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryTier'
+      responses:
+        '200':
+          description: The tier now stored, and the steps of the graph it cannot express (an empty list when none).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryTierResult'
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/jobs:
@@ -1318,6 +1342,7 @@ components:
       type: object
       properties:
         scratch_dir: { type: string }
+        default_rule_tier: { type: string, enum: [basic, moderate, advanced], description: The tier a new library inherits (task 59). Basic by default. }
         max_parallel_jobs: { type: integer }
         log_level: { type: string }
         qsv_extra_quality:
@@ -1337,6 +1362,7 @@ components:
         easy: { type: ["object", "null"], description: The easy screen's choices while the library uses it. }
         flow: { type: ["object", "null"], description: The flow graph while the library uses the editor. }
         flow_source: { type: string, description: empty for easy libraries, easy or editor. }
+        rule_tier: { type: string, enum: [basic, moderate, advanced], description: The editor the library offers (task 59). Changing it never rewrites the flow. }
         watch: { type: boolean }
         schedule: { type: string, description: cron expression; empty means no schedule. }
         result_policy: { type: string, description: replace_if_smaller or keep_both. }
@@ -1354,12 +1380,37 @@ components:
         watch: { type: boolean }
         schedule: { type: string }
         result_policy: { type: string }
+    FieldError:
+      type: object
+      description: A validation finding on one field of a flow (path such as nodes[2].params.height) and a plain message.
+      required: [path, message]
+      properties:
+        path: { type: string }
+        message: { type: string }
     LibraryFlow:
       type: object
       required: [flow]
       properties:
         flow: { type: object, description: A flow graph. }
         source: { type: string }
+        tier: { type: string, enum: [basic, moderate, advanced], description: The tier the graph was judged at (task 59). }
+        unrepresentable:
+          type: array
+          description: One entry per step the tier cannot express (task 59). Empty when the tier can edit the whole graph.
+          items: { $ref: '#/components/schemas/FieldError' }
+    LibraryTier:
+      type: object
+      required: [tier]
+      properties:
+        tier: { type: string, enum: [basic, moderate, advanced] }
+    LibraryTierResult:
+      type: object
+      required: [tier, unrepresentable]
+      properties:
+        tier: { type: string, enum: [basic, moderate, advanced] }
+        unrepresentable:
+          type: array
+          items: { $ref: '#/components/schemas/FieldError' }
     File:
       type: object
       required: [id, library_id, path, status]

@@ -40,9 +40,12 @@ type Values struct {
 	Username            string   `json:"admin_username"`
 	PreferredLanguages  []string `json:"preferred_languages"`
 	DefaultVideoCodec   string   `json:"default_video_codec"`
-	UpdateCheck         bool     `json:"update_check"`
-	UpdateChannel       string   `json:"update_channel"`
-	BackupBeforeUpdate  bool     `json:"backup_before_update"`
+	// DefaultRuleTier (task 59) is the tier a new library inherits: basic,
+	// moderate or advanced. Existing libraries keep their own tier.
+	DefaultRuleTier    string `json:"default_rule_tier"`
+	UpdateCheck        bool   `json:"update_check"`
+	UpdateChannel      string `json:"update_channel"`
+	BackupBeforeUpdate bool   `json:"backup_before_update"`
 	// Intel QSV opt-ins (task 35): both default off, and with both off the
 	// QSV argument vector is unchanged. Each node applies them only where
 	// its capability probe found the features.
@@ -72,6 +75,7 @@ const (
 	DefaultResultPolicy       = store.ResultPolicyReplaceIfSmaller
 	DefaultPreferredLanguages = "eng"
 	DefaultVideoCodec         = VideoCodecHEVC
+	DefaultRuleTier           = string(flow.TierBasic)
 	DefaultScratchDir         = "" // empty: the process config decides
 	MinWorkerConcurrency      = 1
 	MaxWorkerConcurrency      = 16
@@ -108,6 +112,7 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 		Username:            raw[store.SettingAdminUsername],
 		PreferredLanguages:  []string{read(raw, store.SettingPreferredLanguages, DefaultPreferredLanguages)},
 		DefaultVideoCodec:   DefaultVideoCodec,
+		DefaultRuleTier:     DefaultRuleTier,
 		UpdateCheck:         DefaultUpdateCheck,
 		UpdateChannel:       DefaultUpdateChannel,
 		BackupBeforeUpdate:  DefaultBackupBeforeUpdate,
@@ -121,6 +126,9 @@ func (s *Settings) Get(ctx context.Context) (Values, error) {
 	}
 	if c := read(raw, store.SettingDefaultVideoCodec, ""); validVideoCodec(c) {
 		out.DefaultVideoCodec = c
+	}
+	if t := read(raw, store.SettingDefaultRuleTier, ""); validRuleTier(t) {
+		out.DefaultRuleTier = t
 	}
 	if raw[store.SettingUpdateCheck] == "false" {
 		out.UpdateCheck = false
@@ -162,6 +170,12 @@ func validVideoCodec(c string) bool {
 	return false
 }
 
+// validRuleTier reports whether t is one of the three rule tiers.
+func validRuleTier(t string) bool {
+	_, err := flow.ParseTier(t)
+	return err == nil
+}
+
 // validUpdateChannel reports whether c is a known update feed.
 func validUpdateChannel(c string) bool {
 	for _, v := range update.ChannelValues() {
@@ -194,6 +208,8 @@ type Update struct {
 	DefaultResultPolicy *string
 	PreferredLanguages  *[]string
 	DefaultVideoCodec   *string
+	// DefaultRuleTier (task 59): nil leaves the default tier as it is.
+	DefaultRuleTier *string
 
 	// Self update (task 16): whether the app checks for updates, which
 	// release feed to follow, and whether the database is backed up
@@ -283,6 +299,14 @@ func (s *Settings) Update(ctx context.Context, auth *Auth, u Update) error {
 		}
 		if err := s.st.SetSetting(ctx, store.SettingDefaultVideoCodec, *u.DefaultVideoCodec); err != nil {
 			return fmt.Errorf("settings: video codec: %w", err)
+		}
+	}
+	if u.DefaultRuleTier != nil {
+		if !validRuleTier(*u.DefaultRuleTier) {
+			return badRequest("default_rule_tier must be one of %v", flow.TierValues())
+		}
+		if err := s.st.SetSetting(ctx, store.SettingDefaultRuleTier, *u.DefaultRuleTier); err != nil {
+			return fmt.Errorf("settings: default rule tier: %w", err)
 		}
 	}
 	if u.UpdateCheck != nil {

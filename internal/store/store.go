@@ -36,13 +36,17 @@ const (
 // tier generates and edits; flow_source records its owner (easy, steps or
 // advanced). flow wins over target when both disagree (ARCHITECTURE.md).
 type Library struct {
-	ID           string
-	Name         string
-	Path         string
-	TargetJSON   string
-	EasyJSON     string
-	FlowJSON     string
-	FlowSource   string // easy | steps | advanced; empty on legacy rows
+	ID         string
+	Name       string
+	Path       string
+	TargetJSON string
+	EasyJSON   string
+	FlowJSON   string
+	FlowSource string // easy | steps | advanced; empty on legacy rows
+	// RuleTier is the editor the library offers: basic | moderate | advanced
+	// (task 59, spec 6). Independent of the graph; see SetLibraryRuleTier.
+	// Empty is stored as basic on create.
+	RuleTier     string
 	Watch        bool
 	Schedule     string // cron string or empty
 	ResultPolicy string // replace_if_smaller | replace | keep_both
@@ -212,6 +216,8 @@ const (
 	// Task 06 additions: easy-mode defaults (task 07 reads these).
 	SettingPreferredLanguages = "preferred_languages"
 	SettingDefaultVideoCodec  = "default_video_codec"
+	// Task 59: the rule tier a new library inherits (basic by default).
+	SettingDefaultRuleTier = "default_rule_tier"
 	// Task 11 additions: pause-all remembers the per-node prior
 	// desired_state here until resume-all restores it.
 	SettingPausedNodes = "paused_nodes"
@@ -227,6 +233,14 @@ const (
 	// Task 58: the raw ffmpeg arguments switch (spec 5.3). Default on; off
 	// refuses any flow holding a raw_args step.
 	SettingAllowRawArgs = "allow_raw_args"
+)
+
+// Rule tiers as stored in libraries.rule_tier (ARCHITECTURE.md; the typed
+// values live in internal/flow). basic is the default for a new library.
+const (
+	RuleTierBasic    = "basic"
+	RuleTierModerate = "moderate"
+	RuleTierAdvanced = "advanced"
 )
 
 // Result policies (ARCHITECTURE.md; do not add values without updating it).
