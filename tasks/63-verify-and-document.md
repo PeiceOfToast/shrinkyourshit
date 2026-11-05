@@ -32,10 +32,10 @@ evidence, not a self report.
 
 ## Acceptance
 
-- [ ] The three job logs are quoted in `tasks/63-notes.md` with the relevant line from each.
-- [ ] Output heights are confirmed with ffprobe, not by eye.
-- [ ] The downgrade round trip is proven with a diff, not an assertion in prose.
-- [ ] Docs updated, `make test` and `make lint` green.
+- [x] The three job logs are quoted in `tasks/63-notes.md` with the relevant line from each.
+- [x] Output heights are confirmed with ffprobe, not by eye.
+- [x] The downgrade round trip is proven with a diff, not an assertion in prose.
+- [x] Docs updated, `make test` and `make lint` green.
 
 ## Notes
 
