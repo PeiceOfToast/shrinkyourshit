@@ -417,6 +417,7 @@ Edge{ from, to, when }
 | `/libraries/:id/edit` | Library | target and easy mode |
 | `/libraries/:id/rules` | Library | tier selector, step stack (task 14) |
 | `/libraries/:id/flow` | Library | canvas (task 15) |
+| `/libraries/:id/tree` | Library | Moderate rule tree: condition rows and actions (task 60) |
 | `/nodes` | Nodes | lifecycle controls, pairing, concurrency |
 | `/encode` | Encode settings | codec, quality, container, audio, subtitles, result policy |
 | `/app` | App settings | server, auth, paths, logs, about |

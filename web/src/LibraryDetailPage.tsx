@@ -673,6 +673,13 @@ export default function LibraryDetailPage() {
             >
               Change rules
             </Link>
+            <Link
+              to={`/libraries/${lib.id}/tree`}
+              className={linkTouch}
+              data-testid="library-tree-editor"
+            >
+              Open the rule tree
+            </Link>
           </div>
         </div>
       </Card>

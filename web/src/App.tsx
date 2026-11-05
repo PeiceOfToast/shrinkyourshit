@@ -16,6 +16,7 @@ import EncodeSettingsPage from './EncodeSettingsPage'
 import AppSettingsPage from './AppSettingsPage'
 import IntegrationsPage from './IntegrationsPage'
 import SetupPage from './SetupPage'
+import FlowTreePage from './FlowTreePage'
 import PageContainer from './PageContainer'
 import { SkeletonRows } from './skeleton'
 
@@ -63,6 +64,7 @@ export default function App() {
               </Suspense>
             }
           />
+          <Route path="libraries/:id/tree" element={<FlowTreePage />} />
           <Route path="nodes" element={<NodesPage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />
           <Route path="app" element={<AppSettingsPage />} />
