@@ -88,6 +88,6 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 | 58 | 58-raw-args-escape-hatch.md | done | PR #62 https://github.com/PeiceOfToast/shrinkyourshit/pull/62, v1.10, CI green (9 checks incl. e2e and docker-arm64, rerun after a Docker Hub 502), make test and make lint green, checklist 6/6 ticked; raw args applied to the ffmpeg argv by stage and logged per step; dispatch-time refusal skipped (worker cannot read the setting) |
 | 59 | 59-tier-storage-and-representability.md | done | PR #63 https://github.com/PeiceOfToast/shrinkyourshit/pull/63, v1.10, CI green (9 checks), make test and make lint exit 0, checklist 4/4 ticked; tier enforcement on flow save deferred to tasks 60 to 62 (open owner question in 59-notes.md) |
 | 60 | 60-moderate-tree-editor.md | done | PR #64 https://github.com/PeiceOfToast/shrinkyourshit/pull/64, v1.10, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (web 64 files / 464 tests), make lint exit 0, checklist 4/4 ticked; open owner question on branching in tasks/60-notes.md |
-| 61 | 61-advanced-palette.md | todo | |
+| 61 | 61-advanced-palette.md | in_progress | branch task/61-advanced-palette |
 | 62 | 62-tier-switch-and-banner.md | todo | |
 | 63 | 63-verify-and-document.md | todo | |
