@@ -19,15 +19,43 @@ import (
 // validation and palette services the UI never reimplements.
 
 // flowResponse is the GET /libraries/{id}/flow body and the PUT reply.
+// Tier is the editor the answer is judged against (the ?tier= parameter, or
+// the library's own tier) and Unrepresentable lists the steps of the graph
+// that tier cannot express (task 59). Nothing is rewritten by either.
 type flowResponse struct {
-	LibraryID string     `json:"library_id"`
-	Source    string     `json:"source"`
-	Graph     flow.Graph `json:"graph"`
+	LibraryID       string            `json:"library_id"`
+	Source          string            `json:"source"`
+	Tier            string            `json:"tier"`
+	Graph           flow.Graph        `json:"graph"`
+	Unrepresentable []flow.FieldError `json:"unrepresentable"`
+}
+
+// flowReply builds the shared flow body for a graph judged at tier.
+func flowReply(lib *store.Library, graph flow.Graph, source string, tier flow.Tier) flowResponse {
+	unrepresentable := flow.RepresentableAt(graph, tier)
+	if unrepresentable == nil {
+		unrepresentable = []flow.FieldError{}
+	}
+	return flowResponse{
+		LibraryID:       lib.ID,
+		Source:          source,
+		Tier:            string(tier),
+		Graph:           graph,
+		Unrepresentable: unrepresentable,
+	}
+}
+
+// libraryTier parses the library's stored rule tier. A stored value that is
+// not a tier is a corrupt row and is reported, not guessed at.
+func libraryTier(lib *store.Library) (flow.Tier, error) {
+	return flow.ParseTier(lib.RuleTier)
 }
 
 // getLibraryFlow answers GET /api/v1/libraries/{id}/flow: the stored graph
 // plus its source. Legacy libraries (no stored flow) get the flow compiled
-// from their Target, so the response never lies about what runs.
+// from their Target, so the response never lies about what runs. The optional
+// ?tier=basic|moderate|advanced judges the graph at that tier; without it the
+// library's own tier is used (task 59).
 func (a *API) getLibraryFlow(w http.ResponseWriter, r *http.Request) {
 	lib, ok := a.library(w, r)
 	if !ok {
@@ -38,11 +66,62 @@ func (a *API) getLibraryFlow(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, flowResponse{
-		LibraryID: lib.ID,
-		Source:    source,
-		Graph:     graph,
-	})
+	tier, err := libraryTier(lib)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	if q := r.URL.Query().Get("tier"); q != "" {
+		tier, err = flow.ParseTier(q)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, flowReply(lib, graph, source, tier))
+}
+
+// putTierBody is the PUT /api/v1/libraries/{id}/tier request body.
+type putTierBody struct {
+	Tier string `json:"tier"`
+}
+
+// tierResponse is the PUT /libraries/{id}/tier reply: the tier now stored and
+// the steps of the library's graph that tier cannot express. A non empty list
+// is still 200: the downgrade is allowed and the graph stays as it is
+// (decision 4).
+type tierResponse struct {
+	Tier            string            `json:"tier"`
+	Unrepresentable []flow.FieldError `json:"unrepresentable"`
+}
+
+// putLibraryTier answers PUT /api/v1/libraries/{id}/tier. It changes the
+// library's editor and nothing else: the stored graph is never rewritten.
+func (a *API) putLibraryTier(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	body, err := decode[putTierBody](r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	tier, err := flow.ParseTier(body.Tier)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	_, unrepresentable, err := a.svc.Libraries().SetRuleTier(r.Context(), id, tier)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "no such library")
+		return
+	case err != nil:
+		a.internal(w, err)
+		return
+	}
+	if unrepresentable == nil {
+		unrepresentable = []flow.FieldError{}
+	}
+	writeJSON(w, http.StatusOK, tierResponse{Tier: string(tier), Unrepresentable: unrepresentable})
 }
 
 // putFlowBody is the PUT /api/v1/libraries/{id}/flow request body: the
@@ -93,11 +172,12 @@ func (a *API) putLibraryFlow(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, gerr)
 		return
 	}
-	writeJSON(w, http.StatusOK, flowResponse{
-		LibraryID: lib.ID,
-		Source:    source,
-		Graph:     graph,
-	})
+	tier, terr := libraryTier(lib)
+	if terr != nil {
+		a.internal(w, terr)
+		return
+	}
+	writeJSON(w, http.StatusOK, flowReply(lib, graph, source, tier))
 }
 
 // validateFlowBody is the POST /api/v1/flows/validate request.
@@ -167,16 +247,16 @@ func (a *API) stepTypesFor(ctx context.Context) []flow.StepTypeInfo {
 // previewBody is the POST /api/v1/flows/preview request: either the easy
 // input (compiled with the current settings) or a graph.
 type previewBody struct {
-	Easy   *flow.EasyModeInput `json:"easy"`
-	Graph  *flow.Graph         `json:"graph"`
+	Easy  *flow.EasyModeInput `json:"easy"`
+	Graph *flow.Graph         `json:"graph"`
 }
 
 // previewResponse is the POST /api/v1/flows/preview reply: the canonical
 // graph and one plain-language line per compiled step, the teaching
 // surface for the step stack.
 type previewResponse struct {
-	Graph flow.Graph          `json:"graph"`
-	Steps []previewStep       `json:"steps"`
+	Graph flow.Graph    `json:"graph"`
+	Steps []previewStep `json:"steps"`
 }
 
 type previewStep struct {

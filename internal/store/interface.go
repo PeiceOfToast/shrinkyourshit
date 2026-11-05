@@ -38,6 +38,9 @@ type Store interface {
 	// UpdateLibrary: the scanner stamps it without rewriting the rest of
 	// the row.
 	SetLibraryScanResult(ctx context.Context, id string, at time.Time, summary string) error
+	// SetLibraryRuleTier writes only the library's rule tier (task 59). It
+	// is the sole tier write path: flow_json is never touched.
+	SetLibraryRuleTier(ctx context.Context, id, tier string) error
 
 	// Files. UpsertFile keys on (LibraryID, Path): the scanner calls it
 	// for new and changed files alike.

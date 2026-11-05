@@ -142,6 +142,7 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		// language so the UI never duplicates the compiler.
 		mux.HandleFunc("GET /api/v1/libraries/{id}/flow", a.requireAdmin(a.getLibraryFlow))
 		mux.HandleFunc("PUT /api/v1/libraries/{id}/flow", a.requireAdmin(a.putLibraryFlow))
+		mux.HandleFunc("PUT /api/v1/libraries/{id}/tier", a.requireAdmin(a.putLibraryTier))
 		mux.HandleFunc("POST /api/v1/flows/validate", a.requireAdmin(a.validateFlow))
 		mux.HandleFunc("GET /api/v1/flows/step-types", a.requireAdmin(a.stepTypes))
 		mux.HandleFunc("POST /api/v1/flows/preview", a.requireAdmin(a.previewFlow))

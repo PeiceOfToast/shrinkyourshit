@@ -29,19 +29,22 @@ import (
 // including the distinct count of files skipped because their kind is not
 // what the library looks for.
 type LibraryDTO struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Path         string          `json:"path"`
-	Target       flow.Target     `json:"target"`
-	Easy         json.RawMessage `json:"easy"`
-	Flow         *flow.Graph     `json:"flow"`
-	FlowSource   string          `json:"flow_source"`
-	Watch        bool            `json:"watch"`
-	Schedule     string          `json:"schedule"`
-	ResultPolicy string          `json:"result_policy"`
-	FileKinds    []string        `json:"file_kinds"`
-	CreatedAt    string          `json:"created_at"`
-	UpdatedAt    string          `json:"updated_at"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Path       string          `json:"path"`
+	Target     flow.Target     `json:"target"`
+	Easy       json.RawMessage `json:"easy"`
+	Flow       *flow.Graph     `json:"flow"`
+	FlowSource string          `json:"flow_source"`
+	// RuleTier is the editor the library offers: basic, moderate or
+	// advanced (task 59). It is independent of the graph.
+	RuleTier     string   `json:"rule_tier"`
+	Watch        bool     `json:"watch"`
+	Schedule     string   `json:"schedule"`
+	ResultPolicy string   `json:"result_policy"`
+	FileKinds    []string `json:"file_kinds"`
+	CreatedAt    string   `json:"created_at"`
+	UpdatedAt    string   `json:"updated_at"`
 	// LastScanAt is when a scan of this library last finished without
 	// error (task 19); omitted when it has never been scanned.
 	LastScanAt string `json:"last_scan_at,omitempty"`
@@ -134,6 +137,7 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		Easy:         easyFromLibrary(l, target),
 		Flow:         graph,
 		FlowSource:   source,
+		RuleTier:     l.RuleTier,
 		Watch:        l.Watch,
 		Schedule:     l.Schedule,
 		ResultPolicy: l.ResultPolicy,
