@@ -45,6 +45,8 @@ import PageHeader from './PageHeader'
 import SegmentedControl from './SegmentedControl'
 import { SkeletonRows } from './skeleton'
 import StepStackEditor from './StepStackEditor'
+import { isLocked } from './tierModel'
+import { ReadOnlyReason } from './TierNotices'
 import { useDocumentTitle } from './useDocumentTitle'
 import { useToast } from './toastContext'
 import { btnPrimary } from './uiControls'
@@ -85,6 +87,16 @@ export default function RulesPage() {
     queryKey: ['plugins'],
     queryFn: getPlugins,
     staleTime: Infinity,
+  })
+  // What each lower editor can change (task 62). An editor whose tier cannot
+  // express a step is read only: its Save is off and the reason is shown.
+  const basicLock = useQuery({
+    queryKey: ['library-flow', id, 'basic'],
+    queryFn: () => getLibraryFlow(id, 'basic'),
+  })
+  const moderateLock = useQuery({
+    queryKey: ['library-flow', id, 'moderate'],
+    queryFn: () => getLibraryFlow(id, 'moderate'),
   })
 
   const [tier, setTier] = useState<Tier | null>(null)
@@ -157,7 +169,12 @@ export default function RulesPage() {
 
   const libraryCrumb = { label: 'Libraries', to: '/libraries' }
 
-  const loading = library.isPending || flow.isPending || palette.isPending
+  const loading =
+    library.isPending ||
+    flow.isPending ||
+    palette.isPending ||
+    basicLock.isPending ||
+    moderateLock.isPending
   if (loading) {
     return (
       <PageContainer className="space-y-6" data-testid="rules-loading">
@@ -171,18 +188,30 @@ export default function RulesPage() {
     !library.data ||
     flow.isError ||
     palette.isError ||
-    !flow.data
+    basicLock.isError ||
+    moderateLock.isError ||
+    !flow.data ||
+    !basicLock.data ||
+    !moderateLock.data
   ) {
     return (
       <PageContainer className="space-y-6" data-testid="rules">
         <PageHeader breadcrumb={[libraryCrumb]} title="Rules" />
         <ErrorBox
           title="Cannot load the rules."
-          error={library.error ?? flow.error ?? palette.error}
+          error={
+            library.error ??
+            flow.error ??
+            palette.error ??
+            basicLock.error ??
+            moderateLock.error
+          }
           onRetry={() => {
             void library.refetch()
             void flow.refetch()
             void palette.refetch()
+            void basicLock.refetch()
+            void moderateLock.refetch()
           }}
         />
       </PageContainer>
@@ -195,6 +224,8 @@ export default function RulesPage() {
     (p) => p.type === 'step' && p.enabled,
   )
   const manualFlow = lib.flow_source !== 'easy'
+  const easyLocked = isLocked(basicLock.data.unrepresentable)
+  const stepsLocked = isLocked(moderateLock.data.unrepresentable)
   const editedEasy = easy ?? parseEasy(lib.easy)
   const inUse = tierOf(flow.data.source)
 
@@ -239,34 +270,49 @@ export default function RulesPage() {
 
       {activeTier === 'easy' && (
         <>
-          {manualFlow && (
+          {easyLocked && (
+            <ReadOnlyReason
+              tier="basic"
+              steps={basicLock.data.unrepresentable ?? []}
+              libraryId={lib.id}
+              testId="easy-locked-reason"
+            />
+          )}
+          {manualFlow && !easyLocked && (
             <Banner tone="warning" testId="easy-replace-warning">
               Saving here replaces the manual steps this library currently uses
               with the simple sliders.
             </Banner>
           )}
           <FormSection title="How much to shrink">
-            <QualitySlider
-              value={editedEasy.quality}
-              onChange={(quality) => setEasy({ ...editedEasy, quality })}
-            />
-            <RemoveSubtitlesCheckbox
-              checked={editedEasy.remove_subtitles}
-              onChange={(remove_subtitles) =>
-                setEasy({ ...editedEasy, remove_subtitles })
-              }
-            />
-            <AudioSlider
-              value={editedEasy.audio}
-              onChange={(audio) => setEasy({ ...editedEasy, audio })}
-            />
+            {/* A disabled fieldset turns every slider and checkbox off at once. */}
+            <fieldset
+              disabled={easyLocked}
+              className="contents"
+              data-testid="easy-fieldset"
+            >
+              <QualitySlider
+                value={editedEasy.quality}
+                onChange={(quality) => setEasy({ ...editedEasy, quality })}
+              />
+              <RemoveSubtitlesCheckbox
+                checked={editedEasy.remove_subtitles}
+                onChange={(remove_subtitles) =>
+                  setEasy({ ...editedEasy, remove_subtitles })
+                }
+              />
+              <AudioSlider
+                value={editedEasy.audio}
+                onChange={(audio) => setEasy({ ...editedEasy, audio })}
+              />
+            </fieldset>
           </FormSection>
           <FlowPreviewPanel easy={editedEasy} open />
           <FormActions>
             <button
               type="button"
               onClick={() => saveEasy.mutate()}
-              disabled={saveEasy.isPending}
+              disabled={saveEasy.isPending || easyLocked}
               className={btnPrimary}
               data-testid="rules-easy-save"
             >
@@ -301,29 +347,42 @@ export default function RulesPage() {
               </Banner>
             </>
           )}
-          {activeTier === 'steps' && flow.data.source === 'advanced' && (
-            <Banner tone="warning" testId="steps-replace-warning">
-              This library currently uses the visual flow editor. Saving here
-              replaces the manual graph structure with the ordered steps below.
-            </Banner>
+          {stepsLocked && (
+            <ReadOnlyReason
+              tier="moderate"
+              steps={moderateLock.data.unrepresentable ?? []}
+              libraryId={lib.id}
+              testId="steps-locked-reason"
+            />
           )}
+          {activeTier === 'steps' &&
+            flow.data.source === 'advanced' &&
+            !stepsLocked && (
+              <Banner tone="warning" testId="steps-replace-warning">
+                This library currently uses the visual flow editor. Saving here
+                replaces the manual graph structure with the ordered steps
+                below.
+              </Banner>
+            )}
           <Card
             title="Steps, in order"
             description="Each file goes through these steps from top to bottom."
           >
-            <StepStackEditor
-              graph={graph ?? flow.data.graph}
-              palette={paletteItems}
-              plugins={enabledStepPlugins}
-              errors={errors}
-              onChange={setGraph}
-            />
+            <fieldset disabled={stepsLocked} className="contents">
+              <StepStackEditor
+                graph={graph ?? flow.data.graph}
+                palette={paletteItems}
+                plugins={enabledStepPlugins}
+                errors={errors}
+                onChange={setGraph}
+              />
+            </fieldset>
           </Card>
           <FormActions>
             <button
               type="button"
               onClick={() => saveFlow.mutate()}
-              disabled={saveFlow.isPending}
+              disabled={saveFlow.isPending || stepsLocked}
               className={btnPrimary}
               data-testid="rules-steps-save"
             >

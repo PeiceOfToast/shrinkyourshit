@@ -132,6 +132,8 @@ export interface Settings {
   default_video_codec: string
   /** The tier a new library inherits (task 59). */
   default_rule_tier?: RuleTier
+  /** The raw arguments switch (task 58): on by default; off refuses raw_args steps. */
+  allow_raw_args?: boolean
   /** Update settings (task 16); the About card edits the first two. */
   update_check: boolean
   update_channel: string
@@ -154,6 +156,7 @@ export interface SettingsUpdate {
   preferred_languages?: string[]
   default_video_codec?: string
   default_rule_tier?: RuleTier
+  allow_raw_args?: boolean
   login_enabled?: boolean
   admin_username?: string
   /** Initial password when enabling login, or a password change. */
@@ -738,8 +741,37 @@ export interface FlowResponse {
   unrepresentable?: FlowFieldError[]
 }
 
-export function getLibraryFlow(id: string): Promise<FlowResponse> {
-  return api<FlowResponse>(`/api/v1/libraries/${id}/flow`)
+/**
+ * GET /libraries/{id}/flow. With a tier, the graph is judged at that tier
+ * (task 59, `?tier=`); without one the library's own tier is used.
+ */
+export function getLibraryFlow(
+  id: string,
+  tier?: RuleTier,
+): Promise<FlowResponse> {
+  const q = tier ? `?tier=${tier}` : ''
+  return api<FlowResponse>(`/api/v1/libraries/${id}/flow${q}`)
+}
+
+/** PUT /libraries/{id}/tier reply (task 59). Nothing in the flow changes. */
+export interface TierResponse {
+  tier: RuleTier
+  unrepresentable: FlowFieldError[]
+}
+
+/**
+ * PUT /libraries/{id}/tier (task 62). Changes the editor the library offers
+ * and never rewrites the stored graph. A downgrade returns the steps the new
+ * tier cannot express; the caller shows them.
+ */
+export function putLibraryTier(
+  id: string,
+  tier: RuleTier,
+): Promise<TierResponse> {
+  return api<TierResponse>(`/api/v1/libraries/${id}/tier`, {
+    method: 'PUT',
+    body: JSON.stringify({ tier }),
+  })
 }
 
 export function putLibraryFlow(
