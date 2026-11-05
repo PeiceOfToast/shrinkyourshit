@@ -373,3 +373,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-05T02:10:04Z pm: STATUS 61 was left in_progress by the run, corrected to done with the PR link, pushed; PR #65 opened for branch task/61-advanced-palette
 - 2026-11-05T02:10:04Z pm: PR #65 CI run 41951607718 green 9/9 (go 4m30s, e2e 7m22s, docker 1m26s, docker-arm64 11m49s, cross, web, installer, installer-powershell, report); squash-merged as ad8de3d, branch deleted, main pulled on VM 201
 - 2026-11-05T02:10:04Z pm: next task is 62-tier-switch-and-banner.md; 61 notes flag that e2e needs make build first (Go binary embeds internal/webui/dist) and that unsafeSteps() is ready for 62 to wire into the library detail listing
+- 2026-11-05T02:16:45Z pm: task 62 (tier switch, downgrade banner, read only rendering) dispatched as run 20261105-021617-4c1a652a (build/haiku) off main 50fcb4b, branch task/62-tier-switch-and-banner; no PR, checklist and STATUS in the task file
