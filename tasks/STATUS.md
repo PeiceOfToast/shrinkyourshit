@@ -86,7 +86,7 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 | 56 | 56-condition-steps.md | done | PR #60 https://github.com/PeiceOfToast/shrinkyourshit/pull/60, v1.10, CI green (9 checks), make test and make lint green, checklist 4/4 ticked |
 | 57 | 57-per-step-hardware.md | done | PR #61 https://github.com/PeiceOfToast/shrinkyourshit/pull/61, v1.10, CI green (9 checks incl. e2e, docker-arm64), make test and make lint green, checklist 4/4 ticked |
 | 58 | 58-raw-args-escape-hatch.md | done | PR #62 https://github.com/PeiceOfToast/shrinkyourshit/pull/62, v1.10, CI green (9 checks incl. e2e and docker-arm64, rerun after a Docker Hub 502), make test and make lint green, checklist 6/6 ticked; raw args applied to the ffmpeg argv by stage and logged per step; dispatch-time refusal skipped (worker cannot read the setting) |
-| 59 | 59-tier-storage-and-representability.md | in_progress | branch task/59-tier-storage-and-representability pushed, no PR yet; make test (go test ./... exit 0, web 444 tests), make lint 0 issues, checklist 4/4 ticked |
+| 59 | 59-tier-storage-and-representability.md | done | PR #63 https://github.com/PeiceOfToast/shrinkyourshit/pull/63, v1.10, CI green (9 checks), make test and make lint exit 0, checklist 4/4 ticked; tier enforcement on flow save deferred to tasks 60 to 62 (open owner question in 59-notes.md) |
 | 60 | 60-moderate-tree-editor.md | todo | |
 | 61 | 61-advanced-palette.md | todo | |
 | 62 | 62-tier-switch-and-banner.md | todo | |
