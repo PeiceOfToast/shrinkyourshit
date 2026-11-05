@@ -343,7 +343,8 @@ No new endpoints. The Playwright suite drives the built web app through the Go s
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/api/v1/libraries/{id}/flow` | admin | the stored graph plus its `source` |
+| GET | `/api/v1/libraries/{id}/flow` | admin | the stored graph plus its `source`, the `tier` it was judged at and `unrepresentable` (task 59; `?tier=` overrides the library's own tier) |
+| PUT | `/api/v1/libraries/{id}/tier` | admin | body `{tier}`; sets the rule tier only, returns `{tier, unrepresentable}` (task 59) |
 | PUT | `/api/v1/libraries/{id}/flow` | admin | body `{source, graph}`; validates before saving |
 | POST | `/api/v1/flows/validate` | admin | body `{graph}`; `200 {"valid":true}` or `400 {"code":"invalid_flow","errors":[{path,message}]}` |
 | GET | `/api/v1/flows/step-types` | admin | the palette: step type id, label, description, parameter schema |
@@ -695,6 +696,29 @@ No new endpoints. Settings and the heartbeat gain the Intel QSV opt-ins:
   setting that had no effect is explainable. `docs/intel-qsv.md` is the
   plain-language reference, including the Intel Deep Link non-goals
   (Hyper Encode is not implemented and is not planned).
+
+### Task 59
+
+Tier storage and the representability check (spec sections 6 and 8, decision 4).
+
+- `PUT /api/v1/libraries/{id}/tier` with body `{"tier": "basic" | "moderate" | "advanced"}`.
+  Admin only. Returns `200 {"tier": "...", "unrepresentable": [{path, message}]}`.
+  An unknown tier is `400 invalid_request`; an unknown library is `404`.
+  A downgrade whose list is non empty still returns `200`: decision 4. The
+  call changes the tier column and nothing else. The stored graph is byte
+  identical afterwards.
+- `GET /api/v1/libraries/{id}/flow?tier=basic|moderate|advanced` judges the
+  graph at that tier. Without the parameter the library's own tier is used.
+  The reply adds `tier` and `unrepresentable` (always an array, empty when the
+  tier can edit every step). A bad value is `400 invalid_request`.
+- Each `unrepresentable` entry has `path` `nodes[i].type` and a message naming
+  the step id and the lowest tier that can edit it.
+- Library responses gain `rule_tier`. `GET` and `PUT /api/v1/settings` gain
+  `default_rule_tier` (default `basic`); a new library inherits it. Changing
+  the setting never moves existing libraries. A library save (`PUT
+  /libraries/{id}`) keeps the tier the library has.
+- `PUT /libraries/{id}/flow` does not check the library's tier yet: the tier
+  editors enforce it (tasks 60 to 62).
 
 ### Task 58
 

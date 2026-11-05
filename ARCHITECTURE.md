@@ -59,7 +59,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Kind (task 34):** what a file is, decided by extension, never by probing: `video | audio | subtitle | image | other`. The extension table lives in `internal/probe/kind.go` (`KindForPath`); unknown extensions are `other`, never an error. Only `internal/probe`, `internal/encoders` and `internal/flow` know what a Kind means for encoding — `store`, `queue` and `job` carry Kinds as opaque strings and hold no media assumptions of their own (AGENTS.md rule 9). A file whose kind is `image` or `other` (and subtitles standing alone) is never probed: its fingerprint is its identity and size.
 
-**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), watch bool, schedule (cron string or empty), result_policy, file_kinds (JSON array of Kind, default ["video"], at least one value, no duplicates), created_at, updated_at, last_scan_at, last_scan (JSON summary of the last successful scan, empty when never scanned; task 34)`. The scanner skips files whose kind is not in `file_kinds` before probing, counts them under `skipped_kinds`, and records a row that had them as satisfied with the reason `not the file type this library looks for`. A last_scan summary carries `{seen, probed, reused, skipped, skipped_kinds, queued, satisfied, missing, errors}` so the library detail page can show why a photos library is doing nothing.
+**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), rule_tier (basic | moderate | advanced, default basic; task 59: the editor the library offers, independent of the graph, changed only by its own column write so a downgrade never rewrites flow), watch bool, schedule (cron string or empty), result_policy, file_kinds (JSON array of Kind, default ["video"], at least one value, no duplicates), created_at, updated_at, last_scan_at, last_scan (JSON summary of the last successful scan, empty when never scanned; task 34)`. The scanner skips files whose kind is not in `file_kinds` before probing, counts them under `skipped_kinds`, and records a row that had them as satisfied with the reason `not the file type this library looks for`. A last_scan summary carries `{seen, probed, reused, skipped, skipped_kinds, queued, satisfied, missing, errors}` so the library detail page can show why a photos library is doing nothing.
 
 **File:** `id, library_id, path (absolute), size, mtime, fingerprint, probe (JSON), status, satisfied_reason, last_job_id, bytes_saved, created_at, updated_at`
 - `status`: `new | satisfied | queued | processing | done | failed | missing`
@@ -91,7 +91,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Session:** `token_hash (PK), created_at, expires_at`. Admin login sessions (task 06): random 32-byte token, only the SHA-256 hex hash is stored, 30-day expiry checked on lookup. Stored in the `sessions` table (migration 0002).
 
-**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default), `qsv_extra_quality, qsv_low_power` (task 35: the Intel QSV opt-ins, both default off; each node applies them only where its capability probe found the feature, and the heartbeat response carries both so remote workers stay in step), `allow_raw_args` (task 58: the raw ffmpeg arguments switch, default on; off refuses flows that hold a `raw_args` step).
+**Settings:** key/value table. Keys: `login_enabled, admin_username, admin_password_hash, worker_concurrency, default_result_policy, scratch_dir, setup_complete, preferred_languages, default_video_codec, paused_nodes` (task 11: the pause-all snapshot of each node's prior `desired_state`, deleted on resume-all), `update_check, update_channel, backup_before_update` (task 16: the self-update switch and feed — `stable` or `prerelease`, default `stable` — and the pre-update database backup; nothing applies an update by default), `qsv_extra_quality, qsv_low_power` (task 35: the Intel QSV opt-ins, both default off; each node applies them only where its capability probe found the feature, and the heartbeat response carries both so remote workers stay in step), `allow_raw_args` (task 58: the raw ffmpeg arguments switch, default on; off refuses flows that hold a `raw_args` step), `default_rule_tier` (task 59: the tier a new library inherits, default `basic`).
 
 **Webhook:** `id, name, url, secret, events (comma separated: job.done | job.failed | library.scanned), enabled, created_at, updated_at` (task 25, migration 0011). The secret is generated server side at create time (32 random bytes, hex) and returned exactly once; after that every response carries `secret_set` instead.
 
@@ -394,6 +394,14 @@ Edge{ from, to, when }
   is logged at warn; `PUT /libraries/{id}/flow` re-syncs the stored Target
   from the compiled flow so the compat column never lies. Legacy rows are
   backfilled at startup and lazily compiled on read — no manual migration.
+- Rule tiers (task 59, spec 6). `flow.RepresentableAt(graph, tier)` lists
+  the steps a tier cannot express, one error per step, path `nodes[i].type`.
+  Basic: only what `CompileEasyMode` regenerates (probe, the if_codec_not
+  guard on the encode codec, one quality-only transcode_video, remux to mkv,
+  the four easy audio modes, subtitles keep_all or remove), and the graph
+  must hold that encode and guard. Moderate: everything except `raw_args`
+  and `plugin`. Advanced: everything. No code path rewrites a stored graph
+  because the tier changed.
 - The step palette ships from `GET /api/v1/flows/step-types` so the UI
   holds no second copy of the step list. `POST /api/v1/flows/preview`
   renders the plain-language lines (one per compiled step) that the easy
