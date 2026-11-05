@@ -39,13 +39,13 @@ No canvas changes (61). No tier switching UI (62).
 
 ## Acceptance
 
-- [ ] `treeModel` unit tests cover a flat chain, a condition with two children, and a nested
+- [x] `treeModel` unit tests cover a flat chain, a condition with two children, and a nested
       condition.
-- [ ] Playwright test loads a library with a known graph, adds a condition and a child, saves,
+- [x] Playwright test loads a library with a known graph, adds a condition and a child, saves,
       reloads and shows the same tree.
-- [ ] The step palette in this page adds every `StepTypes()` entry, proven by a test that iterates
+- [x] The step palette in this page adds every `StepTypes()` entry, proven by a test that iterates
       the fetched palette rather than a hard coded list.
-- [ ] `npm run build`, `npx playwright test` and `make lint` green.
+- [x] `npm run build`, `npx playwright test` and `make lint` green.
 
 ## Notes
 
