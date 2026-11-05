@@ -75,6 +75,15 @@ export default function FlowInspector({
           </p>
         </header>
 
+        {info?.unsafe && (
+          <p
+            className="text-body font-medium text-warning"
+            data-testid="flow-inspector-unsafe"
+          >
+            Passes arguments the app does not model. Check them before you save.
+          </p>
+        )}
+
         {!editing && (
           <p
             className="text-caption text-fg-muted"

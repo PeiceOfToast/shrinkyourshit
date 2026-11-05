@@ -15,6 +15,7 @@ import {
   mapNodeErrors,
   removeEdge,
   removeSteps,
+  unsafeSteps,
 } from './flowCanvasModel'
 
 function chain(): FlowGraph {
@@ -204,5 +205,41 @@ describe('gateMap', () => {
     expect(gates['transcode_video'].map((s) => s.id)).toEqual(['if_codec_not'])
     expect(gates['probe']).toEqual([])
     expect(gates['draft']).toEqual([])
+  })
+})
+
+describe('unsafeSteps (task 61)', () => {
+  const probe: StepTypeInfo = {
+    type: 'probe',
+    label: 'Check the file',
+    description: '',
+    condition: false,
+    params: [],
+  }
+  const raw: StepTypeInfo = { ...probe, type: 'raw_args', unsafe: true }
+
+  it('lists the steps the palette marks unsafe, in graph order', () => {
+    const graph: FlowGraph = {
+      schema: 1,
+      nodes: [
+        { id: 'a', type: 'raw_args' },
+        { id: 'p', type: 'probe' },
+        { id: 'b', type: 'raw_args' },
+      ],
+      edges: [],
+    }
+    expect(unsafeSteps(graph, [probe, raw]).map((n) => n.id)).toEqual([
+      'a',
+      'b',
+    ])
+  })
+
+  it('returns nothing when no step is unsafe', () => {
+    const graph: FlowGraph = {
+      schema: 1,
+      nodes: [{ id: 'p', type: 'probe' }],
+      edges: [],
+    }
+    expect(unsafeSteps(graph, [probe, raw])).toEqual([])
   })
 })
