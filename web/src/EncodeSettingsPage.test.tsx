@@ -177,7 +177,11 @@ describe('EncodeSettingsPage', () => {
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((h) => h.textContent)
-    expect(headings).toEqual(['Library defaults', 'Intel Quick Sync extras'])
+    expect(headings).toEqual([
+      'Library defaults',
+      'Rule tiers',
+      'Intel Quick Sync extras',
+    ])
     expect(
       screen.getByText(
         'Three-letter language codes, comma separated (for example eng, deu).',

@@ -4,7 +4,7 @@
  * Settings page state model, kept apart from the component so fast refresh
  * stays happy and the logic is testable.
  */
-import type { Settings, SettingsUpdate } from './api'
+import type { RuleTier, Settings, SettingsUpdate } from './api'
 
 /** Editable mirror of the settings the page renders. */
 export interface FormState {
@@ -13,6 +13,8 @@ export interface FormState {
   default_result_policy: string
   preferred_languages: string
   default_video_codec: string
+  /** The editor a new library inherits (task 62, Encode settings). */
+  default_rule_tier: string
   login_enabled: boolean
   admin_username: string
 }
@@ -24,6 +26,7 @@ export function toForm(s: Settings): FormState {
     default_result_policy: s.default_result_policy,
     preferred_languages: s.preferred_languages.join(', '),
     default_video_codec: s.default_video_codec,
+    default_rule_tier: s.default_rule_tier ?? 'basic',
     login_enabled: s.login_enabled,
     admin_username: s.admin_username ?? '',
   }
@@ -43,5 +46,6 @@ export function buildUpdate(
     .map((s) => s.trim())
     .filter((s) => s !== '')
   body.default_video_codec = form.default_video_codec
+  body.default_rule_tier = form.default_rule_tier as RuleTier
   return body
 }

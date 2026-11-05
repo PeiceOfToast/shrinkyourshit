@@ -35,12 +35,12 @@ No graph rewriting of any kind. If a step cannot be represented, it stays in the
 
 ## Acceptance
 
-- [ ] An advanced graph with a `raw_args` step, downgraded to Basic, shows the banner naming that
+- [x] An advanced graph with a `raw_args` step, downgraded to Basic, shows the banner naming that
       step, and the Basic form is disabled with a visible reason.
-- [ ] The same library upgraded back to Advanced shows an editable canvas, with the step still
+- [x] The same library upgraded back to Advanced shows an editable canvas, with the step still
       present and unchanged.
-- [ ] Playwright test covers the round trip downgrade then upgrade and asserts the step survived.
-- [ ] `npm run build`, `npx playwright test` and `make lint` green.
+- [x] Playwright test covers the round trip downgrade then upgrade and asserts the step survived.
+- [x] `npm run build`, `npx playwright test` and `make lint` green.
 
 ## Notes
 

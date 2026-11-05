@@ -18,12 +18,15 @@ import {
   cancelJob,
   getFiles,
   getLibrary,
+  getLibraryFlow,
   getStats,
   previewFlow,
+  putLibraryTier,
   retryJob,
   scanLibrary,
   type FileItem,
   type Library,
+  type RuleTier,
 } from './api'
 import Badge, { type BadgeTone } from './Badge'
 import Card from './Card'
@@ -42,8 +45,11 @@ import {
 import { kindLabel, KIND_AGNOSTIC_STEPS } from './kinds'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
+import SegmentedControl from './SegmentedControl'
 import StatusChip from './StatusChip'
 import { SkeletonRows } from './skeleton'
+import { TIER_OPTIONS, isLocked, tierLabel } from './tierModel'
+import { UnrepresentableBanner } from './TierNotices'
 import { useToast } from './toastContext'
 import {
   btn,
@@ -235,6 +241,25 @@ export default function LibraryDetailPage() {
     // enabled guarantees the library and its flow exist when this runs.
     queryFn: () => previewFlow({ graph: library.data!.flow! }),
     enabled: !!library.data?.flow,
+  })
+
+  // The flow judged at the library's own tier (task 62). Its unrepresentable
+  // list drives the downgrade banner, so the banner survives a reload.
+  const flow = useQuery({
+    queryKey: ['library-flow', id],
+    queryFn: () => getLibraryFlow(id),
+  })
+
+  // Changing the tier never rewrites the flow (spec 6, decision 4).
+  const setTier = useMutation({
+    mutationFn: (tier: RuleTier) => putLibraryTier(id, tier),
+    onSuccess: (res) => {
+      toast.success(`Editor set to ${tierLabel(res.tier)}.`)
+      void client.invalidateQueries({ queryKey: ['library', id] })
+      void client.invalidateQueries({ queryKey: ['library-flow', id] })
+      void client.invalidateQueries({ queryKey: ['libraries'] })
+    },
+    onError: (err: unknown) => toast.failure('Changing the editor failed', err),
   })
 
   const refresh = () => {
@@ -654,6 +679,33 @@ export default function LibraryDetailPage() {
             <h3 className="text-body font-semibold text-fg">
               Rules · {tierWord(lib.flow_source)}
             </h3>
+            <div className="flex flex-col gap-2" data-testid="library-tier">
+              <SegmentedControl
+                label="Rule editor"
+                value={lib.rule_tier ?? 'basic'}
+                onChange={(t) => {
+                  if (t !== (lib.rule_tier ?? 'basic')) {
+                    setTier.mutate(t as RuleTier)
+                  }
+                }}
+                options={TIER_OPTIONS.map((t) => ({
+                  id: t.id,
+                  label: t.label,
+                  testId: `library-tier-${t.id}`,
+                }))}
+              />
+              <p className="text-caption text-fg-muted">
+                Basic: sliders. Moderate: a rule tree. Advanced: a visual graph.
+                Changing it never changes the steps.
+              </p>
+            </div>
+            {flow.data && isLocked(flow.data.unrepresentable) && (
+              <UnrepresentableBanner
+                tier={flow.data.tier ?? lib.rule_tier ?? 'basic'}
+                steps={flow.data.unrepresentable ?? []}
+                libraryId={lib.id}
+              />
+            )}
             {plain.data && plain.data.steps.length > 0 && (
               <ul
                 className="list-disc space-y-1 pl-5 text-body text-fg"

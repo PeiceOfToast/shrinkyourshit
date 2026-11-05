@@ -36,6 +36,8 @@ import ParamField from './flowParams'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
 import { SkeletonRows } from './skeleton'
+import { isLocked } from './tierModel'
+import { ReadOnlyReason } from './TierNotices'
 import { useDocumentTitle } from './useDocumentTitle'
 import { useToast } from './toastContext'
 import { useUnsavedGuard } from './useUnsavedGuard'
@@ -102,6 +104,12 @@ export default function FlowTreePage() {
     queryFn: getPlugins,
     staleTime: Infinity,
   })
+  // What the Moderate tier can change (task 62): a step it cannot express
+  // (raw args, plugins) locks the whole tree read only.
+  const lock = useQuery({
+    queryKey: ['library-flow', id, 'moderate'],
+    queryFn: () => getLibraryFlow(id, 'moderate'),
+  })
 
   const [graph, setGraph] = useState<FlowGraph | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
@@ -136,7 +144,9 @@ export default function FlowTreePage() {
     () => (graph ? treeRows(graph, isCondition) : []),
     [graph, isCondition],
   )
-  const editable = graph ? isChainGraph(graph, isCondition) : false
+  const chain = graph ? isChainGraph(graph, isCondition) : false
+  const locked = isLocked(lock.data?.unrepresentable)
+  const editable = chain && !locked
   const dirty =
     !!graph && baseline !== null && JSON.stringify(graph) !== baseline
 
@@ -192,7 +202,11 @@ export default function FlowTreePage() {
   }
 
   const loading =
-    library.isPending || flow.isPending || palette.isPending || !graph
+    library.isPending ||
+    flow.isPending ||
+    palette.isPending ||
+    lock.isPending ||
+    !graph
   if (loading) {
     return (
       <PageContainer className="pb-8" data-testid="tree-loading">
@@ -206,7 +220,9 @@ export default function FlowTreePage() {
     library.isError ||
     flow.isError ||
     palette.isError ||
+    lock.isError ||
     !flow.data ||
+    !lock.data ||
     !lib
   ) {
     return (
@@ -278,7 +294,16 @@ export default function FlowTreePage() {
         </Banner>
       )}
 
-      {!editable && (
+      {locked && (
+        <ReadOnlyReason
+          tier="moderate"
+          steps={lock.data?.unrepresentable ?? []}
+          libraryId={lib.id}
+          testId="tree-locked-reason"
+        />
+      )}
+
+      {!chain && (
         <Banner tone="warning" testId="tree-readonly-banner">
           This flow branches, which the tree cannot save. Open it in the visual
           editor to change it.{' '}
