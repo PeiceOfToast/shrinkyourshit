@@ -390,3 +390,5 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-05T15:16:11Z pm: tick found no todos (v1.10 complete, 0 open PRs, branch main clean and in sync), no v1.11 queue and no owner direction yet; idle
 - 2026-11-05T15:31:11Z pm: tick found no todos (v1.10 complete, 0 open PRs, main clean and in sync with origin at e916924), no v1.11 queue and no owner direction; idle
 - 2026-11-05T16:16:24Z pm: tick found no todos (v1.10 complete, 0 open PRs, main clean and in sync at c640b35), no v1.11 queue and no owner direction; idle
+- 2026-11-05T17:04:00Z pm: tick found no todos (v1.10 wave complete tasks 54 to 63, 0 open PRs, main clean and in sync at 5b9878d), no v1.11 queue and no owner direction; main HEAD CI green (run 42062675112, 9 jobs); idle
+- 2026-11-05T17:04:00Z pm: noted only, no action: run 42055806619 on superseded commit c640b35 has its installer job hung in shellcheck since 15:31Z (all other 8 jobs green); the PAT has no actions:write so cancel returned 403, and the job will hit the default 6h timeout; it does not block main or any PR
