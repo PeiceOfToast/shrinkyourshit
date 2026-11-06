@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/testutil"
