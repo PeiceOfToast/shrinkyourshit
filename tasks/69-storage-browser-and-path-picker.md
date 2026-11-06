@@ -25,10 +25,10 @@ Modify the library form and its tests, `web/e2e/library.spec.ts`.
 4. The browse endpoint requires login, so the picker links to the fix when it is off.
 
 ## Acceptance
-- [ ] Playwright picks a folder inside a storage and creates a library with that path.
-- [ ] A hand typed path outside every mounted storage is refused with a clear message.
-- [ ] A directory the process cannot read produces a readable error, not an empty list.
-- [ ] `npm run build` and `npx playwright test` green.
+- [x] Playwright picks a folder inside a storage and creates a library with that path.
+- [x] A hand typed path outside every mounted storage is refused with a clear message.
+- [x] A directory the process cannot read produces a readable error, not an empty list.
+- [x] `npm run build` and `npx playwright test` green.
 
 ## Notes
 Write the plan and any changed assertion in `tasks/69-notes.md`.

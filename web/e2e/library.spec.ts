@@ -131,3 +131,144 @@ test.describe('tier switch (task 62)', () => {
     })
   })
 })
+
+/**
+ * The library folder picker (task 69, spec 4.6). The e2e runner cannot mount
+ * a share, so for this spec only the storage routes are answered by the test:
+ * one mounted share and its folder listing. The form, the browser, the path
+ * the library is created with, and the refusal of a typed path are what is
+ * under test. The created library request is captured, not stored.
+ */
+test.describe('library folder picker (task 69)', () => {
+  test('picks a folder inside a storage and creates the library with that path', async ({
+    page,
+  }) => {
+    const nas = {
+      id: 'st-nas',
+      name: 'nas',
+      protocol: 'nfs',
+      source: 'nas.lan:/export/media',
+      options: 'vers=3,soft,timeo=50,retrans=2',
+      username: '',
+      domain: '',
+      password_set: false,
+      read_only: false,
+      enabled: true,
+      mountpoint: '/storage/nas',
+      mounted: true,
+      error: '',
+      created_at: '',
+      updated_at: '',
+    }
+    const folders: Record<string, string[]> = {
+      '/storage/nas': ['Movies', 'TV'],
+      '/storage/nas/Movies': ['2026'],
+    }
+    let created: { path?: string } | null = null
+
+    await page.route(/\/api\/v1\/storages(\/|$|\?)/, async (route) => {
+      const req = route.request()
+      const url = new URL(req.url())
+      if (url.pathname === '/api/v1/storages' && req.method() === 'GET') {
+        return route.fulfill({
+          json: {
+            items: [nas],
+            total: 1,
+            host_policy: { restricted: false, allowed: [], message: '' },
+          },
+        })
+      }
+      if (url.pathname === '/api/v1/storages/st-nas/browse') {
+        const path = url.searchParams.get('path') ?? '/storage/nas'
+        const parent =
+          path === '/storage/nas' ? '' : path.replace(/\/[^/]+$/, '')
+        return route.fulfill({
+          json: {
+            id: 'st-nas',
+            name: 'nas',
+            mounted: true,
+            mountpoint: '/storage/nas',
+            path,
+            parent,
+            free_bytes: 2_000_000_000,
+            total_bytes: 4_000_000_000,
+            entries: (folders[path] ?? []).map((name) => ({
+              name,
+              path: `${path}/${name}`,
+              is_dir: true,
+            })),
+          },
+        })
+      }
+      return route.continue()
+    })
+
+    // Login reads as on for this page only, so the browse is not refused.
+    await page.route('**/api/v1/libraries', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue()
+      created = route.request().postDataJSON() as { path?: string }
+      return route.fulfill({
+        status: 201,
+        json: {
+          id: 'lib-picked',
+          name: 'Movies',
+          path: created?.path ?? '',
+          target: {},
+          easy: null,
+          watch: true,
+          schedule: '',
+          result_policy: 'replace_if_smaller',
+          created_at: '',
+          updated_at: '',
+        },
+      })
+    })
+
+    await page.goto('/libraries/new')
+    await expect(page.getByTestId('new-library-page')).toBeVisible()
+
+    await page.getByTestId('easy-storage-select').selectOption('st-nas')
+    await expect(page.getByTestId('easy-storage-badge')).toHaveText('Mounted')
+
+    await page.getByTestId('easy-choose-folder').click()
+    await expect(page.getByTestId('storage-browser')).toBeVisible()
+    await page.getByTestId('storage-browser-dir-Movies').click()
+    await expect(page.getByTestId('storage-browser-current')).toContainText(
+      'Movies',
+    )
+    await expect(page.getByTestId('storage-browser-use')).toBeEnabled()
+    await page.getByTestId('storage-browser-use').click()
+
+    await expect(page.getByTestId('easy-folder')).toHaveText(
+      '/storage/nas/Movies',
+    )
+    await page.getByTestId('easy-start').click()
+
+    await expect.poll(() => created?.path).toBe('/storage/nas/Movies')
+  })
+
+  test('refuses a typed path outside every mounted storage', async ({
+    page,
+  }) => {
+    await page.route(/\/api\/v1\/storages(\/|$|\?)/, async (route) =>
+      route.fulfill({
+        json: {
+          items: [],
+          total: 0,
+          host_policy: { restricted: false, allowed: [], message: '' },
+        },
+      }),
+    )
+    await page.goto('/libraries/new')
+    await expect(page.getByTestId('new-library-page')).toBeVisible()
+
+    await page.getByText('Type the path instead').click()
+    await page.getByTestId('easy-typed-path-input').fill('/media/movies')
+    await page.getByTestId('easy-use-typed-path').click()
+
+    await expect(page.getByTestId('easy-typed-path-error')).toContainText(
+      'not inside a mounted storage',
+    )
+    await expect(page.getByTestId('easy-folder-empty')).toBeVisible()
+  })
+})
