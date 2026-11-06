@@ -91,3 +91,23 @@ Owner decisions for this wave are recorded in the spec, section 2. `DECISIONS.md
 | 61 | 61-advanced-palette.md | done | PR #65 https://github.com/PeiceOfToast/shrinkyourshit/pull/65, v1.10, make test exit 0 (web 64 files / 470 tests), make lint exit 0, checklist 4/4 ticked; e2e needs `make build` first (embedded dist), library-detail wiring for unsafeSteps is task 62 |
 | 62 | 62-tier-switch-and-banner.md | done | PR #66 https://github.com/PeiceOfToast/shrinkyourshit/pull/66, v1.10, CI green (9 checks), make test exit 0 (web 65 files / 474 tests), make lint exit 0, playwright 118 passed / 4 skipped, checklist 4/4 ticked; no Go change, server tier gate on PUT /libraries/{id}/flow left as an open owner question in tasks/62-notes.md |
 | 63 | 63-verify-and-document.md | done | PR #67 https://github.com/PeiceOfToast/shrinkyourshit/pull/67, v1.10 wave complete, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (web 65 files / 474 tests), make lint exit 0, integration green on a second full run (run 1 had one load flake in TestNodeDrainFinishesCurrentJob), checklist 4/4 ticked; 6 documented gaps in tasks/63-notes.md |
+
+## v1.11 queue (encode profiles and in-app storage)
+
+Spec: `docs/design/encode-profiles-and-storage-2026-11-06.md`. Tasks run in order, one at a time.
+Storage first because libraries need somewhere to point before profiles make sense to move.
+
+| Task | File | Status | PR / note |
+|------|------|--------|-----------|
+| 64 | 64-storage-store-and-secrets.md | todo | |
+| 65 | 65-storage-api.md | todo | |
+| 66 | 66-mount-executor.md | todo | |
+| 67 | 67-container-capabilities.md | todo | |
+| 68 | 68-storage-page.md | todo | |
+| 69 | 69-storage-browser-and-path-picker.md | todo | |
+| 70 | 70-profiles-schema-migration.md | todo | |
+| 71 | 71-profiles-api.md | todo | |
+| 72 | 72-encode-page-profiles.md | todo | |
+| 73 | 73-library-profile-wiring.md | todo | |
+| 74 | 74-deprecate-library-rules.md | todo | |
+| 75 | 75-verify-wave.md | todo | |

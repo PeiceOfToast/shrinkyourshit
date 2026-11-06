@@ -177,3 +177,16 @@ Moderate with a condition, scale and per step hardware, Advanced with `raw_args`
 confirmed by ffprobe, and a downgrade that leaves the stored graph byte-identical. Open owner
 questions, not built: the ffmpeg command line is not in the job log (only ffmpeg's own echo and the
 `raw_args` token line), and `PUT /libraries/{id}/flow` does not check the library's tier yet.
+
+## v1.11 encode profiles and in-app storage (scheduled 2026-11-06)
+
+Specification: `docs/design/encode-profiles-and-storage-2026-11-06.md`. Tasks 64 to 75.
+
+- NFS and SMB shares are added, mounted, tested and browsed from the WebUI. The container gains
+  `nfs-common`, `cifs-utils`, `SYS_ADMIN` and an AppArmor override at install time, and the server
+  owns the mount lifecycle with a startup remount and a watchdog.
+- Mount writes require login to be enabled, because mounting is a different risk class from
+  everything else the app does. An optional host allowlist narrows it further.
+- Encode rules move off libraries into named profiles on the Encode settings page. A profile owns
+  the graph, the tier and the result policy; a library owns storage, path, watch, schedule and
+  which profile it follows. The per-library encode builder is removed.
