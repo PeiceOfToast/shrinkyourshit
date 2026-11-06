@@ -34,13 +34,13 @@ fields, `API.md`, `ARCHITECTURE.md`, plus the tests.
 
 ## Acceptance
 
-- [ ] A library save that sends `target`, `easy` or `result_policy` behaves exactly as the notes
+- [x] A library save that sends `target`, `easy` or `result_policy` behaves exactly as the notes
       say (one test), and no reply carries `deprecated`.
-- [ ] `PUT /api/v1/libraries/{id}/tier` is gone (route table test and API.md).
-- [ ] The web client sends and reads neither the removed fields nor the removed route (grep output
+- [x] `PUT /api/v1/libraries/{id}/tier` is gone (route table test and API.md).
+- [x] The web client sends and reads neither the removed fields nor the removed route (grep output
       in the notes).
-- [ ] OpenAPI and API.md match the code.
-- [ ] `make test` and `make lint` green.
+- [x] OpenAPI and API.md match the code.
+- [x] `make test` and `make lint` green.
 
 ## Notes
 

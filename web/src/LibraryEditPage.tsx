@@ -7,10 +7,9 @@
  * The steps belong to the profile, edited in Encode settings; this page
  * links there. Remove library sits in the Danger zone.
  *
- * The API accepts a profile-only save. Libraries saved before task 73 still
- * carry a stored rule, so this page also resends the rule the library has,
- * unchanged: the easy object when the easy tier owns the flow, the stored
- * target otherwise. A save therefore never changes a legacy rule.
+ * A save sends the properties and profile_id only. The rule the library runs
+ * is the profile's, so the page never sends a rule field (task 77 removed
+ * them from the API).
  */
 import { useDocumentTitle } from './useDocumentTitle'
 import { useId, useState } from 'react'
@@ -25,7 +24,6 @@ import {
 import Checkbox from './Checkbox'
 import ConfirmDialog from './ConfirmDialog'
 import { pathField } from './easyControls'
-import { parseEasy } from './easyModel'
 import ErrorBox from './ErrorBox'
 import { Field, FormActions, FormSection } from './FormSection'
 import FolderPickerModal from './FolderPickerModal'
@@ -120,12 +118,6 @@ export default function LibraryEditPage() {
       watch: watchState,
       file_kinds: kindsState,
       profile_id: profileState,
-    }
-    // Resend the rule the library has, unchanged (see the file comment).
-    if (lib.flow_source === 'easy' && lib.easy != null) {
-      body.easy = parseEasy(lib.easy)
-    } else {
-      body.target = lib.target
     }
     save.mutate(body)
   }

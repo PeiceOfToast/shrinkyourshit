@@ -37,10 +37,6 @@ func advancedTierGraph() flow.Graph {
 	}
 }
 
-func (h *apiHarness) putTier(id, tier string) *httptest.ResponseRecorder {
-	return h.do(http.MethodPut, "/api/v1/libraries/"+id+"/tier", map[string]any{"tier": tier})
-}
-
 // profileWith stores a profile carrying g at tier and returns its DTO.
 func (h *apiHarness) profileWith(name, tier string, g flow.Graph) server.ProfileDTO {
 	h.t.Helper()
@@ -63,28 +59,6 @@ func (h *apiHarness) libraryOn(profileID string) server.LibraryDTO {
 // policy, the only edit the tier tests make.
 func (h *apiHarness) putProfileTier(p server.ProfileDTO, tier string) *httptest.ResponseRecorder {
 	return h.do(http.MethodPut, "/api/v1/profiles/"+p.ID, profileReq(p.Name, tier, p.ResultPolicy, p.Graph))
-}
-
-// TestPutLibraryTierIsRefused (task 74): the tier belongs to the profile, so a
-// library tier write is 409 follows_profile and changes nothing. The body and
-// the library are still checked first.
-func TestPutLibraryTierIsRefused(t *testing.T) {
-	h := newAPIHarness(t)
-	p := h.profileWith("Shrink", "advanced", advancedTierGraph())
-	lib := h.libraryOn(p.ID)
-
-	rec := h.putTier(lib.ID, "basic")
-	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
-	require.Contains(t, rec.Body.String(), "follows_profile")
-	require.Equal(t, "advanced", h.libraryDTO(lib.ID).RuleTier, "the refused write changed nothing")
-
-	rec = h.putTier(lib.ID, "expert")
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "invalid_request")
-
-	rec = h.putTier("no-such-library", "basic")
-	require.Equal(t, http.StatusNotFound, rec.Code)
-	require.Contains(t, rec.Body.String(), "not_found")
 }
 
 // TestProfileTierDowngradeKeepsGraphByteIdentical is the spec's proof for

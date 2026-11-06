@@ -14,96 +14,77 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCreateLibraryIgnoresLegacyEasy (task 74): the easy input is a pre-profile
-// field. A create that sends it still succeeds, the library follows the default
-// profile, the easy input is not compiled, and the reply names the field.
-func TestCreateLibraryIgnoresLegacyEasy(t *testing.T) {
-	h := newAPIHarness(t)
-	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
-		"path": h.root, "watch": true,
-		"easy": map[string]any{"quality": 3, "remove_subtitles": true, "audio": 2},
-	})
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var reply struct {
-		server.LibraryDTO
-		Deprecated []struct {
-			Field string `json:"field"`
-		} `json:"deprecated"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
-	require.Equal(t, "library", reply.Name, "name defaults to the folder base name")
-	require.NotEmpty(t, reply.ProfileID, "the library follows a profile")
-	require.Equal(t, flow.Default(), reply.Target, "the easy input was not compiled")
-	require.Contains(t, deprecatedFields(reply.Deprecated), "easy")
-}
-
-// TestCreateLibraryIgnoresInvalidLegacyFields (task 74): values that used to be
-// 400s are ignored now, because nothing reads them. The reply still names each
-// field, so an old client can see what did not apply.
-func TestCreateLibraryIgnoresInvalidLegacyFields(t *testing.T) {
-	h := newAPIHarness(t)
-	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
-		"path": h.root, "target": flow.Default(),
+// removedRuleFields is a library save body that still carries the three rule
+// fields removed in v1.12 (task 77), with values that used to be refused.
+func removedRuleFields(path string) map[string]any {
+	return map[string]any{
+		"name": "Movies", "path": path, "watch": true,
+		"target":        flow.Default(),
 		"easy":          map[string]any{"quality": 9, "remove_subtitles": false, "audio": 1},
 		"result_policy": "delete_everything",
-	})
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var reply struct {
-		Deprecated []struct {
-			Field string `json:"field"`
-		} `json:"deprecated"`
 	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
-	require.ElementsMatch(t, []string{"target", "easy", "result_policy", "profile_id"}, deprecatedFields(reply.Deprecated))
 }
 
-// TestLegacyEasyOnUpdateIsIgnored (task 74): an old client's easy save on an
-// existing library changes nothing that runs. The library keeps its profile,
-// its target is unchanged, and the reply names the field. A save with neither
-// rule field is a plain update and keeps the profile (it used to be a 400).
-func TestLegacyEasyOnUpdateIsIgnored(t *testing.T) {
+// TestLibrarySaveIgnoresRemovedRuleFields (task 77): a create and an update
+// that send target, easy or result_policy succeed. The fields change nothing:
+// the library keeps the profile it follows, the rule and policy are the
+// profile's, and the reply has no deprecated key (the list is removed).
+func TestLibrarySaveIgnoresRemovedRuleFields(t *testing.T) {
 	h := newAPIHarness(t)
-	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
-		"name": "Movies", "path": h.root,
-	})
+
+	rec := h.do(http.MethodPost, "/api/v1/libraries", removedRuleFields(h.root))
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), `"deprecated"`)
 	var created server.LibraryDTO
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+	require.NotEmpty(t, created.ProfileID, "the library follows the default profile")
+	require.Equal(t, flow.Default(), created.Target, "the easy input was not compiled")
+	profile := h.profileFor(created.ProfileID)
+	require.Equal(t, profile.ResultPolicy, created.ResultPolicy, "the policy is the profile's, not the sent value")
+	require.NotEqual(t, "delete_everything", created.ResultPolicy)
 
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+created.ID, map[string]any{
-		"name": "Movies", "path": h.root, "watch": true,
-		"easy": map[string]any{"quality": 5, "remove_subtitles": true, "audio": 4},
-	})
+	// Update with the same removed fields and a different policy: nothing moves.
+	body := removedRuleFields(h.root)
+	body["result_policy"] = "replace"
+	body["profile_id"] = created.ProfileID
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+created.ID, body)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	var reply struct {
-		server.LibraryDTO
-		Deprecated []struct {
-			Field string `json:"field"`
-		} `json:"deprecated"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
-	require.Equal(t, created.ProfileID, reply.ProfileID, "the profile is kept")
-	require.Equal(t, flow.Default(), reply.Target, "the easy input did not change the rule")
-	require.Contains(t, deprecatedFields(reply.Deprecated), "easy")
-
-	// Name and watch only: a plain update, the profile stays.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+created.ID, map[string]any{"name": "Movies", "path": h.root})
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
-	require.Equal(t, created.ProfileID, reply.ProfileID)
-	require.Equal(t, []string{"profile_id"}, deprecatedFields(reply.Deprecated),
-		"no profile_id sent: the reply says the library kept its profile")
+	require.NotContains(t, rec.Body.String(), `"deprecated"`)
+	var updated server.LibraryDTO
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
+	require.Equal(t, created.ProfileID, updated.ProfileID)
+	require.Equal(t, profile.ResultPolicy, updated.ResultPolicy)
+	require.Equal(t, flow.Default(), updated.Target)
 }
 
-// deprecatedFields lists the field names of a deprecated list.
-func deprecatedFields(list []struct {
-	Field string `json:"field"`
-}) []string {
-	out := make([]string, 0, len(list))
-	for _, d := range list {
-		out = append(out, d.Field)
-	}
-	return out
+// TestLibrarySaveWithoutProfileOmitsDeprecated (task 77): a plain save with
+// no profile_id keeps the library's profile and carries no deprecated list,
+// where the v1.11 reply named the profile.
+func TestLibrarySaveWithoutProfileOmitsDeprecated(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, map[string]any{
+		"name": "Movies", "path": h.root, "watch": true,
+	})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), `"deprecated"`)
+	var reply server.LibraryDTO
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
+	require.Equal(t, lib.ProfileID, reply.ProfileID, "the library keeps its profile")
+}
+
+// TestLibraryTierRouteIsGone (task 77): PUT /api/v1/libraries/{id}/tier is no
+// longer routed. It used to answer 409 follows_profile. The API's catch-all
+// answers 404 not_found, and the library's tier is unchanged.
+func TestLibraryTierRouteIsGone(t *testing.T) {
+	h := newAPIHarness(t)
+	lib := h.createLibrary(false)
+	before := h.libraryDTO(lib.ID).RuleTier
+
+	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/tier", map[string]any{"tier": "basic"})
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "not_found")
+	require.Equal(t, before, h.libraryDTO(lib.ID).RuleTier)
 }
 
 // TestStatsEndpoint is the HTTP face of the stats acceptance: totals match
@@ -115,7 +96,6 @@ func TestStatsEndpoint(t *testing.T) {
 	// Second library through the API so both appear in the response.
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"name": "Series", "path": h.root + "-series",
-		"easy": map[string]any{"quality": 2, "remove_subtitles": false, "audio": 3},
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	var libB server.LibraryDTO

@@ -139,8 +139,8 @@ let mock: FetchMock
 
 afterEach(() => mock?.restore())
 
-describe('LibraryEditPage saves the rule the library already has (task 47)', () => {
-  it('resends the stored easy object unchanged when the easy tier owns the flow', async () => {
+describe('LibraryEditPage never sends a rule field (task 77)', () => {
+  it('a save of an easy-owned library sends properties and profile_id only', async () => {
     mock = installFetchMock([
       ...profilesRoutes(),
       {
@@ -149,9 +149,7 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
         body: library(
           { quality: 3, remove_subtitles: true, audio: 2 },
           'easy',
-          {
-            profile_id: 'prof-basic',
-          },
+          { profile_id: 'prof-basic' },
         ),
       },
       {
@@ -173,18 +171,17 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
         watch: true,
         file_kinds: ['video'],
         profile_id: 'prof-basic',
-        easy: { quality: 3, remove_subtitles: true, audio: 2 },
       })
     })
   })
 
-  it('resends the stored target and no easy object for a Steps library', async () => {
+  it('a save of a steps library sends no target, easy or result_policy', async () => {
     mock = installFetchMock([
       ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null, 'steps'),
+        body: library(null, 'steps', { profile_id: 'prof-basic' }),
       },
       {
         method: 'PUT',
@@ -199,42 +196,11 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
     await waitFor(() => {
       const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
       expect(puts).toHaveLength(1)
-      const body = puts[0].body as { easy?: unknown; target?: Target }
-      expect(body.easy).toBeUndefined()
-      expect(body.target).toEqual(STORED_TARGET)
-    })
-  })
-
-  it('never sends a leftover easy object when the Steps tier owns the flow', async () => {
-    // A library saved on the Easy tier and later moved to Steps still has
-    // its easy object stored. An easy save would regenerate the hand-made
-    // steps, so the stored target goes instead.
-    mock = installFetchMock([
-      ...profilesRoutes(),
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(
-          { quality: 2, remove_subtitles: false, audio: 1 },
-          'steps',
-        ),
-      },
-      {
-        method: 'PUT',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null, 'steps'),
-      },
-    ])
-    renderPage()
-    await screen.findByTestId('library-edit-save')
-    fireEvent.click(screen.getByTestId('library-edit-save'))
-
-    await waitFor(() => {
-      const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
-      expect(puts).toHaveLength(1)
-      const body = puts[0].body as { easy?: unknown; target?: Target }
-      expect(body.easy).toBeUndefined()
-      expect(body.target).toEqual(STORED_TARGET)
+      const body = puts[0].body as Record<string, unknown>
+      expect(body).not.toHaveProperty('target')
+      expect(body).not.toHaveProperty('easy')
+      expect(body).not.toHaveProperty('result_policy')
+      expect(body).toMatchObject({ profile_id: 'prof-basic' })
     })
   })
 })
@@ -420,8 +386,8 @@ describe('LibraryEditPage encode profile (task 73)', () => {
       const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
       expect(puts).toHaveLength(1)
       expect(puts[0].body).toMatchObject({ profile_id: 'prof-moderate' })
-      // The stored legacy rule is resent unchanged alongside the profile.
-      expect(puts[0].body).toHaveProperty('target')
+      // The rule is the profile's: no rule field goes with the save (task 77).
+      expect(puts[0].body).not.toHaveProperty('target')
     })
   })
 })

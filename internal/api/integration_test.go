@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/testutil"
@@ -40,7 +39,7 @@ func TestIntegrationScanViaAPI(t *testing.T) {
 	// Create the library and scan via the API.
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"name": "Movies", "path": h.root,
-		"target": flow.Default(), "watch": false,
+		"watch": false,
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	var lib server.LibraryDTO
