@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package mount is the storage mount executor (task 66, spec 4.1). It mounts
-// NFS and SMB shares inside the container with mount(8), unmounts them, tests
+// NFS and SMB shares inside the container with mount(2), unmounts them, tests
 // them, reports their status from /proc/mounts, remounts every enabled storage
 // at startup and keeps them mounted with a watchdog.
 //
-// The package never builds a shell command line. Every call is an argument
-// vector passed to the runner, and the SMB password reaches mount(8) only
-// through a 0600 credentials file that is removed as soon as mount returns.
+// The package never builds a shell command line and never runs mount(8). Each
+// call is a mount(2) with fixed arguments, made in this process so the
+// container's CAP_SYS_ADMIN applies (task 79). The SMB password reaches the
+// kernel only through a 0600 credentials file that is removed as soon as mount
+// returns.
 package mount
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
@@ -36,6 +36,9 @@ const (
 	DefaultWatchInterval = 30 * time.Second
 	DefaultBackoffBase   = 10 * time.Second
 	DefaultBackoffMax    = 10 * time.Minute
+	// DefaultBusyWait is the pause before a busy unmount is retried with a
+	// lazy detach (task 79, step 4).
+	DefaultBusyWait = 500 * time.Millisecond
 	// probeName is written into a share root by Test (spec 4.4). It is removed
 	// again before Test returns.
 	probeName = ".shrinkyourshit-probe"
@@ -48,49 +51,6 @@ type Store interface {
 	StorageSecret(ctx context.Context, id string) (string, error)
 }
 
-// Runner runs one program with an argument vector. It never goes through a
-// shell. A failed run returns a *CommandError that carries stderr verbatim.
-type Runner interface {
-	Run(ctx context.Context, program string, args ...string) error
-}
-
-// CommandError is a failed mount-side command. Error returns stderr exactly as
-// the program wrote it (trailing newlines trimmed), so the operator sees the
-// mount(8) message and not a paraphrase. When stderr is empty, the exit error
-// is used instead.
-type CommandError struct {
-	Program string
-	Stderr  string
-	Err     error
-}
-
-func (e *CommandError) Error() string {
-	if strings.TrimSpace(e.Stderr) != "" {
-		return e.Stderr
-	}
-	return fmt.Sprintf("%s failed: %v", e.Program, e.Err)
-}
-
-func (e *CommandError) Unwrap() error { return e.Err }
-
-// execRunner is the production runner: os/exec with the argument vector.
-type execRunner struct{}
-
-func (execRunner) Run(ctx context.Context, program string, args ...string) error {
-	cmd := exec.CommandContext(ctx, program, args...)
-	var stderr bytes.Buffer
-	cmd.Stdout = io.Discard
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return &CommandError{
-			Program: program,
-			Stderr:  strings.TrimRight(stderr.String(), "\r\n"),
-			Err:     err,
-		}
-	}
-	return nil
-}
-
 // Options configures an Executor. Zero values take the defaults above.
 type Options struct {
 	// Root is the directory mountpoints live under: Root/<name>.
@@ -99,8 +59,15 @@ type Options struct {
 	ScratchDir string
 	// ProcMounts is the mount table to read. Defaults to /proc/mounts.
 	ProcMounts string
-	// Runner runs mount and umount. Defaults to os/exec.
-	Runner Runner
+	// Mounter makes the mount(2) and umount2(2) calls. Defaults to the kernel
+	// on Linux and to an error everywhere else.
+	Mounter Mounter
+	// ProcStatus is the file read for the CAP_SYS_ADMIN check at startup.
+	// Defaults to /proc/self/status.
+	ProcStatus string
+	// BusyWait is the pause before a busy unmount is retried with MNT_DETACH.
+	// Defaults to DefaultBusyWait.
+	BusyWait time.Duration
 	// Allow is the host allowlist gate (spec 4.4). It runs before every
 	// mount-side action, so a host removed from the setting cannot be mounted
 	// by a row that already exists. Nil allows everything.
@@ -140,6 +107,9 @@ type Executor struct {
 	mu     sync.Mutex
 	locks  map[string]*sync.Mutex
 	health map[string]*health
+	// busy marks a storage whose kernel call is still running, usually after a
+	// timeout. A busy storage is not mounted or unmounted again until it returns.
+	busy map[string]bool
 }
 
 // New returns an executor. Nothing runs until Startup, Watch or Run, or until
@@ -154,8 +124,14 @@ func New(st Store, opt Options) *Executor {
 	if opt.ProcMounts == "" {
 		opt.ProcMounts = "/proc/mounts"
 	}
-	if opt.Runner == nil {
-		opt.Runner = execRunner{}
+	if opt.Mounter == nil {
+		opt.Mounter = defaultMounter()
+	}
+	if opt.ProcStatus == "" {
+		opt.ProcStatus = "/proc/self/status"
+	}
+	if opt.BusyWait <= 0 {
+		opt.BusyWait = DefaultBusyWait
 	}
 	if opt.Log == nil {
 		opt.Log = slog.Default()
@@ -183,6 +159,7 @@ func New(st Store, opt Options) *Executor {
 		opt:    opt,
 		locks:  map[string]*sync.Mutex{},
 		health: map[string]*health{},
+		busy:   map[string]bool{},
 	}
 }
 
@@ -192,7 +169,7 @@ var (
 	storageIDRE = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 	// sourceRE: host:/path, //host/share, with IPv6 brackets and a hidden
 	// share's trailing $. It never starts with a dash, so it cannot read as a
-	// mount(8) flag.
+	// command line flag.
 	sourceRE = regexp.MustCompile(`^[A-Za-z0-9._:/\[\]$][A-Za-z0-9._:/\[\]$-]*$`)
 	// optionsRE is the characters a mount option string may hold. Commas
 	// separate options; nothing here can start a shell word or a second -o.
@@ -269,30 +246,6 @@ func (e *Executor) Mountpoint(st *store.Storage) string {
 // storage so the per-storage lock is enough to keep two mounts apart.
 func (e *Executor) CredentialsPath(st *store.Storage) string {
 	return filepath.Join(e.opt.ScratchDir, "cifs-"+st.ID+".cred")
-}
-
-// MountArgs builds the mount(8) argument vector for a storage (spec 4.1). The
-// credentials file path is passed in, so the vector can be checked exactly.
-// The options are the credentials option first (SMB only), the stored options
-// in their order, then ro for a read only storage.
-func MountArgs(st *store.Storage, mountpoint, credsPath string) []string {
-	opts := []string{}
-	args := []string{}
-	switch st.Protocol {
-	case "smb":
-		args = append(args, "-t", "cifs")
-		opts = append(opts, "credentials="+credsPath)
-	default:
-		args = append(args, "-t", "nfs")
-	}
-	opts = append(opts, splitOptions(st.Options)...)
-	if st.ReadOnly && !hasOption(opts, "ro") {
-		opts = append(opts, "ro")
-	}
-	if len(opts) > 0 {
-		args = append(args, "-o", strings.Join(opts, ","))
-	}
-	return append(args, st.Source, mountpoint)
 }
 
 func hasOption(opts []string, name string) bool {
@@ -452,6 +405,61 @@ func bounded(ctx context.Context, d time.Duration, fn func() error) error {
 	}
 }
 
+// errBusy is returned while an earlier kernel call for the same storage has not
+// returned yet.
+var errBusy = errors.New("a mount or unmount of this storage is still running; it is tried again once that finishes")
+
+// callBounded runs one kernel call for a storage and waits at most d. A
+// mount(2) cannot be cancelled, so on timeout the call keeps running in its own
+// goroutine, and the storage stays busy until it returns. No second mount or
+// unmount of that storage starts meanwhile, so a late success cannot stack a
+// second mount on the first.
+func (e *Executor) callBounded(ctx context.Context, id string, d time.Duration, fn func() error) error {
+	e.mu.Lock()
+	if e.busy[id] {
+		e.mu.Unlock()
+		return errBusy
+	}
+	e.busy[id] = true
+	e.mu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		err := fn()
+		e.mu.Lock()
+		delete(e.busy, id)
+		e.mu.Unlock()
+		done <- err
+	}()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		return fmt.Errorf("the mount call did not finish within %s; it may still be running, and this storage is not tried again until it returns", d)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// umount unmounts target without forcing. Only EBUSY earns a retry: wait
+// BusyWait, then one lazy detach. The first attempt never detaches.
+func (e *Executor) umount(target string) error {
+	err := e.opt.Mounter.Unmount(target, 0)
+	if errors.Is(err, syscall.EBUSY) {
+		e.opt.Log.Warn("storage busy; retrying with a lazy unmount", "target", target)
+		time.Sleep(e.opt.BusyWait)
+		err = e.opt.Mounter.Unmount(target, mntDetach)
+	}
+	return umountErr(target, err)
+}
+
+// unmountTarget runs umount for a storage under callBounded.
+func (e *Executor) unmountTarget(ctx context.Context, id, target string) error {
+	return e.callBounded(ctx, id, e.opt.MountTimeout, func() error { return e.umount(target) })
+}
+
 // ---- Mount, unmount, test ---------------------------------------------------
 
 // mountOnce mounts a storage whose row has passed validate and the gate. The
@@ -490,9 +498,10 @@ func (e *Executor) mountOnce(ctx context.Context, st *store.Storage) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, e.opt.MountTimeout)
-	defer cancel()
-	return e.opt.Runner.Run(ctx, "mount", MountArgs(st, mp, credsPath)...)
+	spec := BuildMountSpec(st, mp, credsPath)
+	return e.callBounded(ctx, st.ID, e.opt.MountTimeout, func() error {
+		return mountErr(spec, e.opt.Mounter.Mount(spec.Source, spec.Target, spec.Fstype, spec.Flags, spec.Data))
+	})
 }
 
 // checked runs validation and the host gate. Every mount-side path calls it
@@ -509,8 +518,8 @@ func (e *Executor) checked(ctx context.Context, st *store.Storage) error {
 	return nil
 }
 
-// Mount mounts a storage, under its lock. The error, when there is one, is the
-// mount(8) stderr. The error is also kept for Status.
+// Mount mounts a storage, under its lock. The error, when there is one, names
+// the mount(2) call and what the errno means. The error is also kept for Status.
 func (e *Executor) Mount(ctx context.Context, st *store.Storage) error {
 	unlock := e.lock(st.ID)
 	defer unlock()
@@ -545,9 +554,7 @@ func (e *Executor) Unmount(ctx context.Context, st *store.Storage) error {
 	if !mounted {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, e.opt.MountTimeout)
-	defer cancel()
-	if err := e.opt.Runner.Run(ctx, "umount", mp); err != nil {
+	if err := e.unmountTarget(ctx, st.ID, mp); err != nil {
 		e.noteError(st.ID, err)
 		e.opt.Log.Warn("storage unmount failed", "storage", st.Name, "error", err)
 		return err
@@ -608,9 +615,7 @@ func (e *Executor) test(ctx context.Context, st *store.Storage) (t Timings, err 
 			// The unmount runs even when a check failed. Its error only replaces
 			// the result when the checks passed.
 			start := time.Now()
-			uctx, cancel := context.WithTimeout(context.Background(), e.opt.MountTimeout)
-			defer cancel()
-			if uerr := e.opt.Runner.Run(uctx, "umount", mp); uerr != nil && err == nil {
+			if uerr := e.unmountTarget(context.Background(), st.ID, mp); uerr != nil && err == nil {
 				err = fmt.Errorf("unmount after test: %w", uerr)
 			}
 			t.UnmountMS = time.Since(start).Milliseconds()
@@ -753,6 +758,7 @@ func (e *Executor) checkResponsive(ctx context.Context, st *store.Storage, mp st
 // Run does the startup remount, then runs the watchdog every WatchInterval until
 // ctx ends. It is meant to run in its own goroutine.
 func (e *Executor) Run(ctx context.Context) {
+	e.checkCapability()
 	e.Startup(ctx)
 	ticker := time.NewTicker(e.opt.WatchInterval)
 	defer ticker.Stop()
