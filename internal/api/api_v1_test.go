@@ -159,7 +159,7 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 
 	// Create.
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
-		"name": "Movies", "path": h.root, "watch": true, "target": target,
+		"name": "Movies", "path": h.root, "watch": true,
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	var created server.LibraryDTO
@@ -208,26 +208,17 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 	rec = h.do(http.MethodGet, "/api/v1/libraries/"+created.ID, nil)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 
-	// Error shapes follow API.md conventions. An empty name is no longer
-	// an error (it defaults to the folder's base name for the easy
-	// screen). Task 74: a legacy target is ignored, so an invalid one no longer
-	// fails the save; the reply names the field instead.
+	// Error shapes follow API.md conventions. An empty name is not an error:
+	// it defaults to the folder's base name (the easy screen has no name
+	// field). A removed rule field (task 77) is ignored, not refused.
 	rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"name": "", "path": h.root,
-		"target": flow.Target{
-			Video:     flow.VideoTarget{Codec: "nope", Quality: 3},
-			Audio:     flow.AudioTarget{Mode: flow.AudioKeepAll},
-			Subtitles: flow.SubtitleTarget{Mode: flow.SubsKeepAll},
-			Container: flow.ContainerMKV,
-		},
+		"target": flow.Default(),
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var reply struct {
-		Deprecated []deprecatedField `json:"deprecated"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
-	require.NotEmpty(t, reply.Deprecated)
-	require.Equal(t, "target", reply.Deprecated[0].Field)
+	var nameless server.LibraryDTO
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &nameless))
+	require.NotEmpty(t, nameless.Name)
 }
 
 // TestLibraryLastScanAtExposed covers the DTO field (task 19): a library

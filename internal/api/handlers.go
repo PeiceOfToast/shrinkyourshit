@@ -18,24 +18,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/probe"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
-// libraryBody is the create/update request body (API.md). Target, Easy and
-// ResultPolicy are the pre-profile rule fields (task 74): they are accepted
-// for one release and ignored, and the reply names each one that was sent.
-// The rule a library runs is its encode profile's, chosen with ProfileID.
+// libraryBody is the create/update request body (API.md). The rule a library
+// runs is its encode profile's, chosen with ProfileID. The pre-profile rule
+// fields (target, easy, result_policy) were removed in v1.12 (task 77): a
+// request that still sends them is decoded like any other unknown field, so
+// it is ignored and the save succeeds.
 type libraryBody struct {
-	Name         string              `json:"name"`
-	Path         string              `json:"path"`
-	Target       *flow.Target        `json:"target"`
-	Easy         *flow.EasyModeInput `json:"easy"`
-	Watch        bool                `json:"watch"`
-	Schedule     string              `json:"schedule"`
-	ResultPolicy string              `json:"result_policy"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Watch    bool   `json:"watch"`
+	Schedule string `json:"schedule"`
 	// FileKinds is a pointer so the API can tell "not sent" from "sent
 	// empty": a missing field defaults to ["video"], an explicit empty
 	// list is rejected (task 34).
@@ -44,40 +41,6 @@ type libraryBody struct {
 	// keeps the library's current profile on update and takes the default
 	// profile on create; a library never detaches (task 74).
 	ProfileID string `json:"profile_id"`
-}
-
-// deprecatedField is one entry of the deprecated list a library save answers:
-// a field the request sent that the server ignored, or a default it applied.
-type deprecatedField struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-}
-
-// libraryReply is the library create and update reply: the library, plus the
-// deprecated list (task 74). The list is always present, empty when the
-// request used only current fields.
-type libraryReply struct {
-	server.LibraryDTO
-	Deprecated []deprecatedField `json:"deprecated"`
-}
-
-// newLibraryReply builds the save reply for lib from the request body.
-func newLibraryReply(lib *store.Library, body libraryBody) libraryReply {
-	notes := []deprecatedField{}
-	const ignored = "ignored: a library runs its encode profile's rule; set it on the profile (PUT /api/v1/profiles/{id})"
-	if body.Target != nil {
-		notes = append(notes, deprecatedField{Field: "target", Message: ignored})
-	}
-	if body.Easy != nil {
-		notes = append(notes, deprecatedField{Field: "easy", Message: ignored})
-	}
-	if body.ResultPolicy != "" {
-		notes = append(notes, deprecatedField{Field: "result_policy", Message: "ignored: the result policy is the profile's; set it on the profile"})
-	}
-	if body.ProfileID == "" {
-		notes = append(notes, deprecatedField{Field: "profile_id", Message: "not sent: the library follows encode profile " + lib.ProfileID + "; send profile_id to choose another"})
-	}
-	return libraryReply{LibraryDTO: server.NewLibraryDTO(lib), Deprecated: notes}
 }
 
 // listLibraries returns every library.
@@ -110,7 +73,7 @@ func (a *API) createLibrary(w http.ResponseWriter, r *http.Request) {
 		writeLibraryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, newLibraryReply(lib, body))
+	writeJSON(w, http.StatusCreated, server.NewLibraryDTO(lib))
 }
 
 // getLibrary returns one library.
@@ -139,7 +102,7 @@ func (a *API) updateLibrary(w http.ResponseWriter, r *http.Request) {
 		writeLibraryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, newLibraryReply(lib, body))
+	writeJSON(w, http.StatusOK, server.NewLibraryDTO(lib))
 }
 
 // deleteLibrary removes the library's DB records only.
@@ -707,9 +670,9 @@ func (a *API) library(w http.ResponseWriter, r *http.Request) (*store.Library, b
 	return lib, true
 }
 
-// libraryParams converts the request body to manager params. The rule fields
-// (target, easy, result_policy) are not params any more (task 74): the library
-// follows the profile named by profile_id.
+// libraryParams converts the request body to manager params. The library
+// follows the profile named by profile_id; no rule fields are params (task 74,
+// removed from the body in task 77).
 func libraryParams(body libraryBody) server.LibraryParams {
 	// File kinds (task 34): a missing field defaults to ["video"], an
 	// explicitly empty list is rejected by the manager's validation.

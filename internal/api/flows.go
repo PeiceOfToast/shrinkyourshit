@@ -85,31 +85,6 @@ func (a *API) getLibraryFlow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, flowReply(lib, graph, source, tier))
 }
 
-// putTierBody is the PUT /api/v1/libraries/{id}/tier request body.
-type putTierBody struct {
-	Tier string `json:"tier"`
-}
-
-// putLibraryTier answers PUT /api/v1/libraries/{id}/tier with 409
-// follows_profile. The tier is the profile's (task 74): changing it on the
-// library would change nothing that runs, so the request is refused rather
-// than silently ignored. The body is still validated first.
-func (a *API) putLibraryTier(w http.ResponseWriter, r *http.Request) {
-	body, err := decode[putTierBody](r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	if _, err := flow.ParseTier(body.Tier); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	if _, ok := a.library(w, r); !ok {
-		return
-	}
-	writeError(w, http.StatusConflict, "follows_profile", "the tier belongs to the encode profile this library follows; change it with PUT /api/v1/profiles/{id}")
-}
-
 // putFlowBody is the PUT /api/v1/libraries/{id}/flow request body: the
 // graph plus the tier that produced it (easy, steps or advanced).
 type putFlowBody struct {

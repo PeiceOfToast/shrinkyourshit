@@ -413,6 +413,8 @@ Edge{ from, to, when }
   `flow_json`, `flow_source`, `target`, `easy`, `rule_tier` and `result_policy`
   columns are no longer read or written (task 76). They stay in the schema,
   unread and unwritten, until migration 0019 drops them in v1.12 (task 78).
+  The API no longer accepts `target`, `easy` or `result_policy` on a library
+  save, and the `deprecated` reply list and the tier route are gone (task 77).
   The boot step `BackfillProfiles` attaches the default profile to any library
   with no `profile_id`, and reads none of them. Before task 74, a library's own
   `flow_json` was the rule and `target` the compat column; legacy rows were

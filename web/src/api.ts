@@ -249,10 +249,6 @@ export interface Library {
   schedule: string
   /** The profile's result policy (task 74). */
   result_policy: string
-  /** Create and update replies only (task 74): each deprecated field the
-   * request sent and the server ignored, and the profile default when none
-   * was sent. Empty when the request used only current fields. */
-  deprecated?: DeprecatedField[]
   /** What the library holds (task 34): video, audio, subtitle, image or
    * other. The scanner skips files of other kinds before looking inside. */
   file_kinds: string[]
@@ -378,25 +374,14 @@ export interface ListResponse<T> {
   total: number
 }
 
-/** One entry of a library save reply's deprecated list (task 74). */
-export interface DeprecatedField {
-  field: string
-  message: string
-}
-
-/** Create/update body. The rule is the encode profile's (task 74): target,
- * easy and result_policy are deprecated and ignored by the server. */
+/** Create/update body. The rule is the encode profile's (task 74): the
+ * library runs the profile's graph, tier and result policy, so a save sends
+ * no rule fields (target, easy and result_policy were removed in task 77). */
 export interface LibraryBody {
   name?: string
   path: string
-  /** @deprecated Ignored since task 74; the profile is the rule. */
-  target?: Target
-  /** @deprecated Ignored since task 74. */
-  easy?: EasyInput
   watch: boolean
   schedule?: string
-  /** @deprecated Ignored since task 74; the profile's policy applies. */
-  result_policy?: string
   /** What the library holds (task 34); omitted defaults to ["video"]. */
   file_kinds?: string[]
   /** The encode profile the library follows (task 73). Empty keeps the

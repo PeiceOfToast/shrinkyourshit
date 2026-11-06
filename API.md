@@ -344,7 +344,6 @@ No new endpoints. The Playwright suite drives the built web app through the Go s
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/api/v1/libraries/{id}/flow` | admin | the stored graph plus its `source`, the `tier` it was judged at and `unrepresentable` (task 59; `?tier=` overrides the library's own tier) |
-| PUT | `/api/v1/libraries/{id}/tier` | admin | body `{tier}`; sets the rule tier only, returns `{tier, unrepresentable}` (task 59) |
 | PUT | `/api/v1/libraries/{id}/flow` | admin | body `{source, graph}`; validates before saving |
 | POST | `/api/v1/flows/validate` | admin | body `{graph}`; `200 {"valid":true}` or `400 {"code":"invalid_flow","errors":[{path,message}]}` |
 | GET | `/api/v1/flows/step-types` | admin | the palette: step type id, label, description, parameter schema |
@@ -701,7 +700,7 @@ No new endpoints. Settings and the heartbeat gain the Intel QSV opt-ins:
 
 Tier storage and the representability check (spec sections 6 and 8, decision 4).
 
-- Superseded by task 74: `PUT /api/v1/libraries/{id}/tier` answers `409 follows_profile` (the tier is the profile's; see task 74). The text below describes the removed v1.10 behaviour.
+- Superseded by task 74: `PUT /api/v1/libraries/{id}/tier` answered `409 follows_profile`. Removed in v1.12 by task 77: the route is gone and answers `404 not_found`. The text below describes the removed v1.10 behaviour.
 - `PUT /api/v1/libraries/{id}/tier` with body `{"tier": "basic" | "moderate" | "advanced"}`.
   Admin only. Returns `200 {"tier": "...", "unrepresentable": [{path, message}]}`.
   An unknown tier is `400 invalid_request`; an unknown library is `404`.
@@ -820,6 +819,8 @@ Library side of encode profiles (spec 5.1, 5.5). A library follows the graph of 
 
 ### Task 74
 
+Superseded by task 77 (v1.12): the request fields `target`, `easy` and `result_policy` are removed, the `deprecated` list is gone, and `PUT /libraries/{id}/tier` is removed. The bullets below describe v1.11 behaviour; read the task 77 section for the current contract.
+
 Result policy and tier move to the encode profile; the library's legacy rule fields are deprecated (spec 5.4, task file 74). Nothing reads the legacy columns any more. Task 76 stopped writing them: `libraries.flow_json`, `flow_source`, `target`, `easy`, `rule_tier` and `result_policy` are unread and unwritten, and stay in the schema until migration 0019 drops them (task 78, v1.12). So a rollback to v1.10 reads what those columns held when v1.11 last wrote them: an older rule for a library that existed then, and nothing usable for a library created on this release.
 
 - The library rule is the profile's graph, tier and result policy. `LibraryDTO` reports them: `flow` is the profile's graph, `rule_tier` the profile's tier, `result_policy` the profile's policy, `flow_source` is derived from the tier (`basic` gives `easy`, `moderate` gives `steps`, `advanced` gives `advanced`), `target` is the compiled view of that graph and `easy` is derived from it. None of these is an input any more.
@@ -832,3 +833,14 @@ Result policy and tier move to the encode profile; the library's legacy rule fie
 - `PUT /api/v1/libraries/{id}/flow` keeps its validation first (`400 invalid_flow`), then answers `409 follows_profile` for every library.
 - Results of a job use the profile's result policy (the library's `result_policy` is deprecated).
 - The startup warning about non empty legacy columns is removed (task 76). The boot backfill assigns the default profile to a library with no `profile_id` and reads none of the legacy columns.
+
+### Task 77
+
+Removes the deprecated library API surface (v1.12, part of the drop of the library rule columns; task 74 deprecated these, task 76 stopped the code that wrote them, task 78 drops the columns).
+
+- **Save request** (`POST /api/v1/libraries`, `PUT /api/v1/libraries/{id}`): the body fields `target`, `easy` and `result_policy` are removed. A request that still sends one is decoded like any other unknown field: the field is ignored and the save succeeds. The library keeps its profile and runs that profile's graph, tier and result policy. Decision: silent ignore, the decoder every API body already uses (`decode` in `internal/api/handlers.go` does not reject unknown fields). Covered by `TestLibrarySaveIgnoresRemovedRuleFields`.
+- **Save reply**: no `deprecated` key. The reply is the library DTO. The read fields `target`, `easy`, `flow`, `flow_source`, `rule_tier`, `result_policy` and `profile_id` stay; they are derived from the profile and are not inputs. `TestLibrarySaveWithoutProfileOmitsDeprecated` covers the plain save.
+- **Removed route**: `PUT /api/v1/libraries/{id}/tier`. It answers `404 not_found` (the API catch-all). `TestLibraryTierRouteIsGone` covers it.
+- **Unchanged**: `PUT /api/v1/libraries/{id}/flow` (still `400 invalid_flow` first, then `409 follows_profile`), and every profile route.
+- **Web client**: the save sends `name`, `path`, `watch`, `file_kinds` and `profile_id` only. The edit page no longer resends the stored rule. `Library.deprecated` and the `DeprecatedField` type are removed.
+- **OpenAPI** (`docs/openapi.yaml`): the `/libraries/{id}/tier` path and its schemas are removed; `target`, `easy`, `result_policy` are removed from the save body schema and `deprecated` from the library schema. `TestOpenAPIMatchesRouteTable` checks both directions.

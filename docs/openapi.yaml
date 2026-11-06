@@ -324,28 +324,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-  /api/v1/libraries/{id}/tier:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    put:
-      tags: [flows]
-      summary: Refused since task 74. The tier belongs to the encode profile the library follows; change it with PUT /api/v1/profiles/{id}. The body is still validated.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LibraryTier'
-      responses:
-        '200':
-          description: The tier now stored, and the steps of the graph it cannot express (an empty list when none).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LibraryTierResult'
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: follows_profile. The tier is the profile's (task 74). }
   /api/v1/jobs:
     get:
       tags: [jobs]
@@ -1616,30 +1594,18 @@ components:
         watch: { type: boolean }
         schedule: { type: string, description: cron expression; empty means no schedule. }
         result_policy: { type: string, description: The profile's result policy (replace_if_smaller, replace or keep_both; task 74). }
-        deprecated:
-          type: array
-          description: Only on the create and update replies (task 74). Each deprecated field the request sent and the server ignored, and the profile_id default when none was sent.
-          items:
-            type: object
-            required: [field, message]
-            properties:
-              field: { type: string }
-              message: { type: string }
         last_scan_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     LibraryParams:
       type: object
-      description: The rule is the encode profile's (task 74). target, easy and result_policy are deprecated and ignored; the reply lists each one sent. An empty profile_id keeps the current profile, and a library with none takes the default profile.
+      description: The rule is the encode profile's (task 74). The target, easy and result_policy fields were removed in v1.12 (task 77); a request that still sends them is ignored and the save succeeds. An empty profile_id keeps the current profile, and a library with none takes the default profile.
       required: [name, path]
       properties:
         name: { type: string }
         path: { type: string }
-        target: { type: object, deprecated: true, description: Ignored since task 74. }
-        easy: { type: ["object", "null"], deprecated: true, description: Ignored since task 74. }
         watch: { type: boolean }
         schedule: { type: string }
-        result_policy: { type: string, deprecated: true, description: Ignored since task 74; the profile's policy applies. }
         profile_id: { type: string, description: The encode profile to follow (task 73). Must exist. Empty keeps the current profile (task 74). }
     FieldError:
       type: object
@@ -1658,19 +1624,6 @@ components:
         unrepresentable:
           type: array
           description: One entry per step the tier cannot express (task 59). Empty when the tier can edit the whole graph.
-          items: { $ref: '#/components/schemas/FieldError' }
-    LibraryTier:
-      type: object
-      required: [tier]
-      properties:
-        tier: { type: string, enum: [basic, moderate, advanced] }
-    LibraryTierResult:
-      type: object
-      required: [tier, unrepresentable]
-      properties:
-        tier: { type: string, enum: [basic, moderate, advanced] }
-        unrepresentable:
-          type: array
           items: { $ref: '#/components/schemas/FieldError' }
     File:
       type: object

@@ -99,7 +99,6 @@ async function attachProfile(
       path: lib.path,
       watch: lib.watch,
       file_kinds: lib.file_kinds,
-      target: lib.target,
       profile_id: profileId,
     },
   })

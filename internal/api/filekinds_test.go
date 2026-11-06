@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/stretchr/testify/require"
 )
@@ -51,10 +50,8 @@ func TestLibraryFileKindsCreateAndUpdate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"image", "video"}, row.FileKinds)
 
-	target, err := json.Marshal(flow.Default())
-	require.NoError(t, err)
 	up := h.do(http.MethodPut, "/api/v1/libraries/"+dto.ID, map[string]any{
-		"name": dto.Name, "path": h.root, "target": json.RawMessage(target), "file_kinds": []string{"audio"},
+		"name": dto.Name, "path": h.root, "file_kinds": []string{"audio"},
 	})
 	require.Equal(t, http.StatusOK, up.Code, up.Body.String())
 	var updated server.LibraryDTO
