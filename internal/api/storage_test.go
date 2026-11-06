@@ -110,6 +110,13 @@ func (f *fakeMounter) overlap() int {
 // used when mounter is nil.
 func newStorageHarness(t *testing.T, mounter StorageMounter) *apiHarness {
 	t.Helper()
+	return newStorageHarnessRoot(t, mounter, "")
+}
+
+// newStorageHarnessRoot is newStorageHarness with the mountpoint root set
+// (task 69 browse tests point it at a temporary directory). Empty keeps /storage.
+func newStorageHarnessRoot(t *testing.T, mounter StorageMounter, root string) *apiHarness {
+	t.Helper()
 	keyPath := filepath.Join(t.TempDir(), "storage.key")
 	st, err := store.New(filepath.Join(t.TempDir(), "data.db"), store.WithSecrets(secret.NewSource("", keyPath)))
 	require.NoError(t, err)
@@ -125,6 +132,9 @@ func newStorageHarness(t *testing.T, mounter StorageMounter) *apiHarness {
 	var opts []Option
 	if mounter != nil {
 		opts = append(opts, WithStorageMounter(mounter))
+	}
+	if root != "" {
+		opts = append(opts, WithStorageRoot(root))
 	}
 	h.mux = New("v0.0.0", testStatic(), svc, opts...)
 	return h

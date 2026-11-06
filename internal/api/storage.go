@@ -896,21 +896,3 @@ func (a *API) testStorage(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, storageTestResponse{OK: true})
 }
-
-// browseStorage is the storage browser's endpoint (the listing is task 69).
-// It is gated like the writes, because a browse reads a network share as the
-// container's root. Until a storage is mounted there is nothing to browse.
-func (a *API) browseStorage(w http.ResponseWriter, r *http.Request) {
-	if !a.storageWriteAllowed(w, r) {
-		return
-	}
-	st, ok := a.storedStorage(w, r)
-	if !ok {
-		return
-	}
-	if !a.mounter.Status(st).Mounted {
-		writeError(w, http.StatusConflict, "not_mounted", "the storage is not mounted, so there is nothing to browse yet")
-		return
-	}
-	writeError(w, http.StatusNotImplemented, "not_implemented", "browsing a storage arrives with the storage browser")
-}

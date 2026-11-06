@@ -760,7 +760,7 @@ mount executor (task 66, `internal/mount`) is wired at startup. `501 not_impleme
 | POST | `/api/v1/storages/{id}/test` | admin, login on | mount, check, unmount; `200 {ok, error?}` |
 | POST | `/api/v1/storages/{id}/mount` | admin, login on | mount; `200` with the storage |
 | POST | `/api/v1/storages/{id}/unmount` | admin, login on | unmount; `200` with the storage |
-| GET | `/api/v1/storages/{id}/browse` | admin, login on | browse a mounted storage; listing arrives in task 69 |
+| GET | `/api/v1/storages/{id}/browse` | admin, login on | list the folders of a mounted storage, see task 69 |
 
 - **Storage body** (create and update): `{name, protocol: "nfs"|"smb", source, options, username, domain, password, read_only, enabled}`.
   - `source`: `host:/path` for NFS, `//host/share` for SMB, no spaces.
@@ -776,3 +776,15 @@ mount executor (task 66, `internal/mount`) is wired at startup. `501 not_impleme
 - **Errors.** A field problem is `400 {"error","code":"invalid_request","errors":[{"path","message"}]}`. A duplicate name is `409 conflict`. A missing id is `404 not_found`. A mount-side call that fails is `409` with the executor's message (`mount_failed`, `unmount_failed`). The message is `mount(8)`'s stderr as written. The SMB password never reaches it, because it travels only in a 0600 credentials file that is removed when mount returns. An unknown id is `404` on every per-storage route.
 - **Locking.** Mount, unmount, test, edit and delete of one storage run one at a time. Two concurrent calls on the same storage serialise. Other storages are not blocked.
 - `GET /api/v1/openapi.json` and `GET /openapi.yaml` document every route above.
+
+### Task 69
+
+Storage browse (spec 4.6). The folder picker lists directories only. It never lists files, never reads contents and never previews.
+
+- **`GET /api/v1/storages/{id}/browse?path=`** (admin, login on). `path` is an absolute folder inside the storage and defaults to its mountpoint. Each folder is held inside the mountpoint after symlinks are resolved, so a `..` walk, a sibling that shares the name prefix, or a symlink leaving the share is refused.
+  - `200` with `{id, name, mounted, mountpoint, path, parent, free_bytes, total_bytes, entries}`. `entries` is `[{name, path, is_dir}]`, directories only, in the server's order. `parent` is empty at the mountpoint. `free_bytes` and `total_bytes` are `null` when the probe fails or the platform has none.
+  - `400 invalid_request` for a relative path or a path that is not a folder. `400 outside_storage` for a path outside the storage.
+  - `403 unreadable` when the server cannot read the folder (permission denied). It is an error, never an empty list.
+  - `404 not_found` when the folder does not exist. `409 not_mounted` when the storage is not mounted.
+  - `403 login_required` while login is off, like every other storage route.
+
