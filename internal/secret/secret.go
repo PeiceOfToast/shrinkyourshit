@@ -148,7 +148,9 @@ func NewSource(envKey, keyPath string) *Source {
 func (s *Source) Box() (*Box, error) {
 	s.once.Do(func() {
 		var key []byte
-		if strings.TrimSpace(s.envKey) != "" {
+		// Any non-empty value counts as set, so a whitespace-only key fails in
+		// ParseKey instead of silently falling back to a generated key file.
+		if s.envKey != "" {
 			key, s.err = ParseKey(s.envKey)
 		} else {
 			key, s.err = LoadOrCreateKey(s.keyPath)

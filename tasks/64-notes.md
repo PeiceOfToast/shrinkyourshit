@@ -66,6 +66,12 @@ No new dependency. AES-GCM, base64, crypto/rand and crypto/sha256 are all stdlib
   and no `storage.key` was created (lazy, as intended).
 - `gofmt -l` lists pre-existing unformatted files that I did not touch. None of my files appear.
 
+## Review fix (2026-11-06)
+
+- dev-review found that a whitespace-only `SHRINK_STORAGE_KEY` was treated as unset, so the source silently
+  generated a key file. `Source.Box` now treats any non-empty raw value as set, and `ParseKey` rejects the
+  blank value. New test `TestSourceWhitespaceEnvKeyFailsClosed` fails on the old code and passes now.
+
 ## Summary
 
 1. Built: `internal/secret` (AES-256-GCM with AAD, lazy key source from `SHRINK_STORAGE_KEY` or

@@ -208,3 +208,15 @@ func TestSourceBadEnvKeyFailsClosed(t *testing.T) {
 	assert.Equal(t, err1, err2)
 	assert.False(t, strings.Contains(err1.Error(), "not-a-key"))
 }
+
+// A whitespace-only env key is set but invalid: it fails closed and does not
+// fall back to generating a key file.
+func TestSourceWhitespaceEnvKeyFailsClosed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "storage.key")
+	src := NewSource(" \t\n", path)
+
+	_, err := src.Box()
+	require.Error(t, err)
+	_, statErr := os.Stat(path)
+	assert.True(t, os.IsNotExist(statErr), "no key file is generated for a set but invalid env key")
+}
