@@ -204,6 +204,28 @@ dashboard does not show a broken share, keep_both outputs are rescanned as sourc
 an earlier output, ffmpeg auto-detect fails without `--ffmpeg`, and the Docker `SYS_ADMIN` posture was not
 exercised (no Docker on the lab VM).
 
+## v1.11 fix queue: the in-app mount feature does not work as shipped (found 2026-11-06)
+
+The owner ran the wave against the real NAS instead of a simulation and the mount
+feature failed end to end. Two defects, both evidenced in
+`tasks/real-hardware-mount-evidence-2026-11-06.md`:
+
+- **No WebUI mount can ever succeed.** The executor shells out to `mount(8)` while the
+  server runs as uid 1000. `mount.nfs` is a setuid helper that refuses non-fstab
+  options for unprivileged callers, so every mount returns
+  `mount.nfs: failed to apply fstab options`. `CAP_SYS_ADMIN` is present but belongs to
+  the server process, not the helper. Fix: task 79, call the mount syscall in process.
+- **The NFS default options need a daemon the container does not run.** `vers=3`
+  requires `rpc.statd` for locking, which the image does not ship, so the default fails
+  with `rpc.statd is not running but is required for remote locking`. `vers=4.2` mounts
+  first try. Fix: task 80.
+
+Task 81 re-verifies both against real hardware and covers the three things nobody has
+proven yet: the SMB leg end to end, remount on container restart, and the watchdog
+restoring a mount that vanished. Everything else in v1.11 was verified working on the
+real pool, including a 30 second 1080p file going from 75,936,737 to 25,089,834 bytes
+through an app-mounted share.
+
 ## v1.12 drop the library rule columns (follow up to v1.11 task 74, owner confirmed 2026-11-06)
 
 Owner confirmed the drop on 2026-11-06 and it is scheduled as tasks 76, 77 and 78, in that

@@ -112,6 +112,19 @@ Storage first because libraries need somewhere to point before profiles make sen
 | 74 | 74-deprecate-library-rules.md | done | PR #78 https://github.com/PeiceOfToast/shrinkyourshit/pull/78, v1.11, CI run 42226207282 green (8 checks incl. e2e and docker-arm64), make test exit 0 (go all packages ok, web 69 files / 524 tests), make lint exit 0, DECISIONS.md unchanged, checklist 4/4 ticked; 8 open gaps in tasks/74-notes.md (owner questions 1 to 3) |
 | 75 | 75-verify-wave.md | done | branch task/75-verify-wave, PR https://github.com/PeiceOfToast/shrinkyourshit/pull/79, v1.11 wave complete, checks green (make test exit 0: go 15 packages ok, web 69 files / 524 tests; make lint exit 0; integration exit 0), DECISIONS.md unchanged, checklist 4/4 ticked; 10 findings G1 to G10 in tasks/75-notes.md |
 
+## v1.11 fix queue (real-hardware mount defects)
+
+Found by the owner's real-hardware run on 2026-11-06. Evidence:
+`tasks/real-hardware-mount-evidence-2026-11-06.md`. Both defects make the in-app
+mount feature unusable as shipped, so this queue runs before v1.12.
+Tasks run in order, one at a time. `DECISIONS.md` stays read only.
+
+| Task | File | Status | PR / note |
+|------|------|--------|-----------|
+| 79 | 79-syscall-mount.md | todo | mount with the mount(2) syscall in process so `CAP_SYS_ADMIN` applies; fixes `mount.nfs: failed to apply fstab options` |
+| 80 | 80-nfs-version-default.md | todo | NFS default becomes `vers=4.2`; fixes `rpc.statd is not running but is required for remote locking` |
+| 81 | 81-verify-mount-fixes.md | todo | real-hardware verification of both fixes plus SMB, restart remount and the watchdog |
+
 ## v1.12 queue (drop the library rule columns)
 
 Follow up to v1.11 task 74. Owner confirmed the drop on 2026-11-06 (option A, schedule).
