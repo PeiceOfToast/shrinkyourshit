@@ -28,10 +28,10 @@ Modify `internal/store/migrations.go`, `internal/store/interface.go`, `internal/
 5. Config: `SHRINK_MANAGE_MOUNTS` (default true) and `SHRINK_STORAGE_KEY`.
 
 ## Acceptance
-- [ ] Migration applies to a database created by v1.10 and is a no-op on a second run.
-- [ ] A created storage never returns its password through any read method, proven by a test.
-- [ ] Wrong key or tampered ciphertext fails closed with an error, never a panic.
-- [ ] `make test` green.
+- [x] Migration applies to a database created by v1.10 and is a no-op on a second run.
+- [x] A created storage never returns its password through any read method, proven by a test.
+- [x] Wrong key or tampered ciphertext fails closed with an error, never a panic.
+- [x] `make test` green.
 
 ## Notes
 Write the plan and a 5 line summary in `tasks/64-notes.md`.

@@ -21,6 +21,7 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/api"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/config"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/discovery"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/secret"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/update"
@@ -164,7 +165,11 @@ func serve(args []string, info buildInfo) error {
 
 	// The store lives in the data dir; everything else lands there too
 	// (settings, node key).
-	st, err := store.New(filepath.Join(cfg.DataDir, dbFile))
+	// Storage passwords are sealed with the storage key (task 64). The key is
+	// resolved on first use, so a server that never stores a password creates
+	// no key file.
+	st, err := store.New(filepath.Join(cfg.DataDir, dbFile),
+		store.WithSecrets(secret.NewSource(cfg.StorageKey, cfg.StorageKeyPath())))
 	if err != nil {
 		return err
 	}

@@ -55,6 +55,8 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 | `SHRINK_DISCOVERY_PORT` | `--discovery-port` | `8766` | UDP broadcast port for LAN discovery |
 | `SHRINK_DISCOVERY_MDNS` | `--discovery-mdns` | `true` | Use mDNS for LAN discovery |
 | `SHRINK_DISCOVERY_BROADCAST` | `--discovery-broadcast` | `true` | Use UDP broadcast for LAN discovery |
+| `SHRINK_MANAGE_MOUNTS` | | `true` | Set `false`, `0` or `off` to disable managed network storage (mounts) in the WebUI |
+| `SHRINK_STORAGE_KEY` | | empty | Base64 32-byte key that seals storage passwords; empty uses `<data-dir>/storage.key`, created on first use |
 | `PUID` / `PGID` | | `1000` | Docker only: run as this user/group |
 
 ## Docker

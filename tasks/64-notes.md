@@ -33,7 +33,17 @@ No new dependency. AES-GCM, base64, crypto/rand and crypto/sha256 are all stdlib
 
 ## Deviations and choices
 
-- `main.go` wiring (see plan item 7).
+- Files outside the Scope list, each needed for the feature to work:
+  - `cmd/shrinkyourshit/main.go`: passes `store.WithSecrets(secret.NewSource(...))` to `store.New`.
+    Without it a running server cannot seal a password.
+  - `internal/store/sqlite.go`: `New(path, opts ...Option)` and a `secrets` field. The variadic option
+    keeps every existing `store.New(path)` caller compiling.
+  - `ARCHITECTURE.md`: the storages entry (rule 5 requires it for an enum and a data shape).
+  - `STACK.md`: two rows in the config reference (the env vars are the documented config surface).
+- `Store` gained `StorageSecret(ctx, id)`, which is not named in the task. It is the only plaintext read,
+  and the fail-closed tests need a decrypt path. ARCHITECTURE says only task 66 may call it. The API
+  must not.
+- `Storage.Password` is `json:"-"`, and `Storage.String()` redacts it. `%v`, `%+v` and JSON never show it.
 - Slug rule: `[a-z0-9-]`, 1 to 64 characters, no leading or trailing dash. The spec says only "lowercase
   letters, digits and dashes". Leading and trailing dashes are rejected because a mountpoint of
   `/storage/-x` is not useful. Tell me if you want the looser rule.
@@ -43,3 +53,30 @@ No new dependency. AES-GCM, base64, crypto/rand and crypto/sha256 are all stdlib
 - `SHRINK_STORAGE_KEY` is validated when first used, not at startup. A bad key therefore fails the storage
   operations with a clear error and does not stop the server. This matches "one broken storage never
   prevents the server from starting".
+
+## Results (2026-11-06, branch task/64-storage-store-and-secrets)
+
+- `go test ./...` exit 0 (all packages; store 215 s, server 473 s, api 438 s on this box).
+- New tests: `internal/secret` 13 tests, `internal/store/storages_test.go` 13 tests, `internal/config`
+  2 tests. All pass.
+- `make lint`: `go vet` and `golangci-lint` 0 issues, `check-spdx` ok, `lint-web` ok.
+- `make test-web`: 65 files, 474 tests pass. `npm` is not on the default PATH here; I used
+  `/tmp/tools/node-v20.18.1-linux-x64/bin`.
+- Smoke: built the binary and ran `serve` on a scratch data dir for 8 s. It started, the DB migrated,
+  and no `storage.key` was created (lazy, as intended).
+- `gofmt -l` lists pre-existing unformatted files that I did not touch. None of my files appear.
+
+## Summary
+
+1. Built: `internal/secret` (AES-256-GCM with AAD, lazy key source from `SHRINK_STORAGE_KEY` or
+   `<data dir>/storage.key`), migration `0017_storages.sql` (spec 4.3 verbatim), store CRUD with
+   slug and protocol validation, `WithSecrets` option, `SHRINK_MANAGE_MOUNTS` and `SHRINK_STORAGE_KEY`.
+2. Skipped: no endpoints (task 65), no mount logic (66), no UI. `options`, `source` and credential
+   rules are left to task 65, as the spec says.
+3. Next task (65) should know: the store does not validate `source` or `options`. `StorageSecret` must
+   stay out of the API. `Update` with an empty `Password` keeps the stored secret, and there is no
+   "clear password" path yet; add one in 65 if the UI needs it.
+4. Owner questions: (a) slug rule: I reject leading and trailing dashes, which the spec does not say.
+   Say if you want that looser. (b) An existing key file's mode is not checked; only a newly created
+   one is 0600.
+5. Open: nothing blocks task 65.
