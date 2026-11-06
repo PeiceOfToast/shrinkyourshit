@@ -30,11 +30,11 @@ server DTO file.
 6. The response type exposes status fields (`mounted`, `error`, `mountpoint`) that task 66 fills.
 
 ## Acceptance
-- [ ] A shell metacharacter, a newline, an unknown option or a second `-o` is rejected with 400.
-- [ ] With login disabled, every write endpoint returns 403, proven by a test.
-- [ ] A disallowed host is refused when `storage_allowed_hosts` is set.
-- [ ] Two concurrent mount calls on one storage serialise.
-- [ ] `make test` and `make lint` green.
+- [x] A shell metacharacter, a newline, an unknown option or a second `-o` is rejected with 400.
+- [x] With login disabled, every write endpoint returns 403, proven by a test.
+- [x] A disallowed host is refused when `storage_allowed_hosts` is set.
+- [x] Two concurrent mount calls on one storage serialise.
+- [x] `make test` and `make lint` green.
 
 ## Notes
 Write the plan and the option allowlist in `tasks/65-notes.md`.
