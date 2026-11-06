@@ -78,27 +78,6 @@ func TestRuleTierMigrationMatchesFlowSource(t *testing.T) {
 	}
 }
 
-// TestSetLibraryRuleTierLeavesGraphAlone: the tier column is the only thing a
-// tier write touches. The stored graph text comes back byte identical.
-func TestSetLibraryRuleTierLeavesGraphAlone(t *testing.T) {
-	st := openTemp(t)
-	ctx := context.Background()
-	lib := validLibrary()
-	lib.FlowJSON = `{"schema":1,"nodes":[{"id":"probe","type":"probe"}],"edges":[]}`
-	lib.FlowSource = "advanced"
-	lib.RuleTier = RuleTierAdvanced
-	require.NoError(t, st.CreateLibrary(ctx, lib))
-
-	require.NoError(t, st.SetLibraryRuleTier(ctx, lib.ID, RuleTierBasic))
-	got, err := st.GetLibrary(ctx, lib.ID)
-	require.NoError(t, err)
-	assert.Equal(t, RuleTierBasic, got.RuleTier)
-	assert.Equal(t, lib.FlowJSON, got.FlowJSON)
-	assert.Equal(t, "advanced", got.FlowSource)
-
-	require.ErrorIs(t, st.SetLibraryRuleTier(ctx, "missing", RuleTierBasic), ErrNotFound)
-}
-
 // TestCreateLibraryDefaultsRuleTier: a library created without a tier is
 // stored as basic, and a save made from a fresh read keeps the tier the
 // library already has.
@@ -111,9 +90,11 @@ func TestCreateLibraryDefaultsRuleTier(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, RuleTierBasic, got.RuleTier)
 
-	require.NoError(t, st.SetLibraryRuleTier(ctx, lib.ID, RuleTierModerate))
+	// The tier is written through the library row (task 74: the tier is the
+	// profile's; the column is a legacy snapshot, so the write is direct).
 	fresh, err := st.GetLibrary(ctx, lib.ID)
 	require.NoError(t, err)
+	fresh.RuleTier = RuleTierModerate
 	fresh.Name = "Renamed"
 	require.NoError(t, st.UpdateLibrary(ctx, fresh))
 	again, err := st.GetLibrary(ctx, lib.ID)

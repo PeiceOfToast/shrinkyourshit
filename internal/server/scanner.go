@@ -164,7 +164,6 @@ func (s *Scanner) ScanLibrary(ctx context.Context, libraryID string) (ScanResult
 	if err != nil {
 		return ScanResult{}, fmt.Errorf("scanner: library %s: %w", lib.ID, err)
 	}
-	logFlowTargetMismatch(s.log, lib, plan)
 
 	paths, skippedPaths, err := s.collectMediaPaths(lib.Path, lib.FileKinds)
 	if err != nil {

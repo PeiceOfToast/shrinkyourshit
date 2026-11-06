@@ -20,7 +20,7 @@ import (
 func libraryWithProfile(path, profileID string) map[string]any {
 	return map[string]any{
 		"name": "Movies", "path": path, "watch": false,
-		"profile_id": profileID, "result_policy": store.ResultPolicyReplaceIfSmaller,
+		"profile_id": profileID,
 	}
 }
 
@@ -68,13 +68,14 @@ func TestLibraryRunsItsProfileGraph(t *testing.T) {
 	assert.False(t, flowHasType(lib, flow.StepScale), "the edited profile no longer scales")
 }
 
-// TestProfileOnlyUpdateKeepsTheStoredRule: a save that names a profile and
-// nothing else is valid, and it leaves the library's compat target alone.
-func TestProfileOnlyUpdateKeepsTheStoredRule(t *testing.T) {
+// TestProfileOnlyUpdateSwitchesAndKeepsTheProfile (task 73, changed in task
+// 74): a save that names a profile and nothing else switches the library to
+// it. A save that names no profile keeps the profile the library has: an empty
+// profile_id never detaches (task 74).
+func TestProfileOnlyUpdateSwitchesAndKeepsTheProfile(t *testing.T) {
 	h := newAPIHarness(t)
 	profile := h.createProfileOK("Default one", "basic", profileDefaultGraph(t))
 	lib := h.createLibrary(false)
-	before := h.libraryDTO(lib.ID).Target
 
 	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, map[string]any{
 		"name": lib.Name, "path": lib.Path, "watch": false, "profile_id": profile.ID,
@@ -82,13 +83,14 @@ func TestProfileOnlyUpdateKeepsTheStoredRule(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	after := h.libraryDTO(lib.ID)
 	assert.Equal(t, profile.ID, after.ProfileID)
-	assert.Equal(t, before, after.Target, "a profile-only save keeps the stored target")
+	assert.Equal(t, "basic", after.RuleTier)
 
-	// Without a profile a save still needs a rule.
+	// No profile named: the library keeps the one it has.
 	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, map[string]any{
 		"name": lib.Name, "path": lib.Path, "watch": false,
 	})
-	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, profile.ID, h.libraryDTO(lib.ID).ProfileID)
 }
 
 // TestLibraryProfileMustExist: an unknown profile id is refused on create and
@@ -99,9 +101,10 @@ func TestLibraryProfileMustExist(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 
 	lib := h.createLibrary(false)
+	before := h.libraryDTO(lib.ID).ProfileID
 	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, libraryWithProfile(lib.Path, "no-such-profile"))
 	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	assert.Empty(t, h.libraryDTO(lib.ID).ProfileID)
+	assert.Equal(t, before, h.libraryDTO(lib.ID).ProfileID, "the refused save changed nothing")
 }
 
 // TestLibraryFlowSaveRefusedWhileFollowingProfile: a flow saved to a library

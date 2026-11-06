@@ -223,8 +223,7 @@ func newE2E(t *testing.T, accessMode, mappings string) *e2eEnv {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	env.lib, err = env.svc.Libraries().Create(ctx, server.LibraryParams{
-		Name: "Movies", Path: env.srcDir, TargetJSON: target,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Movies", Path: env.srcDir, ProfileID: targetProfile(t, env.st, target, ""),
 	})
 	require.NoError(t, err)
 

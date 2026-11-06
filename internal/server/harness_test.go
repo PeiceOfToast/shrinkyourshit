@@ -147,11 +147,10 @@ func (h *harness) createLibrary(watch bool) *store.Library {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(h.t, err)
 	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
-		Name:         "Movies",
-		Path:         h.root,
-		TargetJSON:   target,
-		Watch:        watch,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name:      "Movies",
+		Path:      h.root,
+		ProfileID: targetProfile(h.t, h.st, target, ""),
+		Watch:     watch,
 	})
 	require.NoError(h.t, err)
 	return lib

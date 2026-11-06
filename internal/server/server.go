@@ -300,7 +300,12 @@ func (s *Server) Start(ctx context.Context) {
 	// Every library gets an encode profile once (task 70, spec 5.2).
 	s.libs.backfillProfiles(ctx)
 	// A fresh install gets one default profile to select (task 71, spec 5.2).
-	s.libs.seedDefaultProfile(ctx)
+	if _, err := s.libs.defaultProfile(ctx); err != nil {
+		s.log.Error("server: default encode profile", "err", err)
+	}
+	// The legacy rule columns are a snapshot now (task 74): say so while any
+	// of them still holds data, so the removal is visibly still pending.
+	s.libs.logLegacyColumns(ctx)
 
 	libs, err := s.libs.List(ctx)
 	if err != nil {

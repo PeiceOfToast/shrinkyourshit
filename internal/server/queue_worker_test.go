@@ -39,7 +39,7 @@ func claimJobPolicy(t *testing.T, h *harness, nodeID, policy string) (*store.Lib
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	lib, err := h.svc.Libraries().Create(ctx, LibraryParams{
-		Name: "Movies", Path: h.root, TargetJSON: target, ResultPolicy: policy,
+		Name: "Movies", Path: h.root, ProfileID: targetProfile(t, h.st, target, policy),
 	})
 	require.NoError(t, err)
 

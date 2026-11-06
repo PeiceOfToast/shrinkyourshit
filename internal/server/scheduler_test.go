@@ -22,7 +22,6 @@ func TestSchedulerLoopFiresEveryMinute(t *testing.T) {
 	// A schedule that fires every minute.
 	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
 		Name: "Movies", Path: h.root, Schedule: "* * * * *",
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
 	})
 	require.NoError(t, err)
 	_ = lib

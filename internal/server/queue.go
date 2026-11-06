@@ -342,8 +342,8 @@ func (q *Queue) Complete(ctx context.Context, jobID, nodeID string, p CompletePa
 	lib, err := q.st.GetLibrary(ctx, job.LibraryID)
 	if err != nil {
 		q.log.Error("queue: complete policy lookup", "library", job.LibraryID, "err", err)
-	} else if lib.ResultPolicy != "" {
-		policy = lib.ResultPolicy
+	} else {
+		policy = EffectiveResultPolicy(lib) // the profile's policy (task 74)
 	}
 	keepBoth := policy == store.ResultPolicyKeepBoth && p.SkippedReason == ""
 

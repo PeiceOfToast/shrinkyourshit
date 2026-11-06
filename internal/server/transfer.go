@@ -158,13 +158,6 @@ func (t *Transfer) outputExt(ctx context.Context, job *store.Job) (string, error
 	if plan, _, err := LibraryPlan(lib); err == nil {
 		container = plan.Target().Container
 	}
-	if container == "" {
-		target, err := flow.ParseTarget([]byte(lib.TargetJSON))
-		if err != nil {
-			return "", fmt.Errorf("transfer: stored target: %w", err)
-		}
-		container = target.Container
-	}
 	if container == flow.ContainerMP4 {
 		return ".mp4", nil
 	}

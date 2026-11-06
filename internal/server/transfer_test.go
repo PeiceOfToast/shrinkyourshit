@@ -245,8 +245,8 @@ func TestOutputExtFollowsTargetContainer(t *testing.T) {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	target = []byte(strings.Replace(string(target), `"container":"mkv"`, `"container":"mp4"`, 1))
-	require.NoError(t, h.st.UpdateLibrary(ctx, &store.Library{ID: h.lib.ID, Name: "Movies",
-		Path: h.lib.Path, TargetJSON: string(target), ResultPolicy: store.ResultPolicyReplaceIfSmaller}))
+	// The library runs the profile's graph (task 74): attach an mp4 profile.
+	require.NoError(t, h.st.SetLibraryProfile(ctx, h.lib.ID, targetProfile(t, h.st, target, "")))
 
 	payload := strings.Repeat("P", 8)
 	_, err = h.tr.PutChunk(ctx, h.job, 0, int64(len(payload))-1, int64(len(payload)),

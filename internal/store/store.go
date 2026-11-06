@@ -43,9 +43,10 @@ type Library struct {
 	EasyJSON   string
 	FlowJSON   string
 	FlowSource string // easy | steps | advanced; empty on legacy rows
-	// RuleTier is the editor the library offers: basic | moderate | advanced
-	// (task 59, spec 6). Independent of the graph; see SetLibraryRuleTier.
-	// Empty is stored as basic on create.
+	// RuleTier is the legacy editor tier column (task 59). Since task 74 the
+	// tier is the profile's (ProfileTier); this column is a snapshot written
+	// on save for rollback and read by nothing that runs. Empty is stored as
+	// basic on create.
 	RuleTier     string
 	Watch        bool
 	Schedule     string // cron string or empty
@@ -72,6 +73,12 @@ type Library struct {
 	// (task 73, spec 5.1). Read only: writes ignore it. Empty when no
 	// profile is attached.
 	ProfileGraph string
+	// ProfileTier and ProfileResultPolicy are the attached profile's tier and
+	// result policy, joined on read like ProfileGraph (task 74, spec 5.4).
+	// They are the rule the library runs; the columns above are legacy.
+	// Read only: writes ignore them. Empty when no profile is attached.
+	ProfileTier         string
+	ProfileResultPolicy string
 }
 
 // File is one media file inside a library. Probe is opaque JSON produced by

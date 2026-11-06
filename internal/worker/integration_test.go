@@ -120,7 +120,7 @@ func (s *stack) createLibraryTarget(target flow.Target, policy string) *store.Li
 	raw, err := json.Marshal(target)
 	require.NoError(s.t, err)
 	lib, err := s.svc.Libraries().Create(context.Background(), server.LibraryParams{
-		Name: "Movies", Path: s.library, TargetJSON: raw, ResultPolicy: policy,
+		Name: "Movies", Path: s.library, ProfileID: targetProfile(s.t, s.st, raw, policy),
 	})
 	require.NoError(s.t, err)
 	return lib
@@ -496,15 +496,24 @@ func TestIntegrationNotSmallerSkips(t *testing.T) {
 	s.waitForNoScratch()
 }
 
-// createLibraryFlow adds a library and stores an explicit rule graph on it
-// (task 24): UpdateFlow re-syncs the Target from the compiled flow, so the
-// graph is the single source of truth for the jobs.
+// createLibraryFlow adds a library that follows a profile carrying the explicit
+// rule graph g (task 74: the rule is the profile's, and a library cannot take a
+// flow of its own). The graph is the single source of truth for the jobs.
 func (s *stack) createLibraryFlow(g flow.Graph, policy string) *store.Library {
 	s.t.Helper()
-	lib := s.createLibraryTarget(flow.Default(), policy)
-	if _, err := s.svc.Libraries().UpdateFlow(context.Background(), lib.ID, "steps", g); err != nil {
-		s.t.Fatalf("store flow: %v", err)
+	raw, err := json.Marshal(g)
+	require.NoError(s.t, err)
+	p := &store.Profile{
+		Name:         "flow " + store.NewID(),
+		Tier:         store.RuleTierAdvanced,
+		Graph:        string(raw),
+		ResultPolicy: policy,
 	}
+	require.NoError(s.t, s.st.CreateProfile(context.Background(), p))
+	lib, err := s.svc.Libraries().Create(context.Background(), server.LibraryParams{
+		Name: "Movies", Path: s.library, ProfileID: p.ID,
+	})
+	require.NoError(s.t, err)
 	return lib
 }
 

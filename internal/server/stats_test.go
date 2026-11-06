@@ -23,8 +23,7 @@ func TestStatsTotalsMatchSumOfLibraries(t *testing.T) {
 		target, err := json.Marshal(flow.Default())
 		require.NoError(t, err)
 		lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
-			Name: name, Path: h.root, TargetJSON: target,
-			ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+			Name: name, Path: h.root, ProfileID: targetProfile(t, h.st, target, ""),
 		})
 		require.NoError(t, err)
 		return lib

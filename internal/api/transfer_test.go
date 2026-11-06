@@ -56,8 +56,7 @@ func newTransferFixture(t *testing.T, accessMode string) *transferFixture {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	f.lib, err = h.svc.Libraries().Create(ctx, server.LibraryParams{
-		Name: "Movies", Path: f.srcDir, TargetJSON: target,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Movies", Path: f.srcDir, ProfileID: targetProfile(t, h.st, target, ""),
 	})
 	require.NoError(t, err)
 
