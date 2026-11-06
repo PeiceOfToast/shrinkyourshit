@@ -744,3 +744,35 @@ No new endpoints. The raw ffmpeg arguments escape hatch (spec 5.3):
   changed.
 - `GET /flows/step-types` marks the `raw_args` entry with `"unsafe": true`.
   The field is omitted on every other entry.
+
+### Task 65
+
+Storage API (spec 4.4 to 4.6). Each storage is a network share the server mounts in the container at `/storage/<name>`. The
+mount executor is task 66; until it is wired, mount, unmount and test answer `501 not_implemented`.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/storages` | admin | list: `{items, total, host_policy}` |
+| POST | `/api/v1/storages` | admin, login on | create; `201` with the storage |
+| GET | `/api/v1/storages/{id}` | admin | one storage |
+| PUT | `/api/v1/storages/{id}` | admin, login on | replace; `200` with the storage |
+| DELETE | `/api/v1/storages/{id}` | admin, login on | remove; `204`. `409` while mounted |
+| POST | `/api/v1/storages/{id}/test` | admin, login on | mount, check, unmount; `200 {ok, error?}` |
+| POST | `/api/v1/storages/{id}/mount` | admin, login on | mount; `200` with the storage |
+| POST | `/api/v1/storages/{id}/unmount` | admin, login on | unmount; `200` with the storage |
+| GET | `/api/v1/storages/{id}/browse` | admin, login on | browse a mounted storage; listing arrives in task 69 |
+
+- **Storage body** (create and update): `{name, protocol: "nfs"|"smb", source, options, username, domain, password, read_only, enabled}`.
+  - `source`: `host:/path` for NFS, `//host/share` for SMB, no spaces.
+  - `options`: a comma separated list from the spec 4.4 allowlist. Each option is refused with a field error when it is unknown, duplicated, given a value it does not take, or given a value that does not fit. `soft` with `hard`, `ro` with `rw`, and `rw` on a read only storage are refused too. Shell characters, line breaks and `-o` are refused outright. An empty NFS `options` becomes `vers=3,soft,timeo=50,retrans=2`.
+  - `username`, `domain` and `password` apply to SMB only. None of them may contain a line break.
+  - `enabled` defaults to `true` on create. On update, an absent `enabled` keeps the stored value.
+- **Storage** response: `{id, name, protocol, source, options, username, domain, password_set, read_only, enabled, mountpoint, mounted, error, created_at, updated_at}`.
+  The password is never returned; `password_set` says whether one is stored. `mountpoint` is always `/storage/<name>`.
+  `mounted` and `error` come from the mounter (task 66).
+- **PUT** is a full replacement. An empty `password` keeps the stored one. `name` and `protocol` cannot change; a change is a `400` field error on that field.
+- **Login gate (spec 4.6).** Every write endpoint, and browse, answers `403 {"code":"login_required"}` while `login_enabled` is false. The body is not read first. Reads are open to any admin session, and to everyone while login is off.
+- **Host allowlist.** The `storage_allowed_hosts` setting is a comma separated list of host names, IP addresses and CIDRs. Empty means any host may be mounted. `GET /storages` says which in `host_policy`: `{restricted, allowed[], message, error?}`. An invalid entry refuses every host and `error` names it. Host names match exactly. CIDR and IP entries match only literal addresses, because the check does not resolve names. A source outside the list is a `400` field error on `source` at create and update. Mount and test check it again and answer `403 {"code":"host_not_allowed"}`.
+- **Errors.** A field problem is `400 {"error","code":"invalid_request","errors":[{"path","message"}]}`. A duplicate name is `409 conflict`. A missing id is `404 not_found`. A mount-side call that fails is `409` with the executor's message (`mount_failed`, `unmount_failed`). An unknown id is `404` on every per-storage route.
+- **Locking.** Mount, unmount, test, edit and delete of one storage run one at a time. Two concurrent calls on the same storage serialise. Other storages are not blocked.
+- `GET /api/v1/openapi.json` and `GET /openapi.yaml` document every route above.

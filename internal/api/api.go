@@ -42,6 +42,12 @@ type API struct {
 	// explicit "start the built-in node now" choice acts on it. Empty →
 	// the wizard's start choice cannot be applied (nothing starts).
 	builtinNode string
+	// mounter does the mount-side work for storages (task 65 seam, task 66
+	// implements it). The default answers 501 until then.
+	mounter StorageMounter
+	// storageLocks serialises mount, unmount, test, edit and delete per
+	// storage (spec 4.4).
+	storageLocks *keyedLocks
 }
 
 // Option customizes New.
@@ -79,7 +85,8 @@ func WithRuntime(fn func() string) Option {
 // the server services; requireAdmin enforces session auth (open when login
 // is disabled).
 func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.Handler {
-	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter(), version: version}
+	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter(), version: version,
+		mounter: unavailableMounter{}, storageLocks: newKeyedLocks()}
 	for _, o := range opts {
 		o(a)
 	}
@@ -175,6 +182,19 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("DELETE /api/v1/webhooks/{id}", a.requireAdmin(a.deleteWebhook))
 		mux.HandleFunc("POST /api/v1/webhooks/{id}/test", a.requireAdmin(a.testWebhook))
 		mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", a.requireAdmin(a.webhookDeliveries))
+
+		// Storages (task 65, spec 4.4 to 4.6): network shares the server
+		// mounts. Writes, mount-side calls and browse need login on (403
+		// otherwise); reads are open to an admin session like the rest.
+		mux.HandleFunc("GET /api/v1/storages", a.requireAdmin(a.listStorages))
+		mux.HandleFunc("POST /api/v1/storages", a.requireAdmin(a.createStorage))
+		mux.HandleFunc("GET /api/v1/storages/{id}", a.requireAdmin(a.getStorage))
+		mux.HandleFunc("PUT /api/v1/storages/{id}", a.requireAdmin(a.updateStorage))
+		mux.HandleFunc("DELETE /api/v1/storages/{id}", a.requireAdmin(a.deleteStorage))
+		mux.HandleFunc("POST /api/v1/storages/{id}/test", a.requireAdmin(a.testStorage))
+		mux.HandleFunc("POST /api/v1/storages/{id}/mount", a.requireAdmin(a.mountStorage))
+		mux.HandleFunc("POST /api/v1/storages/{id}/unmount", a.requireAdmin(a.unmountStorage))
+		mux.HandleFunc("GET /api/v1/storages/{id}/browse", a.requireAdmin(a.browseStorage))
 
 		// Plugins (task 31): the installed hook plugins and their
 		// manifest-driven settings. All admin only. Install copies the
