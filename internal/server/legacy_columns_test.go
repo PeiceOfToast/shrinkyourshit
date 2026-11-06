@@ -5,7 +5,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -17,19 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestV111DatabaseBootsAndServesLibrariesUnchanged is the task 76 boot test. A
-// database in the v1.11 state (every library follows a profile, and the six
-// legacy rule columns still hold values that disagree with the profile) must
-// boot with no error and no legacy warning, and serve the same library shape as
-// before the boot. A row the v1.11 boot never assigned gets the default profile.
+// TestV111DatabaseBootsAndServesLibrariesUnchanged is the boot test for the
+// v1.11 state. A database where one library follows a profile and one row never
+// got one must boot with no error and no legacy warning, and serve the same
+// library shape as before the boot. A row the boot never assigned gets the
+// default profile. The six legacy rule columns are gone after migration 0019
+// (task 78), so the row needs no legacy values to be a v1.11 row.
 func TestV111DatabaseBootsAndServesLibrariesUnchanged(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "data.db")
 	root := t.TempDir()
 
-	// The v1.11 state, written through the store, then the legacy columns are
-	// set to values the profile does not match.
+	// The v1.11 state, written through the store.
 	st, err := store.New(dbPath)
 	require.NoError(t, err)
 	g, err := flow.TargetToFlow(flow.Default())
@@ -39,16 +38,6 @@ func TestV111DatabaseBootsAndServesLibrariesUnchanged(t *testing.T) {
 	require.NoError(t, st.CreateLibrary(ctx, &store.Library{ID: "stray", Name: "Stray", Path: filepath.Join(root, "stray")}))
 	require.NoError(t, st.Close())
 
-	raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
-	require.NoError(t, err)
-	const legacy = `UPDATE libraries SET target = ?, easy = ?, flow_json = ?, flow_source = ?, rule_tier = ?, result_policy = ? WHERE id = ?`
-	_, err = raw.ExecContext(ctx, legacy, `{"video":{"codec":"h264","quality":3},"container":"mkv"}`, `{"quality":5}`,
-		`{"schema":1,"nodes":[],"edges":[]}`, "steps", store.RuleTierBasic, store.ResultPolicyReplace, "films")
-	require.NoError(t, err)
-	_, err = raw.ExecContext(ctx, legacy, `{not json`, ``, `{not json`, "advanced", store.RuleTierAdvanced, store.ResultPolicyKeepBoth, "stray")
-	require.NoError(t, err)
-	require.NoError(t, raw.Close())
-
 	// The new release opens the database and serves the libraries.
 	st, err = store.New(dbPath)
 	require.NoError(t, err)
@@ -57,7 +46,7 @@ func TestV111DatabaseBootsAndServesLibrariesUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	before := NewLibraryDTO(films)
 	require.Equal(t, profileID, before.ProfileID)
-	require.Equal(t, flow.CodecHEVC, before.Target.Video.Codec, "the profile's target, not the legacy h264")
+	require.Equal(t, flow.CodecHEVC, before.Target.Video.Codec, "the profile's target")
 
 	var logs bytes.Buffer
 	svc := New(Config{
@@ -75,8 +64,8 @@ func TestV111DatabaseBootsAndServesLibrariesUnchanged(t *testing.T) {
 	svc.Start(ctx)
 	t.Cleanup(svc.Stop)
 
-	// No boot error and no legacy warning: the removed steps (backfillFlows and
-	// logLegacyColumns) would have logged one of these.
+	// No boot error and no legacy warning: the steps removed in task 76
+	// (backfillFlows and logLegacyColumns) would have logged one of these.
 	assert.NotContains(t, logs.String(), "level=ERROR", "boot logged an error:\n%s", logs.String())
 	assert.NotContains(t, logs.String(), "legacy", "boot logged the legacy warning:\n%s", logs.String())
 

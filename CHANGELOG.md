@@ -6,6 +6,19 @@ All notable user-visible changes to ShrinkYourShit. The format follows
 
 ## [0.1.3] - unreleased
 
+### Upgrade warning: rolling back to v1.10 (v1.12 database change)
+
+- Migration `0019_drop_library_rule_columns.sql` drops the six legacy library
+  columns (`flow_json`, `flow_source`, `target`, `easy`, `rule_tier`,
+  `result_policy`). The rule of every library now lives on its encode profile.
+  The migration is forward only and runs once.
+- After this migration a rollback to v1.10 cannot run a library. v1.10 reads
+  those columns, and they are gone. v1.11 and later are not affected; they
+  stopped reading them earlier.
+- The way back to v1.10 with its libraries is the database backup the updater
+  takes before a binary swap (on by default, `backup_before_update`). Restore
+  that backup together with the v1.10 binary.
+
 ### Added
 
 - Intel Quick Sync extras, probed per machine: look-ahead (with extended

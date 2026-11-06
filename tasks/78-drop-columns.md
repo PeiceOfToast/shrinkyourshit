@@ -37,13 +37,13 @@ mentions the columns, `CHANGELOG.md`, `ROADMAP.md`, `tasks/78-notes.md`.
 
 ## Acceptance
 
-- [ ] One migration file drops all six columns; the migration list shows it applied exactly once.
-- [ ] A v1.11 database copy migrates with the library count unchanged and every library still
+- [x] One migration file drops all six columns; the migration list shows it applied exactly once.
+- [x] A v1.11 database copy migrates with the library count unchanged and every library still
       attached to a profile, and `PRAGMA table_info(libraries)` output is quoted in the notes.
-- [ ] One real encode through a library after the migration is quoted in the notes with the ffmpeg
+- [x] One real encode through a library after the migration is quoted in the notes with the ffmpeg
       command line.
-- [ ] The `CHANGELOG.md` rollback warning is present.
-- [ ] `make test`, `make lint` and `make test-integration` green.
+- [x] The `CHANGELOG.md` rollback warning is present.
+- [x] `make test`, `make lint` and `make test-integration` green.
 
 ## Notes
 

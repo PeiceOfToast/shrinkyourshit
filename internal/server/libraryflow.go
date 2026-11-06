@@ -26,7 +26,8 @@ var ErrNoProfile = errors.New("the library has no encode profile; attach one")
 
 // LibraryFlow returns the library's rule graph and its source: the graph of
 // the encode profile it follows (spec 5.1, 5.4). Source is derived from the
-// profile's tier. The legacy flow_json, target and easy columns are not read.
+// profile's tier. The legacy flow_json, target and easy columns were dropped by
+// migration 0019 and are not read.
 func LibraryFlow(lib *store.Library) (flow.Graph, string, error) {
 	if s := trimJSON(lib.ProfileGraph); s != "" {
 		g, err := flow.ParseGraph([]byte(s))

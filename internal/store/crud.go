@@ -57,10 +57,7 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 		l.CreatedAt = now
 	}
 	l.UpdatedAt = now
-	// target is NOT NULL with no default (0001_init.sql) and the schema is not
-	// changed until task 78, so the insert names it with an empty literal. It
-	// is not the rule: nothing reads it and the Library struct has no field for it.
-	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, target, watch, schedule, created_at, updated_at, last_scan_at, last_scan, file_kinds, profile_id) VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, watch, schedule, created_at, updated_at, last_scan_at, last_scan, file_kinds, profile_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		l.ID, l.Name, l.Path, fmtBool(l.Watch), l.Schedule, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID))
 	if err != nil {
 		return fmt.Errorf("store: create library: %w", err)

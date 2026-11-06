@@ -9,7 +9,8 @@ import "fmt"
 // changing it never rewrites the stored graph (decision 4).
 type Tier string
 
-// The three rule tiers. Values are stored in libraries.rule_tier and in the
+// The three rule tiers. Values are stored in profiles.tier (the library's
+// rule_tier column was dropped by migration 0019) and in the
 // default_rule_tier setting; do not add values without updating
 // ARCHITECTURE.md.
 const (
