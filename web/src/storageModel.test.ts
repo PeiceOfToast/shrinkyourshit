@@ -42,7 +42,7 @@ describe('blankStorageForm', () => {
   it('starts NFS with the spec 4.4 default options, enabled, writable', () => {
     const form = blankStorageForm()
     expect(form.protocol).toBe('nfs')
-    expect(form.options).toBe('vers=3,soft,timeo=50,retrans=2')
+    expect(form.options).toBe('vers=4.2,soft,timeo=50,retrans=2')
     expect(form.enabled).toBe(true)
     expect(form.read_only).toBe(false)
     expect(form.password).toBe('')

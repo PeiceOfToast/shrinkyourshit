@@ -171,7 +171,7 @@ test.describe('storage page with login on (storage routes answered by the test)'
     const dialog = page.getByTestId('storage-form')
     await expect(dialog).toBeVisible()
     await expect(dialog.getByTestId('storage-options')).toHaveValue(
-      'vers=3,soft,timeo=50,retrans=2',
+      'vers=4.2,soft,timeo=50,retrans=2',
     )
     await dialog.getByTestId('storage-name').fill('nas')
     await dialog

@@ -283,6 +283,20 @@ describe('StoragePage form', () => {
     expect(within(dialog).getByTestId('storage-password')).toBeInTheDocument()
   })
 
+  it('prefills vers=4.2 and warns that vers=3 needs rpc.statd (task 80)', async () => {
+    renderPage()
+    fireEvent.click(await enabledButton('storage-add'))
+    const dialog = await screen.findByTestId('storage-form')
+    const options = within(dialog).getByTestId(
+      'storage-options',
+    ) as HTMLInputElement
+    expect(options.value).toBe('vers=4.2,soft,timeo=50,retrans=2')
+    // The help text says what vers=3 needs before the operator picks it.
+    expect(dialog).toHaveTextContent('vers=3 is allowed')
+    expect(dialog).toHaveTextContent('rpc.statd')
+    expect(dialog).toHaveTextContent('"rpc.statd is not running"')
+  })
+
   it('sends the typed password once and never renders a secret', async () => {
     // The API must never carry a password. This response does, on purpose:
     // the page renders named fields only, so the secret stays out of the DOM.

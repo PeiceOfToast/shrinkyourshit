@@ -105,8 +105,13 @@ credentials file (0600, in the scratch dir) that is deleted right after mount, b
   `gid`, `file_mode`, `dir_mode`, `iocharset`, `sec`, `_netdev`. Anything else is a 400 with a
   field error. Shell metacharacters, newlines and a second `-o` are rejected outright.
 - `source` is validated per protocol: `host:/path` for NFS, `//host/share` for SMB. No spaces.
-- Defaults that reflect this lab's own history: NFS defaults to `vers=3,soft,timeo=50,retrans=2`,
-  because a hard mount inside a container turns a NAS hiccup into an unkillable process, and
+- Defaults that reflect this lab's own history: NFS defaults to `vers=4.2,soft,timeo=50,retrans=2`.
+  The version is 4.2 and not 3 because NFSv3 locking needs `rpc.statd` on the client, and the
+  shipped container runs neither rpcbind nor statd. A `vers=3` mount there fails with
+  `mount.nfs: rpc.statd is not running but is required for remote locking` (real-hardware run,
+  2026-11-06, task 80). v4.2 carries its own locking and mounts with neither daemon. `vers=3`
+  stays allowed when an operator sets it, and the help text says what it needs. The soft mount is
+  kept because a hard mount inside a container turns a NAS hiccup into an unkillable process, and
   because the NZBGet incident on 2026-11-05 was a soft NFS mount producing a `.nfs` silly
   rename that failed a move with EBUSY. Those defaults are shown and editable, with the
   reasoning in the help text rather than hidden.

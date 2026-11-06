@@ -568,7 +568,7 @@ export default function StoragePage() {
                   <>
                     Comma separated. Allowed: {ALLOWED_OPTIONS.join(', ')}.
                     {form.protocol === 'nfs' &&
-                      ' The NFS default is soft with a short timeout. A hard mount turns a NAS hiccup into a process that cannot be stopped, and a soft mount fails the job instead. Change it only if you know why.'}
+                      ' The NFS default is version 4.2, soft, with a short timeout. A hard mount turns a NAS hiccup into a process that cannot be stopped, and a soft mount fails the job instead. Change it only if you know why. vers=3 is allowed, but it needs rpc.statd for locking, and this container does not run it, so a vers=3 mount fails with "rpc.statd is not running".'}
                   </>
                 }
                 error={errors.options}

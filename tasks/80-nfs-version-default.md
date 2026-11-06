@@ -62,13 +62,13 @@ default and its reasoning are written down, `tasks/65-notes.md` and
 
 ## Acceptance
 
-- [ ] `nfsDefaultOptions` is `vers=4.2,soft,timeo=50,retrans=2`.
-- [ ] A test asserts the exact default option string and the exact mount vector for a storage saved with empty options.
-- [ ] No test, fixture, i18n string or UI copy still shows `vers=3` as the default. Prove it with a repo wide grep in the notes.
-- [ ] The spec text matches the code and explains why, naming `rpc.statd`.
-- [ ] The storage form help text warns that `vers=3` needs `rpc.statd`, with a web test or a snapshot update covering the new copy.
-- [ ] An operator can still set `vers=3` explicitly; the validation does not refuse it.
-- [ ] `make test` green, `make lint` green, `DECISIONS.md` unchanged.
+- [x] `nfsDefaultOptions` is `vers=4.2,soft,timeo=50,retrans=2`.
+- [x] A test asserts the exact default option string and the exact mount vector for a storage saved with empty options.
+- [x] No test, fixture, i18n string or UI copy still shows `vers=3` as the default. Prove it with a repo wide grep in the notes.
+- [x] The spec text matches the code and explains why, naming `rpc.statd`.
+- [x] The storage form help text warns that `vers=3` needs `rpc.statd`, with a web test or a snapshot update covering the new copy.
+- [x] An operator can still set `vers=3` explicitly; the validation does not refuse it.
+- [x] `make test` green, `make lint` green, `DECISIONS.md` unchanged.
 
 ## Notes
 

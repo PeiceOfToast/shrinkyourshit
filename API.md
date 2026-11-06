@@ -765,7 +765,7 @@ mount executor (task 66, `internal/mount`) is wired at startup. `501 not_impleme
 
 - **Storage body** (create and update): `{name, protocol: "nfs"|"smb", source, options, username, domain, password, read_only, enabled}`.
   - `source`: `host:/path` for NFS, `//host/share` for SMB, no spaces.
-  - `options`: a comma separated list from the spec 4.4 allowlist. Each option is refused with a field error when it is unknown, duplicated, given a value it does not take, or given a value that does not fit. `soft` with `hard`, `ro` with `rw`, and `rw` on a read only storage are refused too. Shell characters, line breaks and `-o` are refused outright. An empty NFS `options` becomes `vers=3,soft,timeo=50,retrans=2`.
+  - `options`: a comma separated list from the spec 4.4 allowlist. Each option is refused with a field error when it is unknown, duplicated, given a value it does not take, or given a value that does not fit. `soft` with `hard`, `ro` with `rw`, and `rw` on a read only storage are refused too. Shell characters, line breaks and `-o` are refused outright. An empty NFS `options` becomes `vers=4.2,soft,timeo=50,retrans=2` (task 80: NFSv3 needs `rpc.statd`, which the container does not run; `vers=3` is still accepted when set explicitly).
   - `username`, `domain` and `password` apply to SMB only. None of them may contain a line break.
   - `enabled` defaults to `true` on create. On update, an absent `enabled` keeps the stored value.
 - **Storage** response: `{id, name, protocol, source, options, username, domain, password_set, read_only, enabled, mountpoint, mounted, error, created_at, updated_at}`.
