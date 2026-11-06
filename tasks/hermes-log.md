@@ -471,3 +471,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 2026-11-06T14:46:39Z pm: started follow-up run 20261106-144639-6eae0d76 (role build, haiku) to tick the four task 75 acceptance boxes, re-run the checks by hand, set STATUS done and open the PR
 2026-11-06T14:49:00Z pm: follow-up run finished; checklist 4/4 ticked, STATUS 75 done, checks exit 0 (go test served from cache on unchanged packages), PR #79 opened against main
 2026-11-06T15:05:45Z pm: PR #79 CI green (9 checks incl. e2e and docker-arm64), merged --squash as 7f33b18, branch task/75-verify-wave deleted; v1.11 wave (tasks 64 to 75) complete, main pulled
+2026-11-06T20:12:00Z pm: v1.11 verified complete on main (8a4c8a4, clean, no open PRs, no todo tasks); v1.12 column drop is the only queue item and ROADMAP requires owner confirmation before it can be scheduled, so no run started and the question is going to Michael
