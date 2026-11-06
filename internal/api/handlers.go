@@ -39,6 +39,10 @@ type libraryBody struct {
 	// empty": a missing field defaults to ["video"], an explicit empty
 	// list is rejected (task 34).
 	FileKinds *[]string `json:"file_kinds"`
+	// ProfileID is the encode profile the library follows (task 73). On
+	// update a profile-only save (no target, no easy) is allowed; empty
+	// detaches the library from its profile.
+	ProfileID string `json:"profile_id"`
 }
 
 // listLibraries returns every library.
@@ -77,7 +81,7 @@ func (a *API) createLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	lib, err := a.svc.Libraries().Create(r.Context(), params)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeLibraryError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, server.NewLibraryDTO(lib))
@@ -115,7 +119,7 @@ func (a *API) updateLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		writeLibraryError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, server.NewLibraryDTO(lib))
@@ -744,11 +748,30 @@ func (a *API) libraryParams(ctx context.Context, body libraryBody, update bool) 
 		}
 		params.TargetJSON = raw
 	default:
-		if update {
+		// A profile-only save is an update without a rule: the profile is
+		// the rule (task 73).
+		if update && body.ProfileID == "" {
 			return params, errors.New("target is required on update")
 		}
 	}
+	params.ProfileID = body.ProfileID
 	return params, nil
+}
+
+// writeLibraryError maps a failed library save: a flow the profile or the
+// library cannot run is 400 invalid_flow, a plugin step that is not installed
+// is 422, anything else (a bad name, path or profile) is 400 invalid_request.
+func writeLibraryError(w http.ResponseWriter, err error) {
+	switch {
+	case server.IsInvalidFlow(err):
+		flowErr := &server.ErrInvalidFlow{}
+		_ = errors.As(err, &flowErr)
+		writeFlowErrors(w, flowErr.Errors)
+	case server.IsPluginStepError(err):
+		writeError(w, http.StatusUnprocessableEntity, "plugin_unavailable", err.Error())
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	}
 }
 
 // pageParams reads ?limit=&offset= with sane bounds.

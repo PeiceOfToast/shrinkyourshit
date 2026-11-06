@@ -1,134 +1,244 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The tier switch round trip (task 62). A seeded library gets an advanced
- * graph with a raw_args step. Downgrading it to Basic shows the banner that
- * names the step, and the Basic editor renders read only with Save off.
- * Upgrading back to Advanced clears the banner and the canvas still shows
- * the step, with its arguments unchanged. Without a seeded library (no
- * ffmpeg in the seed) there is nothing to switch, so the test skips.
+ * Encode profiles on the library pages (task 73, spec 5.5). A library follows
+ * one profile; the library pages show which, and what its steps do in plain
+ * language. These run against the real server: a profile is made through the
+ * API, a library through the form. The seeded library and the profiles this
+ * spec makes are put back as they were.
  */
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from '@playwright/test'
 
-/** The first library's id from the API, or '' when none exists. */
-async function firstLibraryId(request: APIRequestContext): Promise<string> {
+interface LibraryItem {
+  id: string
+  name: string
+  path: string
+  watch: boolean
+  file_kinds: string[]
+  target: unknown
+  profile_id?: string
+}
+
+interface ProfileItem {
+  id: string
+  name: string
+  graph: {
+    schema: number
+    nodes: Array<{ id: string; type: string; params?: Record<string, unknown> }>
+    edges: unknown[]
+  }
+}
+
+/** The first library from the API, or null when none exists. */
+async function firstLibrary(
+  request: APIRequestContext,
+): Promise<LibraryItem | null> {
   try {
     const res = await request.get('/api/v1/libraries')
-    if (!res.ok()) return ''
-    const body = (await res.json()) as { items?: Array<{ id?: string }> }
-    return body.items?.find((l) => l.id)?.id ?? ''
+    if (!res.ok()) return null
+    const body = (await res.json()) as { items?: LibraryItem[] }
+    return body.items?.find((l) => l.id) ?? null
   } catch {
-    return ''
+    return null
   }
 }
 
-/** Probe, one encode, one container, then a raw arguments step at the end. */
-const GRAPH = {
-  schema: 1,
-  nodes: [
-    { id: 'probe', type: 'probe' },
-    {
-      id: 'transcode_video',
-      type: 'transcode_video',
-      params: { codec: 'hevc', quality: 3 },
-    },
-    {
-      id: 'remux_container',
-      type: 'remux_container',
-      params: { container: 'mkv' },
-    },
-    {
-      id: 'raw_args',
-      type: 'raw_args',
-      params: { stage: 'output', args: '-threads 2', note: 'Keep threads low' },
-    },
-  ],
-  edges: [
-    { from: 'probe', to: 'transcode_video' },
-    { from: 'transcode_video', to: 'remux_container' },
-    { from: 'remux_container', to: 'raw_args' },
-  ],
-}
-
-/** The stored graph's raw_args step, read straight from the API. */
-async function storedRawArgs(
+/** The graph of the oldest profile (the boot seed), which is basic-representable. */
+async function seededGraph(
   request: APIRequestContext,
-  id: string,
-): Promise<{ type?: string; params?: Record<string, unknown> } | undefined> {
-  const res = await request.get(`/api/v1/libraries/${id}/flow`)
-  const body = (await res.json()) as {
-    graph: {
-      nodes: Array<{
-        id: string
-        type: string
-        params?: Record<string, unknown>
-      }>
-    }
-  }
-  return body.graph.nodes.find((n) => n.id === 'raw_args')
+): Promise<ProfileItem['graph']> {
+  const res = await request.get('/api/v1/profiles')
+  expect(res.ok(), await res.text()).toBeTruthy()
+  const body = (await res.json()) as { items: ProfileItem[] }
+  return body.items[0].graph
 }
 
-test.describe('tier switch (task 62)', () => {
-  test('downgrade to basic shows the banner and locks the editor, upgrade keeps the step', async ({
+/** A profile made through the API, named so it cannot clash with the seed. */
+async function createProfile(
+  request: APIRequestContext,
+  name: string,
+  tier: string,
+  graph: ProfileItem['graph'],
+): Promise<ProfileItem> {
+  const res = await request.post('/api/v1/profiles', {
+    data: { name, description: '', tier, result_policy: 'replace', graph },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+  return (await res.json()) as ProfileItem
+}
+
+/** The graph with its transcode quality changed: a visibly different profile. */
+function withQuality(
+  graph: ProfileItem['graph'],
+  quality: number,
+): ProfileItem['graph'] {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((n) =>
+      n.type === 'transcode_video'
+        ? { ...n, params: { ...n.params, quality } }
+        : n,
+    ),
+  }
+}
+
+/** Attaches a library to a profile (or detaches with ''), keeping every other field. */
+async function attachProfile(
+  request: APIRequestContext,
+  lib: LibraryItem,
+  profileId: string,
+): Promise<void> {
+  const res = await request.put(`/api/v1/libraries/${lib.id}`, {
+    data: {
+      name: lib.name,
+      path: lib.path,
+      watch: lib.watch,
+      file_kinds: lib.file_kinds,
+      target: lib.target,
+      profile_id: profileId,
+    },
+  })
+  expect(res.ok(), await res.text()).toBeTruthy()
+}
+
+/**
+ * Walks the folder picker from / down to the folder and picks it. The picker
+ * opens at / and lists directories by name, so each segment is one click.
+ */
+async function pickFolder(page: Page, folder: string): Promise<void> {
+  await page.getByTestId('easy-choose-folder').click()
+  await expect(page.getByTestId('folder-picker')).toBeVisible()
+  for (const seg of folder.split('/').filter(Boolean)) {
+    await page.getByTestId(`folder-picker-dir-${seg}`).click()
+  }
+  await expect(page.getByTestId('folder-picker-current')).toHaveAttribute(
+    'title',
+    folder,
+  )
+  await page.getByTestId('folder-picker-use').click()
+}
+
+test.describe('library follows its profile (task 73)', () => {
+  test('a library whose profile tier cannot show a step says so on its page', async ({
     page,
     request,
   }) => {
-    const id = await firstLibraryId(request)
-    test.skip(!id, 'no library is seeded, so there is no tier to switch')
+    const lib = await firstLibrary(request)
+    test.skip(!lib, 'no library is seeded, so there is nothing to attach')
+    const graph = await seededGraph(request)
+    // An advanced step (raw_args) on a profile kept in the Basic editor.
+    const profile = await createProfile(
+      request,
+      `e2e hidden ${Date.now()}`,
+      'basic',
+      {
+        ...graph,
+        nodes: [
+          ...graph.nodes,
+          {
+            id: 'raw_args',
+            type: 'raw_args',
+            params: {
+              stage: 'output',
+              args: '-threads 2',
+              note: 'Keep threads low',
+            },
+          },
+        ],
+        edges: [
+          ...graph.edges,
+          { from: graph.nodes[graph.nodes.length - 1].id, to: 'raw_args' },
+        ],
+      } as ProfileItem['graph'],
+    )
+    const original = lib.profile_id ?? ''
+    try {
+      await attachProfile(request, lib, profile.id)
+      await page.goto(`/libraries/${lib.id}`)
+      await expect(page.getByTestId('library-profile-name')).toContainText(
+        profile.name,
+      )
+      const banner = page.getByTestId('tier-banner')
+      await expect(banner).toBeVisible()
+      const rawItem = page
+        .getByTestId('tier-step-item')
+        .filter({ hasText: 'raw_args' })
+      await expect(rawItem).toHaveCount(1)
+      await expect(rawItem).toContainText('Advanced')
+      await expect(banner).toContainText('Nothing was changed')
+    } finally {
+      await attachProfile(request, lib, original)
+      await request.delete(`/api/v1/profiles/${profile.id}`)
+    }
+  })
 
-    const put = await request.put(`/api/v1/libraries/${id}/flow`, {
-      data: { source: 'advanced', graph: GRAPH },
-    })
-    expect(put.ok(), await put.text()).toBeTruthy()
-    const up = await request.put(`/api/v1/libraries/${id}/tier`, {
-      data: { tier: 'advanced' },
-    })
-    expect(up.ok(), await up.text()).toBeTruthy()
+  test('creates a library by choosing a profile and a folder, then switching the profile changes its summary', async ({
+    page,
+    request,
+  }) => {
+    const seed = await firstLibrary(request)
+    test.skip(!seed, 'no library is seeded, so there is no folder to pick')
+    const graph = await seededGraph(request)
+    const profileA = await createProfile(
+      request,
+      `e2e follows A ${Date.now()}`,
+      'basic',
+      graph,
+    )
+    const profileB = await createProfile(
+      request,
+      `e2e follows B ${Date.now()}`,
+      'basic',
+      withQuality(graph, 5),
+    )
+    let createdId = ''
+    try {
+      await page.goto('/libraries/new')
+      await expect(page.getByTestId('new-library-page')).toBeVisible()
+      await pickFolder(page, seed.path)
+      await expect(page.getByTestId('easy-folder')).toHaveText(seed.path)
+      await page.getByTestId('library-profile-select').selectOption(profileA.id)
+      await expect(
+        page
+          .getByTestId('library-form-profile-summary')
+          .getByTestId('profile-summary-line')
+          .first(),
+      ).toBeVisible()
+      await page.getByTestId('easy-start').click()
 
-    // Downgrade on the library page: the banner names the raw_args step.
-    await page.goto(`/libraries/${id}`)
-    await page.getByTestId('library-tier-basic').click()
-    await expect(page.getByText('Editor set to Basic.')).toBeVisible()
-    const banner = page.getByTestId('tier-banner')
-    await expect(banner).toBeVisible()
-    // The raw_args step is named, with the tier that can edit it. The graph
-    // has no if_codec_not guard, so Basic also lists that graph-level problem.
-    const rawItem = page
-      .getByTestId('tier-step-item')
-      .filter({ hasText: 'raw_args' })
-    await expect(rawItem).toHaveCount(1)
-    await expect(rawItem).toContainText('Advanced')
-    await expect(banner).toContainText('Nothing was changed')
+      // The new library's page names the profile it follows.
+      // The form's own page is /libraries/new, so the id must not be that.
+      await expect(page).toHaveURL(/\/libraries\/(?!new$)[^/]+$/)
+      createdId = new URL(page.url()).pathname.split('/').pop() ?? ''
+      await expect(page.getByTestId('library-profile-name')).toContainText(
+        profileA.name,
+      )
+      const before = await page
+        .getByTestId('target-plain-line')
+        .allTextContents()
+      expect(before.length).toBeGreaterThan(0)
 
-    // The Basic editor is read only: the sliders are off and Save is gone.
-    await page.goto(`/libraries/${id}/rules`)
-    await page.getByTestId('tier-easy').click()
-    await expect(page.getByTestId('easy-locked-reason')).toBeVisible()
-    // Every control inside the fieldset is disabled, not only the first.
-    const fieldInputs = page.locator('[data-testid="easy-fieldset"] input')
-    const total = await fieldInputs.count()
-    expect(total).toBeGreaterThan(0)
-    await expect(
-      page.locator('[data-testid="easy-fieldset"] input:disabled'),
-    ).toHaveCount(total)
-    await expect(page.getByTestId('rules-easy-save')).toBeDisabled()
-    expect(await storedRawArgs(request, id)).toMatchObject({
-      type: 'raw_args',
-      params: { args: '-threads 2' },
-    })
-
-    // Upgrade back: no banner, and the canvas still shows the same step.
-    await page.goto(`/libraries/${id}`)
-    await page.getByTestId('library-tier-advanced').click()
-    await expect(page.getByText('Editor set to Advanced.')).toBeVisible()
-    await expect(page.getByTestId('tier-banner')).toHaveCount(0)
-
-    await page.goto(`/libraries/${id}/flow`)
-    await expect(page.getByTestId('canvas-node-raw_args')).toBeVisible()
-    expect(await storedRawArgs(request, id)).toMatchObject({
-      type: 'raw_args',
-      params: { args: '-threads 2', note: 'Keep threads low', stage: 'output' },
-    })
+      // Switch the profile on the edit page: the summary follows.
+      await page.getByTestId('library-detail-edit').click()
+      await page.getByTestId('library-edit-profile').selectOption(profileB.id)
+      await page.getByTestId('library-edit-save').click()
+      await expect(page).toHaveURL(new RegExp(`/libraries/${createdId}$`))
+      await expect(page.getByTestId('library-profile-name')).toContainText(
+        profileB.name,
+      )
+      await expect
+        .poll(() => page.getByTestId('target-plain-line').allTextContents())
+        .not.toEqual(before)
+    } finally {
+      if (createdId) await request.delete(`/api/v1/libraries/${createdId}`)
+      await request.delete(`/api/v1/profiles/${profileA.id}`)
+      await request.delete(`/api/v1/profiles/${profileB.id}`)
+    }
   })
 })
 

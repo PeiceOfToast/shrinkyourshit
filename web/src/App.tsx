@@ -12,7 +12,7 @@ import LoginPage from './LoginPage'
 import NewLibraryPage from './NewLibraryPage'
 import NodesPage from './NodesPage'
 import StoragePage from './StoragePage'
-import RulesPage from './RulesPage'
+import LibraryRulesRedirect from './LibraryRulesRedirect'
 import EncodeSettingsPage from './EncodeSettingsPage'
 import ProfileEditorPage from './ProfilesPage'
 import AppSettingsPage from './AppSettingsPage'
@@ -57,16 +57,19 @@ export default function App() {
           <Route path="libraries/new" element={<NewLibraryPage />} />
           <Route path="libraries/:id" element={<LibraryDetailPage />} />
           <Route path="libraries/:id/edit" element={<LibraryEditPage />} />
-          <Route path="libraries/:id/rules" element={<RulesPage />} />
+          {/* The library rule editors moved to the profile (task 73). */}
+          <Route
+            path="libraries/:id/rules"
+            element={<LibraryRulesRedirect />}
+          />
           <Route
             path="libraries/:id/flow"
-            element={
-              <Suspense fallback={<FlowLoading />}>
-                <FlowCanvasPage />
-              </Suspense>
-            }
+            element={<LibraryRulesRedirect to="flow" />}
           />
-          <Route path="libraries/:id/tree" element={<FlowTreePage />} />
+          <Route
+            path="libraries/:id/tree"
+            element={<LibraryRulesRedirect to="tree" />}
+          />
           <Route path="nodes" element={<NodesPage />} />
           <Route path="storage" element={<StoragePage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />

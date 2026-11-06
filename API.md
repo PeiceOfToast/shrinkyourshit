@@ -806,3 +806,13 @@ Encode profiles (spec 5.3). A profile is a named, reusable graph with a tier and
 - **Profile** response: `{id, name, description, tier, result_policy, graph, used_by, used_by_names, unrepresentable, created_at, updated_at}`. `unrepresentable` lists the steps of the graph that the profile's own tier cannot express, using the v1.10 rule (`flow.RepresentableAt`). It is informational: the profile is still saved.
 - **Errors:** `400 invalid_request` for a missing name, an unknown tier or policy. `400 invalid_flow` with field errors for a bad graph, the same shape as `PUT /libraries/{id}/flow`. `409 name_taken` when another profile has the name. `404 not_found` for an unknown id.
 - **Seed:** a fresh install gets one profile, `Default (<default_rule_tier>)`, carrying the default graph, at boot when no profile exists.
+
+### Task 73
+
+Library side of encode profiles (spec 5.1, 5.5). A library follows the graph of the profile it names, so editing a profile changes every library using it and switching a library's profile changes what it runs.
+
+- `POST /api/v1/libraries` and `PUT /api/v1/libraries/{id}` accept `profile_id`. It must name an existing profile, or the save is `400 invalid_request` ("no such profile") and nothing changes. An empty value detaches the library, which then runs its own stored flow again. A library created without `profile_id` (the old API) has none.
+- On update, `target` or `easy` is no longer required when `profile_id` is sent. A profile-only save keeps the library's stored target.
+- A profile whose move step writes into the library folder is refused when a library attaches it: `400 invalid_flow` with the field error. A profile whose plugin step is not installed is `422 plugin_unavailable`. Profiles are not bound to one folder, so the move check runs at attach time, not when the profile is saved.
+- `LibraryDTO` gains `profile_id` (empty when none). `flow`, `flow_source` and `rule_tier` on the reply still describe the library's own stored columns, except that `flow` is the profile's graph while a profile is set.
+- `PUT /api/v1/libraries/{id}/flow` is refused with `409 follows_profile` while the library follows a profile. The flow belongs to the profile now; a flow saved to the library would never run. Edit the profile through `PUT /api/v1/profiles/{id}` instead.

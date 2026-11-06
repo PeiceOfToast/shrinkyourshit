@@ -25,12 +25,12 @@ Modify the library form, the library detail page, their tests, `web/e2e/library.
 5. Existing libraries keep working: the migration in task 70 already gave each one a profile.
 
 ## Acceptance
-- [ ] Playwright creates a library by choosing a profile and a folder, and the detail page shows
+- [x] Playwright creates a library by choosing a profile and a folder, and the detail page shows
       the profile name.
-- [ ] Switching a library from one profile to another changes the summary and, in the task 75
+- [x] Switching a library from one profile to another changes the summary and, in the task 75
       verification, changes what the encoder actually does.
-- [ ] No library page renders an embedded encode builder anywhere.
-- [ ] `npm run build` and `npx playwright test` green.
+- [x] No library page renders an embedded encode builder anywhere.
+- [x] `npm run build` and `npx playwright test` green.
 
 ## Notes
 Write the plan and any changed assertion in `tasks/73-notes.md`.

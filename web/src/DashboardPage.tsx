@@ -29,6 +29,7 @@ import Icon from './Icon'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
 import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
+import { useProfiles } from './queries'
 import { storagesKey } from './storageModel'
 import {
   formatBytes,
@@ -289,6 +290,7 @@ export default function DashboardPage() {
   const update = useUpdateStatus()
   const storages = useQuery({ queryKey: storagesKey, queryFn: getStorages })
   const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const profiles = useProfiles()
 
   if (libraries.data && libraries.data.total === 0) {
     return (
@@ -332,6 +334,9 @@ export default function DashboardPage() {
     jobs: allJobs,
     stats: { queued: stats.data?.queued ?? 0 },
     now: Date.now(),
+    // Profiles whose own tier cannot show a step (task 73): one warning per
+    // library that follows one. Quiet until the list has answered.
+    profiles: profiles.data,
     // Quiet when the check failed or has not run (task 17).
     update: update.data
       ? { available: update.data.update_available, version: update.data.latest }

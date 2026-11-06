@@ -4,16 +4,11 @@
  * The step stack editor (task 14 acceptance): reorders, adds, removes and
  * saves, and a validation failure renders on the offending row.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import StepStackEditor from './StepStackEditor'
-import RulesPage from './RulesPage'
 import type { FlowGraph, Plugin, StepTypeInfo } from './api'
-import { installFetchMock, type FetchMock } from './test/fetchMock'
-import { ToastProvider } from './toast'
 
 const PALETTE: StepTypeInfo[] = [
   {
@@ -474,130 +469,3 @@ describe('StepStackEditor verify and move steps', () => {
 })
 
 // --- The full save flow: validate first, field errors on the row. ---
-
-function libraryDoc() {
-  return {
-    id: 'lib-1',
-    name: 'Movies',
-    path: '/media/movies',
-    target: {},
-    easy: null,
-    flow: null,
-    flow_source: 'steps',
-    watch: false,
-    schedule: '',
-    result_policy: 'replace_if_smaller',
-    created_at: '',
-    updated_at: '',
-  }
-}
-
-function flowDoc(): Record<string, unknown> {
-  return { library_id: 'lib-1', source: 'steps', graph: graph() }
-}
-
-function stepTypesDoc() {
-  return { items: PALETTE, total: PALETTE.length }
-}
-
-function renderRules() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  return render(
-    <QueryClientProvider client={client}>
-      <ToastProvider>
-        <MemoryRouter initialEntries={['/libraries/lib-1/rules']}>
-          <Routes>
-            <Route path="/libraries/:id/rules" element={<RulesPage />} />
-          </Routes>
-        </MemoryRouter>
-      </ToastProvider>
-    </QueryClientProvider>,
-  )
-}
-
-describe('RulesPage step stack save', () => {
-  let mock: FetchMock
-  afterEach(() => mock?.restore())
-
-  it('saves a valid graph through validate and PUT', async () => {
-    let putCalled = false
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: libraryDoc(),
-      },
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1\/flow$/,
-        body: flowDoc(),
-      },
-      {
-        method: 'GET',
-        match: /\/api\/v1\/flows\/step-types$/,
-        body: stepTypesDoc(),
-      },
-      {
-        method: 'POST',
-        match: /\/api\/v1\/flows\/validate$/,
-        body: { valid: true },
-      },
-      {
-        method: 'PUT',
-        match: /\/api\/v1\/libraries\/lib-1\/flow$/,
-        bodyFn: () => {
-          putCalled = true
-          return flowDoc()
-        },
-      },
-    ])
-    renderRules()
-    await waitFor(() => screen.getByTestId('step-stack'))
-    fireEvent.click(screen.getByTestId('rules-steps-save'))
-    await waitFor(() => expect(putCalled).toBe(true))
-  })
-
-  it('renders a server validation failure on the offending row', async () => {
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: libraryDoc(),
-      },
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1\/flow$/,
-        body: flowDoc(),
-      },
-      {
-        method: 'GET',
-        match: /\/api\/v1\/flows\/step-types$/,
-        body: stepTypesDoc(),
-      },
-      {
-        method: 'POST',
-        match: /\/api\/v1\/flows\/validate$/,
-        status: 400,
-        body: {
-          error: 'the flow has errors',
-          code: 'invalid_flow',
-          errors: [
-            { path: 'nodes[1].params.quality', message: 'want 1 to 5, got 9' },
-          ],
-        },
-      },
-    ])
-    renderRules()
-    await waitFor(() => screen.getByTestId('step-stack'))
-    fireEvent.click(screen.getByTestId('rules-steps-save'))
-    await waitFor(() =>
-      expect(
-        screen.getByTestId('step-error-transcode_video').textContent,
-      ).toContain('quality'),
-    )
-    // The PUT never ran: an invalid graph never saves.
-    expect(mock.calls('PUT', /flow$/)).toHaveLength(0)
-  })
-})

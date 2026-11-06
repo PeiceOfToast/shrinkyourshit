@@ -39,7 +39,10 @@ type LibraryDTO struct {
 	FlowSource string          `json:"flow_source"`
 	// RuleTier is the editor the library offers: basic, moderate or
 	// advanced (task 59). It is independent of the graph.
-	RuleTier     string   `json:"rule_tier"`
+	RuleTier string `json:"rule_tier"`
+	// ProfileID is the encode profile the library follows (task 73); empty
+	// when the library runs its own stored flow.
+	ProfileID    string   `json:"profile_id"`
 	Watch        bool     `json:"watch"`
 	Schedule     string   `json:"schedule"`
 	ResultPolicy string   `json:"result_policy"`
@@ -191,6 +194,7 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		Flow:         graph,
 		FlowSource:   source,
 		RuleTier:     l.RuleTier,
+		ProfileID:    l.ProfileID,
 		Watch:        l.Watch,
 		Schedule:     l.Schedule,
 		ResultPolicy: l.ResultPolicy,

@@ -243,6 +243,8 @@ export interface Library {
   flow_source: string
   /** The editor the library offers (task 59); independent of the graph. */
   rule_tier?: RuleTier
+  /** The encode profile the library follows (task 73); empty when none. */
+  profile_id?: string
   watch: boolean
   schedule: string
   result_policy: string
@@ -382,6 +384,9 @@ export interface LibraryBody {
   result_policy?: string
   /** What the library holds (task 34); omitted defaults to ["video"]. */
   file_kinds?: string[]
+  /** The encode profile the library follows (task 73). A save with a
+   * profile and no target or easy is valid; empty detaches. */
+  profile_id?: string
 }
 
 export function getLibraries(): Promise<ListResponse<Library>> {

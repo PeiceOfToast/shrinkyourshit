@@ -10,9 +10,44 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import NewLibraryPage from './NewLibraryPage'
 import { ToastProvider } from './toast'
-import { installFetchMock, type FetchMock } from './test/fetchMock'
+import {
+  installFetchMock,
+  type FetchMock,
+  type MockRoute,
+} from './test/fetchMock'
 
 let mock: FetchMock
+
+/** One profile to choose, and an empty plain-language preview for it. */
+const PROFILE_ROUTES: MockRoute[] = [
+  {
+    method: 'GET',
+    match: /\/api\/v1\/profiles$/,
+    body: {
+      items: [
+        {
+          id: 'prof-basic',
+          name: 'Default (basic)',
+          description: '',
+          tier: 'basic',
+          result_policy: 'replace_if_smaller',
+          graph: { schema: 1, nodes: [], edges: [] },
+          used_by: 0,
+          used_by_names: [],
+          unrepresentable: [],
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+      total: 1,
+    },
+  },
+  {
+    method: 'POST',
+    match: /\/api\/v1\/flows\/preview$/,
+    body: { graph: { schema: 1, nodes: [], edges: [] }, steps: [] },
+  },
+]
 
 afterEach(() => mock?.restore())
 
@@ -49,9 +84,9 @@ function renderPage() {
 
 describe('NewLibraryPage (task 41)', () => {
   it('lays the form out as FormSections with the field column capped at max-w-2xl', () => {
-    mock = installFetchMock([])
+    mock = installFetchMock(PROFILE_ROUTES)
     renderPage()
-    for (const title of ['Folder', 'How much to shrink', 'Watching']) {
+    for (const title of ['Folder', 'Encode profile', 'Watching']) {
       const heading = screen.getByRole('heading', { level: 2, name: title })
       const column = heading.closest('section')!.querySelector('.max-w-2xl')
       expect(column, `${title} has no max-w-2xl column`).not.toBeNull()
@@ -59,7 +94,7 @@ describe('NewLibraryPage (task 41)', () => {
   })
 
   it('names the primary action "Add library" and offers Cancel back to the list', () => {
-    mock = installFetchMock([])
+    mock = installFetchMock(PROFILE_ROUTES)
     renderPage()
     expect(screen.getByTestId('easy-start')).toHaveTextContent('Add library')
     fireEvent.click(screen.getByTestId('easy-cancel'))
@@ -67,7 +102,7 @@ describe('NewLibraryPage (task 41)', () => {
   })
 
   it('explains the disabled state with help linked to the button', () => {
-    mock = installFetchMock([])
+    mock = installFetchMock(PROFILE_ROUTES)
     renderPage()
     const start = screen.getByTestId('easy-start')
     expect(start).toBeDisabled()
@@ -77,6 +112,7 @@ describe('NewLibraryPage (task 41)', () => {
 
   it('drops the explanation once a folder is chosen', async () => {
     mock = installFetchMock([
+      ...PROFILE_ROUTES,
       {
         method: 'GET',
         match: /\/api\/v1\/fs\/browse$/,
@@ -99,7 +135,7 @@ describe('NewLibraryPage (task 41)', () => {
   })
 
   it('keeps the action bar sticky on phones', () => {
-    mock = installFetchMock([])
+    mock = installFetchMock(PROFILE_ROUTES)
     renderPage()
     const bar = screen.getByTestId('easy-start').parentElement!
     expect(bar.className).toContain('sticky')

@@ -143,6 +143,21 @@ async function fetchLibraryId(request: APIRequestContext): Promise<string> {
   }
 }
 
+/** The profile the library follows, or '' when it has none (task 73). */
+async function fetchProfileId(
+  request: APIRequestContext,
+  libraryId: string,
+): Promise<string> {
+  try {
+    const res = await request.get(`/api/v1/libraries/${libraryId}`)
+    if (!res.ok()) return ''
+    const body = (await res.json()) as { profile_id?: string }
+    return body.profile_id ?? ''
+  } catch {
+    return ''
+  }
+}
+
 async function auditPage(
   page: Page,
   path: string,
@@ -224,12 +239,16 @@ test.describe('mobile audit', () => {
         await settle(page, '[data-testid="library-edit-save"]')
         await auditPage(page, edit, width)
 
-        // Task 53: the Rules page (Easy and Steps tiers, tier selector).
-        // Its tier selector renders once the rules have loaded.
-        const rules = `/libraries/${libraryId}/rules`
-        await open(page, rules, 'rules')
-        await settle(page, '[data-testid="tier-selector"]')
-        await auditPage(page, rules, width)
+        // Task 53: the rules editor, with its tier selector. Since task 73
+        // the rules belong to the library's profile, so the audit opens the
+        // profile's editor. Its tier selector renders once the rules load.
+        const profileId = await fetchProfileId(request, libraryId)
+        if (profileId) {
+          const rules = `/encode/profiles/${profileId}`
+          await open(page, rules, 'profile-page')
+          await settle(page, '[data-testid="tier-selector"]')
+          await auditPage(page, rules, width)
+        }
 
         // Task 22: the flow canvas is view only below md — no palette,
         // no inspector, no edit controls — and the canvas chrome (zoom

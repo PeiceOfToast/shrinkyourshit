@@ -137,6 +137,10 @@ async function seedLibrary(
   serverPath: string,
   hasMedia: boolean,
 ): Promise<void> {
+  // The library follows the boot seed's profile (task 73), as a library made
+  // from the form does. The seed is the oldest profile on a fresh install.
+  const profiles = await api('/profiles')
+  const seed = (profiles.body.items as Array<{ id: string }> | undefined)?.[0]
   const res = await api('/libraries', {
     method: 'POST',
     body: JSON.stringify({
@@ -144,6 +148,7 @@ async function seedLibrary(
       path: serverPath,
       watch: false,
       target: TARGET,
+      profile_id: seed?.id ?? '',
     }),
   })
   if (res.status !== 201) {

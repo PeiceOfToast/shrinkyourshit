@@ -3,66 +3,40 @@
 /**
  * Library edit page (task 07, restyled in task 41, properties only in task
  * 47, spec 5.7). The page edits what the library is: name, folder, the
- * watch flag and the file types. Its rules are a summary with a link to the
- * Rules page, and Remove library sits in the Danger zone. The sliders and the
- * exact-values panel moved to the Rules page (Easy and Steps tiers).
+ * watch flag, the file types and the encode profile it follows (task 73).
+ * The steps belong to the profile, edited in Encode settings; this page
+ * links there. Remove library sits in the Danger zone.
  *
- * The API needs a rule on every update (`target` or `easy`, see
- * libraryParams). This page resends the rule the library already has,
- * unchanged, so a save never changes the rules: the easy object when the easy
- * tier owns the flow, the stored target otherwise. A stored target that
- * matches the stored one keeps the flow; an easy save regenerates it.
+ * The API accepts a profile-only save. Libraries saved before task 73 still
+ * carry a stored rule, so this page also resends the rule the library has,
+ * unchanged: the easy object when the easy tier owns the flow, the stored
+ * target otherwise. A save therefore never changes a legacy rule.
  */
 import { useDocumentTitle } from './useDocumentTitle'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   deleteLibrary,
   getLibrary,
   updateLibrary,
-  type Library,
   type LibraryBody,
 } from './api'
 import Checkbox from './Checkbox'
 import ConfirmDialog from './ConfirmDialog'
 import { pathField } from './easyControls'
-import { parseEasy, qualityLabel } from './easyModel'
+import { parseEasy } from './easyModel'
 import ErrorBox from './ErrorBox'
 import { Field, FormActions, FormSection } from './FormSection'
 import FolderPickerModal from './FolderPickerModal'
 import KindPicker from './KindPicker'
+import { ProfileSelect, ProfileSummary } from './ProfileChoice'
+import { useProfiles } from './queries'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
 import { SkeletonRows } from './skeleton'
 import { useToast } from './toastContext'
 import { btn, btnDangerGhost, btnGhost, btnPrimary, input } from './uiControls'
-
-/** Plain-language audio part of the rules summary (spec 5.7). */
-const AUDIO_SUMMARY: Record<number, string> = {
-  1: 'keep every audio track',
-  2: 'keep audio in my languages',
-  3: 'keep the best audio track',
-  4: 'keep the best audio track, made small',
-}
-
-/** One read-only line describing the rules, e.g. "Easy · Balanced · keep every audio track". */
-function rulesSummary(lib: Library): string {
-  if (lib.flow_source === 'easy') {
-    const easy = parseEasy(lib.easy)
-    const parts = [
-      'Easy',
-      qualityLabel(easy.quality),
-      AUDIO_SUMMARY[easy.audio] ?? AUDIO_SUMMARY[1],
-    ]
-    if (easy.remove_subtitles) parts.push('remove subtitles')
-    return parts.join(' · ')
-  }
-  if (lib.flow_source === 'advanced') {
-    return 'Advanced · a visual flow'
-  }
-  return 'Steps · an ordered list'
-}
 
 export default function LibraryEditPage() {
   const { id = '' } = useParams()
@@ -80,7 +54,11 @@ export default function LibraryEditPage() {
   const [kinds, setKinds] = useState<string[] | null>(null)
   const [picking, setPicking] = useState(false)
   const [path, setPath] = useState<string | null>(null)
+  const [profile, setProfile] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const profileSelectId = useId()
+  const profiles = useProfiles()
+  const profileList = profiles.data ?? []
 
   const save = useMutation({
     mutationFn: (body: LibraryBody) => updateLibrary(id, body),
@@ -132,6 +110,8 @@ export default function LibraryEditPage() {
   const pathState = path ?? lib.path
   const kindsState =
     kinds ?? (lib.file_kinds?.length ? lib.file_kinds : ['video'])
+  const profileState = profile ?? lib.profile_id ?? ''
+  const chosenProfile = profileList.find((p) => p.id === profileState)
 
   const submit = () => {
     const body: LibraryBody = {
@@ -139,6 +119,7 @@ export default function LibraryEditPage() {
       path: pathState,
       watch: watchState,
       file_kinds: kindsState,
+      profile_id: profileState,
     }
     // Resend the rule the library has, unchanged (see the file comment).
     if (lib.flow_source === 'easy' && lib.easy != null) {
@@ -215,20 +196,48 @@ export default function LibraryEditPage() {
         </p>
       </FormSection>
 
-      <FormSection title="Rules" testId="library-edit-rules">
-        <p
-          className="text-body text-fg"
-          data-testid="library-edit-rules-summary"
-        >
-          {rulesSummary(lib)}
-        </p>
+      <FormSection
+        title="Encode profile"
+        description="The profile says how files are shrunk. It is shared with every library that uses it."
+        testId="library-edit-rules"
+      >
+        {!profileState && (
+          <p
+            className="text-body text-warning"
+            data-testid="library-edit-no-profile"
+          >
+            This library has no encode profile yet, so it does not shrink
+            anything. Choose one below.
+          </p>
+        )}
+        {profiles.isError ? (
+          <p className="text-body text-danger">
+            The profiles could not be loaded. Reload the page to try again.
+          </p>
+        ) : (
+          <ProfileSelect
+            id={profileSelectId}
+            value={profileState}
+            onChange={setProfile}
+            profiles={profileList}
+            testId="library-edit-profile"
+          />
+        )}
+        {chosenProfile && (
+          <div data-testid="library-edit-rules-summary">
+            <ProfileSummary
+              profile={chosenProfile}
+              testId="library-edit-profile-summary"
+            />
+          </div>
+        )}
         <div>
           <Link
-            to={`/libraries/${lib.id}/rules`}
+            to={profileState ? `/encode/profiles/${profileState}` : '/encode'}
             className={btn}
             data-testid="library-edit-rules-link"
           >
-            Change rules
+            Edit profiles in Encode settings
           </Link>
         </div>
       </FormSection>

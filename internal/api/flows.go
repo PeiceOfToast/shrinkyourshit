@@ -146,6 +146,9 @@ func (a *API) putLibraryFlow(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "no such library")
 		return
+	case errors.Is(err, server.ErrFollowsProfile):
+		writeError(w, http.StatusConflict, "follows_profile", err.Error())
+		return
 	case server.IsInvalidFlow(err):
 		flowErr := &server.ErrInvalidFlow{}
 		_ = errors.As(err, &flowErr)

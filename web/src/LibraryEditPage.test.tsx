@@ -2,9 +2,9 @@
 
 /**
  * Library edit tests. Task 07 and 41 covered the sliders and the exact
- * panel; task 47 (spec 5.7) makes the page properties only: Library, File
- * types, a Rules summary with a link, and a Danger zone that removes the
- * library. The slider and Steps-tier checks now live in RulesPage.test.tsx.
+ * panel; task 47 (spec 5.7) made the page properties only. Task 73 replaces
+ * the rules summary with the encode profile the library follows: the picker,
+ * the plain-language steps of the chosen profile, and the Danger zone.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -13,7 +13,69 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Target } from './api'
 import LibraryEditPage from './LibraryEditPage'
 import { ToastProvider } from './toast'
-import { installFetchMock, type FetchMock } from './test/fetchMock'
+import {
+  installFetchMock,
+  type FetchMock,
+  type MockRoute,
+} from './test/fetchMock'
+
+/** Two profiles: the boot seed and one Moderate with three steps. */
+function profileRow(id: string, name: string, tier: string, nodes: number) {
+  return {
+    id,
+    name,
+    description: '',
+    tier,
+    result_policy: 'replace_if_smaller',
+    graph: {
+      schema: 1,
+      nodes: Array.from({ length: nodes }, (_, i) => ({
+        id: `n${i}`,
+        type: 'probe',
+      })),
+      edges: [],
+    },
+    used_by: 1,
+    used_by_names: ['Movies'],
+    unrepresentable: [],
+    created_at: '',
+    updated_at: '',
+  }
+}
+
+/** The profile list and the plain-language preview the picker reads. */
+function profilesRoutes(): MockRoute[] {
+  return [
+    {
+      method: 'GET',
+      match: /\/api\/v1\/profiles$/,
+      body: {
+        items: [
+          profileRow('prof-basic', 'Default (basic)', 'basic', 2),
+          profileRow('prof-moderate', 'Small files', 'moderate', 3),
+        ],
+        total: 2,
+      },
+    },
+    {
+      method: 'POST',
+      match: /\/api\/v1\/flows\/preview$/,
+      bodyFn: (ctx) => {
+        const g = (ctx.body as { graph: { nodes: unknown[] } }).graph
+        return {
+          graph: g,
+          steps: [
+            {
+              id: 'n0',
+              type: 'probe',
+              plain: `Steps for ${g.nodes.length} nodes.`,
+            },
+          ],
+        }
+      },
+    },
+  ]
+}
 
 const STORED_TARGET: Target = {
   video: { codec: 'hevc', quality: 3, reencode_if_same_codec: false },
@@ -80,10 +142,17 @@ afterEach(() => mock?.restore())
 describe('LibraryEditPage saves the rule the library already has (task 47)', () => {
   it('resends the stored easy object unchanged when the easy tier owns the flow', async () => {
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library({ quality: 3, remove_subtitles: true, audio: 2 }, 'easy'),
+        body: library(
+          { quality: 3, remove_subtitles: true, audio: 2 },
+          'easy',
+          {
+            profile_id: 'prof-basic',
+          },
+        ),
       },
       {
         method: 'PUT',
@@ -103,6 +172,7 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
         path: '/media/movies',
         watch: true,
         file_kinds: ['video'],
+        profile_id: 'prof-basic',
         easy: { quality: 3, remove_subtitles: true, audio: 2 },
       })
     })
@@ -110,6 +180,7 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
 
   it('resends the stored target and no easy object for a Steps library', async () => {
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
@@ -139,6 +210,7 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
     // its easy object stored. An easy save would regenerate the hand-made
     // steps, so the stored target goes instead.
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
@@ -170,6 +242,7 @@ describe('LibraryEditPage saves the rule the library already has (task 47)', () 
 describe('LibraryEditPage properties only (task 47, spec 5.7)', () => {
   it('has Library, File types, Rules and Danger zone sections and no rule controls', async () => {
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
@@ -181,7 +254,12 @@ describe('LibraryEditPage properties only (task 47, spec 5.7)', () => {
     ])
     renderPage()
     await screen.findByTestId('library-edit-save')
-    for (const title of ['Library', 'File types', 'Rules', 'Danger zone']) {
+    for (const title of [
+      'Library',
+      'File types',
+      'Encode profile',
+      'Danger zone',
+    ]) {
       expect(
         screen.getByRole('heading', { level: 2, name: title }),
       ).toBeInTheDocument()
@@ -197,28 +275,49 @@ describe('LibraryEditPage properties only (task 47, spec 5.7)', () => {
     expect(screen.queryByTestId('advanced-codec')).toBeNull()
   })
 
-  it('summarises the easy rules and links to the Rules page', async () => {
+  it('shows the chosen profile and links to its editor', async () => {
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(
-          { quality: 3, remove_subtitles: false, audio: 1 },
-          'easy',
-        ),
+        body: library(null, 'steps', { profile_id: 'prof-moderate' }),
+      },
+    ])
+    renderPage()
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('library-edit-profile-summary'),
+      ).toHaveTextContent('Steps for 3 nodes.'),
+    )
+    expect(screen.getByTestId('library-edit-profile')).toHaveValue(
+      'prof-moderate',
+    )
+    expect(screen.queryByTestId('library-edit-no-profile')).toBeNull()
+    const link = screen.getByTestId('library-edit-rules-link')
+    expect(link).toHaveTextContent('Edit profiles in Encode settings')
+    expect(link).toHaveAttribute('href', '/encode/profiles/prof-moderate')
+  })
+
+  it('warns that a library with no profile does not shrink anything', async () => {
+    mock = installFetchMock([
+      ...profilesRoutes(),
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: library(null, 'steps'),
       },
     ])
     renderPage()
     expect(
-      await screen.findByTestId('library-edit-rules-summary'),
-    ).toHaveTextContent('Easy · Balanced · keep every audio track')
-    const link = screen.getByTestId('library-edit-rules-link')
-    expect(link).toHaveTextContent('Change rules')
-    expect(link).toHaveAttribute('href', '/libraries/lib-1/rules')
+      await screen.findByTestId('library-edit-no-profile'),
+    ).toHaveTextContent('does not shrink anything')
+    expect(screen.getByTestId('library-edit-profile')).toHaveValue('')
   })
 
   it('keeps the file-type help line and the Save and Cancel bar sticky', async () => {
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
@@ -237,6 +336,7 @@ describe('LibraryEditPage properties only (task 47, spec 5.7)', () => {
   it('removes the library from the Danger zone after confirmation only', async () => {
     let deleted = false
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
@@ -284,49 +384,45 @@ describe('LibraryEditPage properties only (task 47, spec 5.7)', () => {
   })
 })
 
-describe('LibraryEditPage rules summary (task 47)', () => {
-  it('names the Steps and Advanced tiers in plain language', async () => {
+describe('LibraryEditPage encode profile (task 73)', () => {
+  it('changing the profile changes the summary and is what gets saved', async () => {
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null, 'steps'),
+        body: library(null, 'steps', { profile_id: 'prof-basic' }),
       },
-    ])
-    const first = renderPage()
-    expect(
-      await screen.findByTestId('library-edit-rules-summary'),
-    ).toHaveTextContent('Steps · an ordered list')
-    first.unmount()
-
-    mock.restore()
-    mock = installFetchMock([
       {
-        method: 'GET',
+        method: 'PUT',
         match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library(null, 'advanced'),
+        body: library(null, 'steps', { profile_id: 'prof-moderate' }),
       },
     ])
     renderPage()
-    expect(
-      await screen.findByTestId('library-edit-rules-summary'),
-    ).toHaveTextContent('Advanced · a visual flow')
-  })
-
-  it('adds the subtitle choice to the Easy summary', async () => {
-    mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/libraries\/lib-1$/,
-        body: library({ quality: 5, remove_subtitles: true, audio: 4 }, 'easy'),
-      },
-    ])
-    renderPage()
-    expect(
-      await screen.findByTestId('library-edit-rules-summary'),
-    ).toHaveTextContent(
-      'Easy · Best quality · keep the best audio track, made small · remove subtitles',
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('library-edit-profile-summary'),
+      ).toHaveTextContent('Steps for 2 nodes.'),
     )
+
+    fireEvent.change(screen.getByTestId('library-edit-profile'), {
+      target: { value: 'prof-moderate' },
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('library-edit-profile-summary'),
+      ).toHaveTextContent('Steps for 3 nodes.'),
+    )
+    fireEvent.click(screen.getByTestId('library-edit-save'))
+
+    await waitFor(() => {
+      const puts = mock.calls('PUT', /\/api\/v1\/libraries\/lib-1$/)
+      expect(puts).toHaveLength(1)
+      expect(puts[0].body).toMatchObject({ profile_id: 'prof-moderate' })
+      // The stored legacy rule is resent unchanged alongside the profile.
+      expect(puts[0].body).toHaveProperty('target')
+    })
   })
 })
 
@@ -335,6 +431,7 @@ describe('LibraryEditPage file kinds (task 34)', () => {
     const fixture = library({ quality: 3, remove_subtitles: false, audio: 1 })
     fixture.file_kinds = ['image']
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,
@@ -374,6 +471,7 @@ describe('LibraryEditPage file kinds (task 34)', () => {
     const fixture = library(null)
     fixture.file_kinds = ['video']
     mock = installFetchMock([
+      ...profilesRoutes(),
       {
         method: 'GET',
         match: /\/api\/v1\/libraries\/lib-1$/,

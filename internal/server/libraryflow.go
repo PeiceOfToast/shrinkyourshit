@@ -25,17 +25,24 @@ import (
 // from its Target, with the source inferred from the stored easy input
 // (easy input present → easy, a hand-set target → advanced). Compile errors
 // of a stored flow surface; a legacy target that cannot compile is an error.
+//
+// An attached encode profile (task 73, spec 5.1) wins: the library follows
+// the profile's graph, so editing the profile changes every library using it.
+// The source stays the library's own, which only the old pages read.
 func LibraryFlow(lib *store.Library) (flow.Graph, string, error) {
+	if s := trimJSON(lib.ProfileGraph); s != "" {
+		g, err := flow.ParseGraph([]byte(s))
+		if err != nil {
+			return flow.Graph{}, "", fmt.Errorf("library profile flow: %w", err)
+		}
+		return g, storedFlowSource(lib), nil
+	}
 	if s := trimJSON(lib.FlowJSON); s != "" {
 		g, err := flow.ParseGraph([]byte(s))
 		if err != nil {
 			return flow.Graph{}, "", fmt.Errorf("library flow: %w", err)
 		}
-		source := lib.FlowSource
-		if source == "" {
-			source = flow.FlowSourceAdvanced
-		}
-		return g, source, nil
+		return g, storedFlowSource(lib), nil
 	}
 	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
 	if err != nil {
@@ -50,6 +57,14 @@ func LibraryFlow(lib *store.Library) (flow.Graph, string, error) {
 		source = flow.FlowSourceEasy
 	}
 	return g, source, nil
+}
+
+// storedFlowSource is the library's own flow source, advanced when unset.
+func storedFlowSource(lib *store.Library) string {
+	if lib.FlowSource == "" {
+		return flow.FlowSourceAdvanced
+	}
+	return lib.FlowSource
 }
 
 // LibraryPlan compiles the library's flow into the executable plan. It is
@@ -164,6 +179,11 @@ func joinFlowErrors(errs []flow.FieldError) string {
 	}
 	return out
 }
+
+// ErrFollowsProfile is returned when a flow is saved to a library that follows
+// an encode profile (task 73). The API answers 409 follows_profile: the flow
+// belongs to the profile now, so the edit goes to the profile.
+var ErrFollowsProfile = errors.New("the library follows an encode profile; edit the profile instead")
 
 // IsInvalidFlow reports whether err is a flow validation failure (the API
 // maps it to 400 invalid_flow with the field errors).
@@ -322,6 +342,11 @@ func (m *LibraryManager) UpdateFlow(ctx context.Context, id, source string, g fl
 	lib, err := m.st.GetLibrary(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	// A library that follows a profile runs the profile's graph (task 73).
+	// A flow saved here would be stored and never run, so it is refused.
+	if lib.ProfileID != "" {
+		return nil, ErrFollowsProfile
 	}
 	// The plugin steps are checked against the installed plugins (task
 	// 32): the named plugin must be installed, enabled and of type step,
