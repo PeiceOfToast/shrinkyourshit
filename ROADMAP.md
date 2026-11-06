@@ -178,7 +178,7 @@ confirmed by ffprobe, and a downgrade that leaves the stored graph byte-identica
 questions, not built: the ffmpeg command line is not in the job log (only ffmpeg's own echo and the
 `raw_args` token line), and `PUT /libraries/{id}/flow` does not check the library's tier yet.
 
-## v1.11 encode profiles and in-app storage (scheduled 2026-11-06)
+## v1.11 encode profiles and in-app storage (delivered 2026-11-06)
 
 Specification: `docs/design/encode-profiles-and-storage-2026-11-06.md`. Tasks 64 to 75.
 
@@ -190,6 +190,19 @@ Specification: `docs/design/encode-profiles-and-storage-2026-11-06.md`. Tasks 64
 - Encode rules move off libraries into named profiles on the Encode settings page. A profile owns
   the graph, the tier and the result policy; a library owns storage, path, watch, schedule and
   which profile it follows. The per-library encode builder is removed.
+
+Delivered (task 75, evidence in `tasks/75-notes.md`): an NFS share (ganesha, NFSv4.1) and an SMB share (Samba,
+SMB 3.1.1) added and mounted from the WebUI in a lab container, with read and write proved through both
+mountpoints. A wrong host, a wrong password, refused options and a share that disappears each show their error
+in the UI, and the server stays up. Every storage write route answers `403 login_required` while login is off.
+One real file on the NFS share was encoded three times: profile as created gave `libx265 -crf 24`, the edited
+profile gave `libx264 -crf 18`, and switching the library to a second profile gave `libx265 -crf 28`. Two copies of
+a v1.10 database migrated with library counts unchanged (3, 4), 3 profiles each (identical rules deduped), and
+no library left without a profile. Open findings, not built: SMB `vers=3.1.1` is refused by the option
+check, a wrong NFS host blocks about two minutes, the watchdog misses a stale share that is still mounted, the
+dashboard does not show a broken share, keep_both outputs are rescanned as sources and a re-queue can overwrite
+an earlier output, ffmpeg auto-detect fails without `--ffmpeg`, and the Docker `SYS_ADMIN` posture was not
+exercised (no Docker on the lab VM).
 
 ## v1.12 drop the library rule columns (follow up to v1.11 task 74, scheduled)
 
