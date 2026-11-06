@@ -41,7 +41,7 @@ Table and card views both render every row, so card-view action buttons carry a 
 - `web`: `npx vitest run` 67 files, 506 tests, green. `npx tsc --noEmit` clean, `npm run lint` clean, `npx prettier --check .` clean, `npm run build` green.
 - Playwright, final: `npx playwright test` on the rebuilt binary, 136 passed, 4 skipped, exit 0 (phone, tablet and desktop). `e2e/storage.spec.ts` 6 of 6. Earlier runs found two defects, both fixed: a duplicate `storage-add` test id (empty state and header), and the e2e lookups picking the hidden table copy on phone.
 - Environment: this box's Chromium headless shell needs `libatk-1.0.so.0`, which is not installed system-wide. The run used `LD_LIBRARY_PATH=/home/mb/.local/chromium-deps/lib`, which holds the library. No system packages were changed. Without that path every browser test fails at launch, before any assertion.
-- `make lint` exit 0 (go vet, golangci-lint, spdx, web lint and format). `make test` run at the end; see the last line.
+- `make lint` exit 0 (go vet, golangci-lint, spdx, web lint and format). `make test` exit 0 at the end: go packages all ok (internal/api 431 s, internal/server 437 s, the slow pair), web 67 files / 506 tests.
 - Acceptance: all four boxes ticked in `tasks/68-storage-page.md`, each on the test named above.
 
 ## Gaps and open questions for the owner
