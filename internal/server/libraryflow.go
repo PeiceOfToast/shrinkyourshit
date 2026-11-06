@@ -247,6 +247,42 @@ func (m *LibraryManager) backfillProfiles(ctx context.Context) {
 	}
 }
 
+// seedDefaultProfile gives a fresh install one encode profile (task 71, spec
+// 5.2) so the library form always has something to select. It runs after
+// backfillProfiles and does nothing once any profile exists. The profile is
+// named for the default rule tier and carries the default Target's graph.
+func (m *LibraryManager) seedDefaultProfile(ctx context.Context) {
+	list, err := m.st.ListProfiles(ctx)
+	if err != nil {
+		m.log.Error("library: profile seed", "err", err)
+		return
+	}
+	if len(list) > 0 {
+		return
+	}
+	tier, err := m.defaultRuleTier(ctx)
+	if err != nil {
+		m.log.Error("library: profile seed", "err", err)
+		return
+	}
+	graph, err := defaultProfileGraph()
+	if err != nil {
+		m.log.Error("library: profile seed: default graph", "err", err)
+		return
+	}
+	p := &store.Profile{
+		Name:         fmt.Sprintf("Default (%s)", tier),
+		Tier:         tier,
+		Graph:        graph,
+		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+	}
+	if err := m.st.CreateProfile(ctx, p); err != nil {
+		m.log.Error("library: profile seed", "err", err)
+		return
+	}
+	m.log.Info("default encode profile created", "profile", p.Name)
+}
+
 // defaultProfileGraph is the canonical graph of the default Target, the seed
 // for a library that has no stored graph.
 func defaultProfileGraph() (string, error) {

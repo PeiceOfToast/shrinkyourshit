@@ -123,6 +123,50 @@ func (s *SQLite) SetLibraryProfile(ctx context.Context, libraryID, profileID str
 	return nil
 }
 
+// ErrProfileInUse is returned by DeleteProfile while a library references the
+// profile (spec 5.3). The profile is left as it was.
+var ErrProfileInUse = errors.New("store: profile is in use")
+
+// UpdateProfile replaces a profile's name, description, tier, graph and result
+// policy, and stamps updated_at. ID and CreatedAt are kept. ErrNotFound when
+// no profile has the id. The name must stay unique (the schema enforces it).
+func (s *SQLite) UpdateProfile(ctx context.Context, p *Profile) error {
+	if err := validateProfileTier(p.Tier); err != nil {
+		return err
+	}
+	if err := validateResultPolicy(p.ResultPolicy); err != nil {
+		return err
+	}
+	p.UpdatedAt = nowUTC()
+	res, err := s.db.ExecContext(ctx, `UPDATE profiles SET name = ?, description = ?, tier = ?, graph = ?, result_policy = ?, updated_at = ? WHERE id = ?`,
+		p.Name, p.Description, p.Tier, p.Graph, p.ResultPolicy, fmtTime(p.UpdatedAt), p.ID)
+	if err != nil {
+		return fmt.Errorf("store: update profile: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteProfile removes a profile unless a library references it. The check
+// and the delete are one statement, so a library cannot be pointed at the
+// profile between them. It returns ErrProfileInUse when a library still uses
+// it and ErrNotFound when no profile has the id.
+func (s *SQLite) DeleteProfile(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM profiles WHERE id = ? AND NOT EXISTS (SELECT 1 FROM libraries WHERE profile_id = ?)`, id, id)
+	if err != nil {
+		return fmt.Errorf("store: delete profile: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	if _, err := s.GetProfile(ctx, id); err != nil {
+		return err
+	}
+	return ErrProfileInUse
+}
+
 // BackfillProfiles gives every library with no profile_id a profile (spec
 // 5.2). It is the one time boot step that the v1.10 -> v1.11 migration needs,
 // and it is safe to run on every boot: libraries that already have a profile

@@ -39,6 +39,8 @@ tags:
     description: Outgoing media-server refresh integrations.
   - name: storages
     description: Network storage the server mounts (NFS, SMB). Writes need login on.
+  - name: profiles
+    description: Encode profiles, the reusable graphs libraries share (task 71).
   - name: webhooks
     description: Outgoing webhooks and their delivery history.
   - name: plugins
@@ -472,6 +474,82 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/StepType'
+  /api/v1/profiles:
+    get:
+      tags: [profiles]
+      summary: Every encode profile, oldest first, with the libraries that use it.
+      responses:
+        '200':
+          description: The profile list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileList' }
+    post:
+      tags: [profiles]
+      summary: Create a profile. The graph is validated; a bad graph is 400 invalid_flow with field errors. The tier's representability is reported, not enforced.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileParams' }
+      responses:
+        '201':
+          description: The created profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/profiles/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [profiles]
+      summary: One profile, with used_by and used_by_names.
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [profiles]
+      summary: Replace a profile. Every library using it sees the change at once; used_by_names says which. The name must stay unique.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileParams' }
+      responses:
+        '200':
+          description: The updated profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [profiles]
+      summary: Remove a profile. Refused with 409 while any library references it; nothing changes.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/profiles/{id}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [profiles]
+      summary: Copy a profile under a new id, with the same graph, tier, policy and description, named "<name> (copy)". The copy starts with no libraries.
+      responses:
+        '201':
+          description: The copy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/flows/preview:
     post:
       tags: [flows]
@@ -1651,6 +1729,39 @@ components:
               required: { type: boolean }
               default: { type: object }
               help: { type: string }
+    ProfileParams:
+      type: object
+      required: [name, tier, result_policy, graph]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tier: { type: string, enum: [basic, moderate, advanced] }
+        result_policy: { type: string, enum: [replace_if_smaller, replace, keep_both] }
+        graph: { type: object, description: A flow graph. }
+    Profile:
+      type: object
+      required: [id, name, tier, result_policy, graph, used_by, used_by_names, unrepresentable]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        tier: { type: string, enum: [basic, moderate, advanced] }
+        result_policy: { type: string, enum: [replace_if_smaller, replace, keep_both] }
+        graph: { type: object, description: A flow graph. }
+        used_by: { type: integer, description: How many libraries reference the profile. }
+        used_by_names: { type: array, items: { type: string } }
+        unrepresentable:
+          type: array
+          items: { $ref: '#/components/schemas/FieldError' }
+          description: The steps the profile's own tier cannot express. Empty when the tier can edit the whole graph.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProfileList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Profile' } }
+        total: { type: integer }
     FlowPreview:
       type: object
       properties:

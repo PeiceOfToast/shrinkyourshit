@@ -48,6 +48,10 @@ type Store interface {
 	GetProfile(ctx context.Context, id string) (*Profile, error)
 	ListProfiles(ctx context.Context) ([]*Profile, error)
 	SetLibraryProfile(ctx context.Context, libraryID, profileID string) error
+	// UpdateProfile and DeleteProfile are the profile write paths used by the
+	// profiles API (task 71). DeleteProfile refuses with ErrProfileInUse.
+	UpdateProfile(ctx context.Context, p *Profile) error
+	DeleteProfile(ctx context.Context, id string) error
 	BackfillProfiles(ctx context.Context, fallbackGraph string) ([]ProfileBackfill, error)
 
 	// Files. UpsertFile keys on (LibraryID, Path): the scanner calls it

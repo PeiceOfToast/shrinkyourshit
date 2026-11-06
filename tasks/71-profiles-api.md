@@ -27,10 +27,10 @@ Modify `internal/api/api.go`, `internal/api/openapi.go`, `internal/server/dto.go
    has something to select.
 
 ## Acceptance
-- [ ] Deleting a referenced profile returns 409 and changes nothing.
-- [ ] `used_by` is accurate after creating, repointing and deleting a library.
-- [ ] A duplicate gets a new id and the same graph.
-- [ ] `make test` and `make lint` green.
+- [x] Deleting a referenced profile returns 409 and changes nothing.
+- [x] `used_by` is accurate after creating, repointing and deleting a library.
+- [x] A duplicate gets a new id and the same graph.
+- [x] `make test` and `make lint` green (run as their underlying commands, see notes; make is not installed here).
 
 ## Notes
 Write the plan and a 5 line summary in `tasks/71-notes.md`.

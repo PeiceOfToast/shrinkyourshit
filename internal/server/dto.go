@@ -4,6 +4,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -51,6 +52,58 @@ type LibraryDTO struct {
 	// LastScan is the persisted summary of that scan (task 34); omitted
 	// when the library has never been scanned.
 	LastScan *ScanResult `json:"last_scan,omitempty"`
+}
+
+// ProfileDTO is the JSON shape of an encode profile (task 71, spec 5.1). Graph
+// is the parsed flow graph. UsedBy counts the libraries that reference the
+// profile and UsedByNames names them. Unrepresentable lists the steps of the
+// graph that the profile's own tier cannot express (the v1.10 rule, judged at
+// the profile): informational, the profile is still saved.
+type ProfileDTO struct {
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	Tier            string            `json:"tier"`
+	ResultPolicy    string            `json:"result_policy"`
+	Graph           flow.Graph        `json:"graph"`
+	UsedBy          int               `json:"used_by"`
+	UsedByNames     []string          `json:"used_by_names"`
+	Unrepresentable []flow.FieldError `json:"unrepresentable"`
+	CreatedAt       string            `json:"created_at"`
+	UpdatedAt       string            `json:"updated_at"`
+}
+
+// NewProfileDTO builds the response for p. users are the names of the
+// libraries that reference p.
+func NewProfileDTO(p *store.Profile, users []string) (ProfileDTO, error) {
+	var g flow.Graph
+	if err := json.Unmarshal([]byte(p.Graph), &g); err != nil {
+		return ProfileDTO{}, fmt.Errorf("server: profile %s graph: %w", p.ID, err)
+	}
+	tier, err := flow.ParseTier(p.Tier)
+	if err != nil {
+		return ProfileDTO{}, fmt.Errorf("server: profile %s: %w", p.ID, err)
+	}
+	unrepresentable := flow.RepresentableAt(g, tier)
+	if unrepresentable == nil {
+		unrepresentable = []flow.FieldError{}
+	}
+	if users == nil {
+		users = []string{}
+	}
+	return ProfileDTO{
+		ID:              p.ID,
+		Name:            p.Name,
+		Description:     p.Description,
+		Tier:            p.Tier,
+		ResultPolicy:    p.ResultPolicy,
+		Graph:           g,
+		UsedBy:          len(users),
+		UsedByNames:     users,
+		Unrepresentable: unrepresentable,
+		CreatedAt:       p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:       p.UpdatedAt.Format(time.RFC3339),
+	}, nil
 }
 
 // FileDTO is the JSON shape of a file. Probe carries the stored probe
