@@ -20,7 +20,7 @@
   <WebUI>http://[IP]:[PORT:8765]/</WebUI>
   <TemplateURL></TemplateURL>
   <Icon>https://raw.githubusercontent.com/PeiceOfToast/shrinkyourshit/main/deploy/unraid/icon.svg</Icon>
-  <ExtraParams></ExtraParams>
+  <ExtraParams>--cap-add=SYS_ADMIN --security-opt apparmor=unconfined</ExtraParams>
   <PostArgs></PostArgs>
   <CPUset></CPUset>
   <DateInstalled></DateInstalled>

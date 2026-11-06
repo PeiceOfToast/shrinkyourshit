@@ -27,6 +27,10 @@ keeps them honest — an edit that breaks one fails the build.
 | `/media` | your media libraries | **must be read/write** — see below |
 | `/scratch` | temp space while a file is being worked on | fast local disk is best |
 
+The app also uses `/storage` inside the container for network shares (see
+below). You do not map it: the app creates it, and each share you add mounts
+under `/storage/<name>`.
+
 **Why `/media` must be writable:** a finished result replaces the original
 file in place, and by default it only does that when the new file really is
 smaller (the result policy, changeable in the app). Replacing in place is a
@@ -46,6 +50,44 @@ folders.
 | Synology | 1024 / 100  | DSM's `docker` user, `users` group |
 | TrueNAS  | 568 / 568   | the `apps` user SCALE runs apps as |
 | Unraid   | 99 / 100    | `nobody` / `users`, the Unraid convention |
+
+## Network storage (NFS and SMB)
+
+Shares are added, mounted, tested and deleted from the Storage page, so
+nothing has to be typed into compose or fstab after the install. This needs
+two settings on the container, and the compose files and NAS templates in
+this repo already carry them:
+
+```yaml
+cap_add:
+  - SYS_ADMIN            # lets the container run mount(8); far narrower than privileged: true
+security_opt:
+  - apparmor=unconfined  # Docker's default AppArmor profile blocks mount(2)
+```
+
+Unraid's template sets the same two flags in its Extra Parameters field
+(`--cap-add=SYS_ADMIN --security-opt apparmor=unconfined`).
+
+**Login comes first.** Adding, changing, testing, mounting and deleting a
+share are refused (HTTP 403) until login is turned on in App settings. Turn
+it on before you add a share.
+
+**Copied an old compose file?** The app still starts without the two lines.
+The startup log says so:
+
+```
+shrinkyourshit: network storage is unavailable: SYS_ADMIN not granted; add cap_add SYS_ADMIN and security_opt apparmor=unconfined to the compose file, then recreate the container. The app still starts.
+```
+
+A share added in that state fails with the mount's own message, as it is
+written by `mount(8)`:
+
+```
+mount: /storage/media: permission denied.
+```
+
+Add the two lines to your compose file and recreate the container
+(`docker compose up -d`). Leave them out if you do not want network storage at all.
 
 ## The port
 

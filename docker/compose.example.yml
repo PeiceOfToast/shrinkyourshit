@@ -20,6 +20,19 @@ services:
       - /path/to/your/media:/media
       - ./scratch:/scratch
 
+    # --- Network storage (NFS and SMB shares, added from the Storage page) ---
+    # SYS_ADMIN lets the container run mount(8) for the shares you add in the
+    # WebUI. It is one capability, far narrower than `privileged: true`, which
+    # grants every capability and every device. apparmor=unconfined is needed
+    # because Docker's default AppArmor profile blocks mount(2). Without these
+    # two lines the app still starts: the startup log says the capability is
+    # missing, and each storage shows the mount error. Leave them out if you
+    # do not want network storage.
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor=unconfined
+
     # --- NVIDIA GPU (NVENC): uncomment this block ---
     # environment:
     #   - PUID=1000

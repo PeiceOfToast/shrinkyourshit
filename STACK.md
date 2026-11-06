@@ -63,7 +63,9 @@ Pinned so every task uses the same tools. Do not introduce alternatives for anyt
 
 - Multi-stage Dockerfile: `node:20` builds the web app, `golang:1.23` builds the binary, runtime is `debian:bookworm-slim` plus `jellyfin-ffmpeg` from the Jellyfin apt repository.
 - Image published to `ghcr.io/PeiceOfToast/shrinkyourshit` with tags `latest` and the semver tag.
-- Volumes: `/config`, `/media`, `/scratch`.
+- Volumes: `/config`, `/media`, `/scratch`, `/storage` (network shares mount at `/storage/<name>`, task 66).
+- Runtime packages beyond ffmpeg (task 67): `nfs-common` (`mount.nfs`) and `cifs-utils` (`mount.cifs`), installed with `--no-install-recommends` in the runtime stage. Used only by `mount(8)` through `internal/mount`.
+- Container capabilities for network storage (task 67): `cap_add: [SYS_ADMIN]` and `security_opt: [apparmor=unconfined]`. Narrower than `privileged: true`. Without them the app still starts and reports the missing capability.
 - GPU: compose example includes commented blocks for NVIDIA (`runtime: nvidia`, `NVIDIA_VISIBLE_DEVICES=all`) and Intel (`devices: - /dev/dri:/dev/dri`).
 
 ## Release

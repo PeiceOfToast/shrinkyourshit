@@ -125,6 +125,34 @@ jobs:
             echo "::error::image version is '$(read_field version)', expected 'v0.0.0-ci'" >&2
             exit 1
           }
+      # Task 67: the image carries the mount helpers, and mount(8) is setuid
+      # so the PUID user can run it. On start the entrypoint reports storage
+      # readiness: "ready" with the compose capability, "unavailable" without
+      # it. The server must still answer health in the unavailable case.
+      - name: Network storage helpers and capability report (task 67)
+        run: |
+          set -eu
+          docker run --rm --entrypoint sh shrinkyourshit:ci \
+            -c 'command -v mount.nfs mount.cifs && test -u "$(command -v mount)"'
+          docker image ls shrinkyourshit:ci --format 'image size: {{.Size}}'
+          docker run -d --name storage-ready -p 18766:8765 \
+            --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+            -e SHRINK_DISCOVERY_MDNS=false -e SHRINK_DISCOVERY_BROADCAST=false \
+            shrinkyourshit:ci >/dev/null
+          docker run -d --name storage-missing -p 18767:8765 \
+            -e SHRINK_DISCOVERY_MDNS=false -e SHRINK_DISCOVERY_BROADCAST=false \
+            shrinkyourshit:ci >/dev/null
+          trap 'docker rm -f storage-ready storage-missing >/dev/null 2>&1 || true' EXIT
+          sleep 3
+          docker logs storage-ready 2>&1 | grep -q 'network storage is ready' || {
+            echo "::error::storage-ready did not report ready" >&2; docker logs storage-ready >&2; exit 1; }
+          docker logs storage-missing 2>&1 | grep -q 'network storage is unavailable: SYS_ADMIN not granted' || {
+            echo "::error::storage-missing did not report the missing capability" >&2; docker logs storage-missing >&2; exit 1; }
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:18767/api/v1/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18767/api/v1/health | grep -o '"status":"ok"'
       - name: ffmpeg has the v1 encoder stack (NVENC + QSV/VAAPI)
         run: |
           docker run --rm --entrypoint /usr/lib/jellyfin-ffmpeg/ffmpeg shrinkyourshit:ci -version \
