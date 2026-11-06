@@ -15,14 +15,11 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ApiError,
   getFlowStepTypes,
-  getLibrary,
-  getLibraryFlow,
   getPlugins,
-  putLibraryFlow,
   type FlowFieldError,
   type FlowGraph,
   type FlowStep,
@@ -41,6 +38,8 @@ import { ReadOnlyReason } from './TierNotices'
 import { useDocumentTitle } from './useDocumentTitle'
 import { useToast } from './toastContext'
 import { useUnsavedGuard } from './useUnsavedGuard'
+import { useFlowSubject, type SubjectKind } from './flowSubject'
+import { ProfileSaveConfirm, ProfileTierSwitch } from './ProfileControls'
 import {
   btn,
   btnGhost,
@@ -80,20 +79,20 @@ function parseFieldErrors(raw: string | undefined): FlowFieldError[] {
   }
 }
 
-export default function FlowTreePage() {
+/**
+ * `subject` is the thing being edited: a library (the library's Rules route)
+ * or an encode profile (task 72, the profile's tree route). The route param
+ * is the id either way.
+ */
+export default function FlowTreePage({
+  subject: kind = 'library',
+}: {
+  subject?: SubjectKind
+}) {
   const { id = '' } = useParams()
-  const client = useQueryClient()
   const toast = useToast()
-  const libraryCrumb = { label: 'Libraries', to: '/libraries' }
-
-  const library = useQuery({
-    queryKey: ['library', id],
-    queryFn: () => getLibrary(id),
-  })
-  const flow = useQuery({
-    queryKey: ['library-flow', id],
-    queryFn: () => getLibraryFlow(id),
-  })
+  const subj = useFlowSubject({ kind, id, lockTier: 'moderate' })
+  const flow = { data: subj.flow, isPending: subj.isPending }
   const palette = useQuery({
     queryKey: ['flow-step-types'],
     queryFn: getFlowStepTypes,
@@ -104,13 +103,6 @@ export default function FlowTreePage() {
     queryFn: getPlugins,
     staleTime: Infinity,
   })
-  // What the Moderate tier can change (task 62): a step it cannot express
-  // (raw args, plugins) locks the whole tree read only.
-  const lock = useQuery({
-    queryKey: ['library-flow', id, 'moderate'],
-    queryFn: () => getLibraryFlow(id, 'moderate'),
-  })
-
   const [graph, setGraph] = useState<FlowGraph | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -119,7 +111,7 @@ export default function FlowTreePage() {
   const [addType, setAddType] = useState('')
   const [confirmRevert, setConfirmRevert] = useState(false)
 
-  useDocumentTitle(['Rule tree', library.data?.name])
+  useDocumentTitle(['Rule tree', subj.name])
 
   // First load: the graph is exactly the object the API returned.
   useEffect(() => {
@@ -145,7 +137,7 @@ export default function FlowTreePage() {
     [graph, isCondition],
   )
   const chain = graph ? isChainGraph(graph, isCondition) : false
-  const locked = isLocked(lock.data?.unrepresentable)
+  const locked = isLocked(subj.lock)
   const editable = chain && !locked
   const dirty =
     !!graph && baseline !== null && JSON.stringify(graph) !== baseline
@@ -172,16 +164,14 @@ export default function FlowTreePage() {
   const save = useMutation({
     mutationFn: () => {
       if (!graph) throw new Error('nothing to save')
-      return putLibraryFlow(id, { source: 'steps', graph })
+      return subj.save(graph, 'moderate')
     },
-    onSuccess: (resp) => {
-      setGraph(resp.graph)
-      setBaseline(JSON.stringify(resp.graph))
+    onSuccess: (saved) => {
+      setGraph(saved)
+      setBaseline(JSON.stringify(saved))
       setErrors({})
-      toast.success('Tree saved.')
-      void client.invalidateQueries({ queryKey: ['library', id] })
-      void client.invalidateQueries({ queryKey: ['library-flow', id] })
-      void client.invalidateQueries({ queryKey: ['libraries'] })
+      toast.success(kind === 'profile' ? 'Profile saved.' : 'Tree saved.')
+      subj.invalidate()
     },
     onError: (err: unknown) => {
       // Field errors sit on the row that owns the field, by node index.
@@ -193,6 +183,7 @@ export default function FlowTreePage() {
   })
 
   const guard = useUnsavedGuard(dirty)
+  const libraryCrumb = subj.root
 
   const revert = () => {
     setConfirmRevert(false)
@@ -201,12 +192,7 @@ export default function FlowTreePage() {
     setErrors({})
   }
 
-  const loading =
-    library.isPending ||
-    flow.isPending ||
-    palette.isPending ||
-    lock.isPending ||
-    !graph
+  const loading = subj.isPending || palette.isPending || !graph
   if (loading) {
     return (
       <PageContainer className="pb-8" data-testid="tree-loading">
@@ -215,25 +201,21 @@ export default function FlowTreePage() {
       </PageContainer>
     )
   }
-  const lib = library.data
+  const lib = { id, name: subj.name ?? '' }
   if (
-    library.isError ||
-    flow.isError ||
+    subj.isError ||
     palette.isError ||
-    lock.isError ||
     !flow.data ||
-    !lock.data ||
-    !lib
+    subj.name === undefined
   ) {
     return (
       <PageContainer className="pb-8" data-testid="tree-page">
         <PageHeader breadcrumb={[libraryCrumb]} title="Rule tree" />
         <ErrorBox
           title="Cannot load the rule tree."
-          error={library.error ?? flow.error ?? palette.error}
+          error={subj.error ?? palette.error}
           onRetry={() => {
-            void library.refetch()
-            void flow.refetch()
+            subj.refetch()
             void palette.refetch()
           }}
         />
@@ -248,7 +230,7 @@ export default function FlowTreePage() {
       <PageHeader
         breadcrumb={[
           libraryCrumb,
-          { label: lib.name, to: `/libraries/${lib.id}` },
+          { label: lib.name, to: subj.paths.overview },
         ]}
         title="Rule tree"
         meta={
@@ -275,7 +257,7 @@ export default function FlowTreePage() {
             {editable && (
               <button
                 type="button"
-                onClick={() => save.mutate()}
+                onClick={() => subj.requestSave(() => save.mutate())}
                 disabled={!canSave}
                 className={btnPrimary}
                 data-testid="tree-save"
@@ -287,7 +269,11 @@ export default function FlowTreePage() {
         }
       />
 
-      {flow.data.source === 'easy' && editable && (
+      {kind === 'profile' && (
+        <ProfileTierSwitch subject={subj} current="moderate" />
+      )}
+
+      {kind === 'library' && flow.data.source === 'easy' && editable && (
         <Banner tone="warning" testId="tree-easy-warning">
           Saving here replaces the generated rules with your own steps. The easy
           sliders will no longer drive this library.
@@ -297,8 +283,9 @@ export default function FlowTreePage() {
       {locked && (
         <ReadOnlyReason
           tier="moderate"
-          steps={lock.data?.unrepresentable ?? []}
+          steps={subj.lock ?? []}
           libraryId={lib.id}
+          editHref={subj.paths.flow}
           testId="tree-locked-reason"
         />
       )}
@@ -308,7 +295,7 @@ export default function FlowTreePage() {
           This flow branches, which the tree cannot save. Open it in the visual
           editor to change it.{' '}
           <Link
-            to={`/libraries/${lib.id}/flow`}
+            to={subj.paths.flow}
             className={linkTouch}
             data-testid="tree-open-flow"
           >
@@ -528,7 +515,7 @@ export default function FlowTreePage() {
       <p className="text-caption text-fg-muted">
         Need the whole graph on a canvas?{' '}
         <Link
-          to={`/libraries/${lib.id}/flow`}
+          to={subj.paths.flow}
           className={linkTouch}
           data-testid="tree-to-flow"
         >
@@ -553,6 +540,8 @@ export default function FlowTreePage() {
           </p>
         </ConfirmDialog>
       )}
+
+      <ProfileSaveConfirm pending={subj.pendingSave} />
 
       {guard.pending && (
         <ConfirmDialog

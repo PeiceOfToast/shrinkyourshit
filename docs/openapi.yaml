@@ -505,7 +505,9 @@ paths:
       - $ref: '#/components/parameters/Id'
     get:
       tags: [profiles]
-      summary: One profile, with used_by and used_by_names.
+      summary: One profile, with used_by and used_by_names. With ?tier= the graph is judged at that tier (task 72); the stored tier is not changed.
+      parameters:
+        - { name: tier, in: query, required: false, schema: { type: string, enum: [basic, moderate, advanced] }, description: Judge the graph at this tier. Defaults to the profile's own tier. }
       responses:
         '200':
           description: The profile.

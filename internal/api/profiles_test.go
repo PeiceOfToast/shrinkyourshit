@@ -305,3 +305,25 @@ func TestUnrepresentableIsJudgedAtTheProfilesTier(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Empty(t, decodeProfileDTO(t, rec).Unrepresentable)
 }
+
+// TestGetProfileJudgesAtTheRequestedTier (task 72): ?tier= judges the stored
+// graph at that tier without changing the profile, and a bad tier is 400.
+func TestGetProfileJudgesAtTheRequestedTier(t *testing.T) {
+	h := newAPIHarness(t)
+	p := h.createProfileOK("Films", "advanced", profileModerateGraph())
+	require.Empty(t, p.Unrepresentable, "advanced edits every step")
+
+	rec := h.do(http.MethodGet, "/api/v1/profiles/"+p.ID+"?tier=basic", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	atBasic := decodeProfileDTO(t, rec)
+	assert.NotEmpty(t, atBasic.Unrepresentable, "a scale step is not basic")
+	assert.Equal(t, "advanced", atBasic.Tier, "the stored tier is not changed by a read")
+
+	rec = h.do(http.MethodGet, "/api/v1/profiles/"+p.ID+"?tier=moderate", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Empty(t, decodeProfileDTO(t, rec).Unrepresentable)
+
+	rec = h.do(http.MethodGet, "/api/v1/profiles/"+p.ID+"?tier=expert", nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"invalid_request"`)
+}

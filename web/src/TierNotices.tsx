@@ -46,10 +46,17 @@ export function UnrepresentableBanner({
   tier,
   steps,
   libraryId,
+  editHref,
+  noun = 'library',
 }: {
   tier: RuleTier
   steps: FlowFieldError[]
-  libraryId: string
+  /** The library whose visual editor the link opens (library pages). */
+  libraryId?: string
+  /** Where the link goes, when it is not a library's visual editor (task 72). */
+  editHref?: string
+  /** Names the owner in the sentence: "This library", "This profile". */
+  noun?: string
 }) {
   return (
     <Banner
@@ -59,7 +66,7 @@ export function UnrepresentableBanner({
     >
       <div className="flex flex-col gap-2">
         <p>
-          This library has {steps.length === 1 ? 'a step' : 'steps'} the{' '}
+          This {noun} has {steps.length === 1 ? 'a step' : 'steps'} the{' '}
           {tierLabel(tier)} editor cannot show or change:
         </p>
         <StepList steps={steps} />
@@ -67,7 +74,7 @@ export function UnrepresentableBanner({
           Nothing was changed. The flow was not modified, and each step is kept
           as it was.{' '}
           <Link
-            to={`/libraries/${libraryId}/flow`}
+            to={editHref ?? `/libraries/${libraryId}/flow`}
             className={linkTouch}
             data-testid="tier-banner-advanced"
           >
@@ -87,11 +94,14 @@ export function ReadOnlyReason({
   tier,
   steps,
   libraryId,
+  editHref,
   testId,
 }: {
   tier: RuleTier
   steps: FlowFieldError[]
-  libraryId: string
+  libraryId?: string
+  /** Where "Edit them in the visual editor" goes (task 72 profiles). */
+  editHref?: string
   testId: string
 }) {
   return (
@@ -105,7 +115,7 @@ export function ReadOnlyReason({
         <StepList steps={steps} />
         <p>
           <Link
-            to={`/libraries/${libraryId}/flow`}
+            to={editHref ?? `/libraries/${libraryId}/flow`}
             className={linkTouch}
             data-testid={`${testId}-link`}
           >

@@ -14,9 +14,11 @@ import {
   getNodes,
   getSettings,
   updateSettings,
+  type RuleTier,
   type SettingsUpdate,
 } from './api'
 import { TIER_OPTIONS, tierLabel } from './tierModel'
+import { ProfilesSection } from './ProfilesPage'
 import Banner from './Banner'
 import ErrorBox from './ErrorBox'
 import { Field, FormActions, FormSection } from './FormSection'
@@ -105,7 +107,7 @@ export default function EncodeSettingsPage() {
   const header = (
     <PageHeader
       title="Encode settings"
-      subtitle="Defaults for new libraries. Each library can change them in its Rules."
+      subtitle="Defaults for new libraries, and the encode profiles that libraries pick from."
     />
   )
 
@@ -295,6 +297,15 @@ export default function EncodeSettingsPage() {
           {save.isPending ? 'Saving…' : 'Save changes'}
         </button>
       </FormActions>
+
+      {/* A new profile takes the saved default tier (task 72). */}
+      <ProfilesSection
+        defaultTier={
+          TIER_OPTIONS.some((t) => t.id === query.data.default_rule_tier)
+            ? (query.data.default_rule_tier as RuleTier)
+            : 'basic'
+        }
+      />
     </PageContainer>
   )
 }

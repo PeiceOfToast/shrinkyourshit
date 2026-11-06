@@ -797,7 +797,7 @@ Encode profiles (spec 5.3). A profile is a named, reusable graph with a tier and
 |--------|------|------|---------|
 | GET | `/api/v1/profiles` | admin | list: `{items, total}`, oldest first |
 | POST | `/api/v1/profiles` | admin | create; `201` with the profile |
-| GET | `/api/v1/profiles/{id}` | admin | one profile |
+| GET | `/api/v1/profiles/{id}` | admin | one profile. `?tier=basic\|moderate\|advanced` judges the graph at that tier (task 72, like `GET /libraries/{id}/flow?tier=`); `unrepresentable` then answers for that tier and nothing is stored |
 | PUT | `/api/v1/profiles/{id}` | admin | replace every field; `200` with the profile |
 | DELETE | `/api/v1/profiles/{id}` | admin | remove; `204`. `409 profile_in_use` while any library references it, and nothing changes |
 | POST | `/api/v1/profiles/{id}/duplicate` | admin | copy with a new id, the same graph, tier, policy and description, named `<name> (copy)` or `<name> (copy N)`; `201` |

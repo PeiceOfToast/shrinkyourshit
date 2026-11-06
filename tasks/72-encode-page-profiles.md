@@ -26,11 +26,12 @@ loses nothing), `web/src/api.ts`.
 5. The app wide `default_rule_tier` becomes the default tier for a new profile.
 
 ## Acceptance
-- [ ] Playwright edits a profile used by two libraries, sees both named in the confirmation, and
-      confirms the change applied to both.
-- [ ] The Basic, tree and canvas editors all save to a profile, proven per editor.
-- [ ] The representability banner names the steps and the tier that can edit them.
-- [ ] `npm run build`, `npx playwright test` and `make lint` green.
+- [x] Playwright edits a profile used by two libraries, sees both named in the confirmation, and
+      confirms the change applied to both. (Two libraries are answered by route mocks; no real
+      library can attach a profile before task 73. See tasks/72-notes.md gap 1.)
+- [x] The Basic, tree and canvas editors all save to a profile, proven per editor.
+- [x] The representability banner names the steps and the tier that can edit them.
+- [x] `npm run build`, `npx playwright test` and `make lint` green.
 
 ## Notes
 Write the plan and any changed assertion in `tasks/72-notes.md`.
