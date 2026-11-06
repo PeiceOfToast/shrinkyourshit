@@ -99,7 +99,7 @@ Storage first because libraries need somewhere to point before profiles make sen
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 64 | 64-storage-store-and-secrets.md | in_progress | branch task/64-storage-store-and-secrets, pushed, PR pending; checklist 4/4 ticked, make test and make lint green |
+| 64 | 64-storage-store-and-secrets.md | done | PR #68 https://github.com/PeiceOfToast/shrinkyourshit/pull/68, v1.11, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (go all packages green, web 65 files / 474 tests), make lint exit 0, DECISIONS.md unchanged, checklist 4/4 ticked |
 | 65 | 65-storage-api.md | todo | |
 | 66 | 66-mount-executor.md | todo | |
 | 67 | 67-container-capabilities.md | todo | |
