@@ -19,6 +19,7 @@ const PAGES: Array<{ path: string; ready: string }> = [
   { path: '/libraries', ready: 'libraries-page' },
   { path: '/libraries/new', ready: 'new-library-page' },
   { path: '/nodes', ready: 'nodes-page' },
+  { path: '/storage', ready: 'storage-page' },
   { path: '/encode', ready: 'encode-settings-page' },
   { path: '/app', ready: 'app-settings-page' },
   { path: '/integrations', ready: 'integrations-page' },
@@ -28,6 +29,7 @@ const NAV_LABELS = [
   'Dashboard',
   'Libraries',
   'Nodes',
+  'Storage',
   'Encode settings',
   'App settings',
 ]
