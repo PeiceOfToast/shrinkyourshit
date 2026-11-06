@@ -61,11 +61,28 @@ Full walkthrough — volumes, PUID/PGID per platform, the port, updating, and un
 # Using docker directly (config in ./config, your library at /path/to/media):
 docker run -d --name shrinkyourshit \
   -p 8765:8765 \
+  --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
   -v ./config:/config \
   -v /path/to/your/media:/media \
   -v ./scratch:/scratch \
   ghcr.io/peiceoftoast/shrinkyourshit:latest
 ```
+
+The two `--cap-add` and `--security-opt` flags are for network storage; see the next section.
+
+## Network storage (NFS and SMB)
+
+NFS and SMB shares are added, mounted, tested and deleted from the Storage page, with no compose edits and no host fstab. The container needs two settings for that. They are in the compose example and in every NAS template:
+
+```yaml
+cap_add:
+  - SYS_ADMIN            # lets the container run mount(8); far narrower than privileged: true
+security_opt:
+  - apparmor=unconfined  # Docker's default AppArmor profile blocks mount(2)
+```
+
+- **Login comes first.** Adding, changing, testing, mounting and deleting a share are refused until login is turned on in App settings. Mounting a share reaches your network, so it is a different risk class from the rest of the app.
+- **Without the two lines the app still starts.** The startup log says `network storage is unavailable` and names what is missing. A share you add then fails with `mount: /storage/<name>: permission denied.` That is the error an older compose file produces. Add the two lines and run `docker compose up -d` to recreate the container.
 
 Or with compose:
 
