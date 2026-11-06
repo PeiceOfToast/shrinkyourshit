@@ -289,6 +289,11 @@ every library has a profile (0 without), tier and policy carried. The v1.10 orig
 | lint-web | `cd web && npm run lint` (eslint) | 0 |
 | lint-web | `cd web && npm run format:check` (prettier) | 0 (`All matched files use Prettier code style!`) |
 | web build | `cd web && npm run build` | 0 |
+| test-integration | `go test -tags=integration -timeout 30m ./...` (host ffmpeg at `~/.local/bin/ffmpeg`) | 0 (15 packages ok; internal/api 577s, internal/server 543s, internal/worker 271s, internal/store 237s) |
+
+Acceptance: all four boxes ticked in `tasks/75-verify-wave.md` (mount table and mountpoints quoted above; encode
+proof with three ffmpeg command lines and the profile each came from; migration row counts before and after on
+two copies; make test and make lint recipes green, run by hand because make is not installed).
 
 ### Gaps and findings (recorded, not fixed: this task's scope is docs only)
 
@@ -341,3 +346,11 @@ make is not installed on this VM, so each `make` target was run by hand with the
 Go test results were served from the Go test cache for unchanged packages (`(cached)`).
 
 checks: go test ./... exit 0; go vet ./... exit 0; golangci-lint run exit 0 (0 issues); ./scripts/check-spdx.sh exit 0; web npm run test exit 0 (69 files, 524 tests); web npm run lint exit 0; web npm run format:check exit 0.
+
+### Summary
+
+1. Built: nothing in code. Proved v1.11 on this lab: NFS and SMB added and mounted from the WebUI with read and write, all four failure paths shown in the UI with the server up, the login gate (403 on all seven storage write routes), a profile driven encode from the NFS share with three ffmpeg command lines, and a v1.10 to v1.11 migration on two DB copies.
+2. Docs: README gains two Network storage notes (leave SMB `vers` out; a dead NFS host takes about two minutes), ROADMAP marks v1.11 delivered with the evidence and open findings. ARCHITECTURE.md and API.md needed no change.
+3. Skipped or not provable here: the Docker `SYS_ADMIN` plus `apparmor=unconfined` posture (no Docker on this VM), the NFS default `vers=3` options, the library form and profile editor UI (API used for those).
+4. Findings for the owner, G1 to G10 above. Highest impact: G6 (a re-queue under keep_both overwrote an earlier output), G5 (keep_both outputs rescanned), G1 (SMB `vers=3.1.1` refused), G3 (the watchdog misses a stale mount), G4 (no dashboard error), G7 (ffmpeg auto-detect).
+5. Next task should know: t75 (NFS/SMB server), t75nas and t75app (app at http://10.239.201.102:8765, admin login on, data in /var/lib/sys) are still running; static IPs must be re-added after a container reboot. Supervisor commit 6e127b7 (hermes-log line) landed on this branch from the shared working tree.
