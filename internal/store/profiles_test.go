@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -17,21 +18,23 @@ type legacyLibrary struct {
 	id, name, flow, source, tier, policy string
 }
 
-// buildV111DB creates a database with the current schema (every migration,
-// 0018 included, which is what v1.11 shipped) and inserts the given rows with
-// their legacy rule columns filled. It returns the path. The rows have no
-// profile_id, the state a failed v1.11 boot can leave behind.
+// buildV111DB creates a database in the v1.11 schema (every migration through
+// 0018, which is what v1.11 shipped) and inserts the given rows with their
+// legacy rule columns filled. It returns the path; the caller opens it with New,
+// which applies 0019 and then the backfill. The rows have no profile_id, the
+// state a failed v1.11 boot can leave behind.
 func buildV111DB(t *testing.T, rows []legacyLibrary) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "data.db")
-	st, err := New(path)
+	migrateTo(t, path, "0018_profiles.sql")
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
-	defer func() { _ = st.Close() }()
+	defer func() { _ = db.Close() }()
 	const insert = `INSERT INTO libraries (id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, file_kinds)
 		VALUES (?, ?, ?, '{"video":{"codec":"hevc","quality":3},"container":"mkv"}', '{"quality":3}', ?, ?, ?, 0, '', ?, ?, ?, '["video"]')`
 	for i, r := range rows {
 		created := "2026-11-01T00:00:0" + string(rune('0'+i)) + "Z"
-		_, err := st.db.ExecContext(context.Background(), insert, r.id, r.name, "/media/"+r.id, r.flow, r.source, r.tier, r.policy, created, created)
+		_, err := db.ExecContext(context.Background(), insert, r.id, r.name, "/media/"+r.id, r.flow, r.source, r.tier, r.policy, created, created)
 		require.NoError(t, err, r.id)
 	}
 	return path
@@ -165,21 +168,24 @@ func TestBackfillLeavesAssignedLibrariesAlone(t *testing.T) {
 	assert.Equal(t, other.ID, films.ProfileID)
 }
 
-// TestBackfillDoesNotWriteLegacyColumns: the backfill sets profile_id and nothing
-// else; the legacy columns keep their v1.11 values until task 78 drops them.
-func TestBackfillDoesNotWriteLegacyColumns(t *testing.T) {
+// TestBackfillTouchesOnlyProfileID: the backfill sets profile_id and nothing
+// else. The row's identity and settings read back as they were.
+func TestBackfillTouchesOnlyProfileID(t *testing.T) {
 	ctx := context.Background()
 	st := openV111(t, v111Libraries)
 	def := defaultProfileFor(t, st)
-
-	_, err := st.BackfillProfiles(ctx, def.ID)
+	before, err := st.GetLibrary(ctx, "films")
 	require.NoError(t, err)
 
-	var flow, tier, policy string
-	require.NoError(t, st.db.QueryRowContext(ctx, `SELECT flow_json, rule_tier, result_policy FROM libraries WHERE id = ?`, "films").Scan(&flow, &tier, &policy))
-	assert.Equal(t, graphA, flow)
-	assert.Equal(t, RuleTierAdvanced, tier)
-	assert.Equal(t, "keep_both", policy)
+	_, err = st.BackfillProfiles(ctx, def.ID)
+	require.NoError(t, err)
+
+	after, err := st.GetLibrary(ctx, "films")
+	require.NoError(t, err)
+	assert.Equal(t, before.Name, after.Name)
+	assert.Equal(t, before.Path, after.Path)
+	assert.Equal(t, before.Watch, after.Watch)
+	assert.Equal(t, def.ID, after.ProfileID)
 }
 
 // TestProfileIDSurvivesLibraryWrites: UpdateLibrary from a fresh read keeps the

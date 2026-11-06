@@ -52,16 +52,16 @@ dev: placeholder
 test: test-go test-web
 
 test-go: placeholder
-	go test ./...
+	go test -timeout 30m ./...
 
 test-web: web-deps
 	cd web && npm run test
 
-# Integration tests (build tag `integration`) need ffmpeg/ffprobe and skip
-# with a clear message when they are absent. The server package's suite
-# outgrew go test's default 10-minute per-package timeout (it passed at
-# ~5 minutes on the dev box and CI runners are slower), so the deadline is
-# explicit.
+# Both go test targets set an explicit 30-minute deadline. The api and
+# server suites outgrew go test's default 10-minute per-package timeout on a
+# 6-core box (they pass at 9 to 10 minutes with everything cached warm, so
+# any load pushes them over), and the deadline is not what these tests
+# assert.
 test-integration: placeholder
 	go test -tags=integration -timeout 30m ./...
 

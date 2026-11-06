@@ -243,3 +243,11 @@ usable between merges. Task files carry the scope and the acceptance checklists.
   `PUT /api/v1/libraries/{id}/tier` route (`409 follows_profile` since task 74).
 - Remove `legacyLibraryFlow` and the boot migration that reads the columns (`backfillFlows`), once
   every library row has a profile. The boot warning from task 74 (`logLegacyColumns`) goes with them.
+
+Shipped (wave closed by task 78):
+
+- Task 76: the legacy rule code is removed; the columns are no longer written.
+- Task 77: the deprecated request fields, the `deprecated` reply list and `PUT /libraries/{id}/tier` are removed.
+- Task 78: migration `0019_drop_library_rule_columns.sql` drops the six columns. Libraries keep their
+  profile. A rollback to v1.10 cannot run a library after this migration (see CHANGELOG.md).
+- Open: a direct v1.10 to v1.12 upgrade gives unassigned libraries the default profile (task 76 notes).

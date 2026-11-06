@@ -12,36 +12,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRuleTierMigrationMatchesFlowSource builds a database as the current
-// release leaves it (every migration before 0016 applied, legacy rows of each
-// shape), then lets the new release open it. Every library must end with the
-// tier its flow_source implies, and legacy rows follow LibraryFlow's inference.
+// TestRuleTierMigrationMatchesFlowSource builds a database as the release before
+// 0016 leaves it (every migration through 0015 applied, legacy rows of each
+// shape), then applies 0016 and reads rule_tier raw. Every library must end with
+// the tier its flow_source implies, and legacy rows follow LibraryFlow's
+// inference. Migration 0019 drops rule_tier later, so this checks 0016 alone.
 func TestRuleTierMigrationMatchesFlowSource(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "data.db")
+	migrateTo(t, path, "0015_library_last_scan.sql")
 
 	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
 	db.SetMaxOpenConns(1)
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    )`)
-	require.NoError(t, err)
-	migrations, err := loadMigrations()
-	require.NoError(t, err)
-	before := 0
-	for _, m := range migrations {
-		if m.name >= "0016_library_tier.sql" {
-			continue
-		}
-		before++
-		_, err := db.ExecContext(ctx, m.sql)
-		require.NoError(t, err, m.name)
-		_, err = db.ExecContext(ctx, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, m.name, "2026-11-01T00:00:00Z")
-		require.NoError(t, err, m.name)
-	}
-	require.Equal(t, 15, before, "the current release runs to 0015")
 
 	const insert = `INSERT INTO libraries (id, name, path, target, easy, flow_json, flow_source, watch, schedule, result_policy, created_at, updated_at, file_kinds)
 		VALUES (?, ?, ?, '{}', ?, ?, ?, 0, '', 'replace_if_smaller', '2026-11-01T00:00:00Z', '2026-11-01T00:00:00Z', '["video"]')`
@@ -62,13 +46,13 @@ func TestRuleTierMigrationMatchesFlowSource(t *testing.T) {
 	}
 	require.NoError(t, db.Close())
 
-	// The new release applies 0016 on open and every row gets its tier. The
-	// column is read raw: the Library struct no longer carries it (task 76).
-	st, err := New(path)
+	// Apply 0016 on the same file and read the column raw.
+	migrateTo(t, path, "0016_library_tier.sql")
+	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
-	defer func() { _ = st.Close() }()
+	defer func() { _ = raw.Close() }()
 	got := map[string]string{}
-	rowsOut, err := st.db.QueryContext(ctx, `SELECT id, rule_tier FROM libraries`)
+	rowsOut, err := raw.QueryContext(ctx, `SELECT id, rule_tier FROM libraries`)
 	require.NoError(t, err)
 	for rowsOut.Next() {
 		var id, tier string
@@ -83,10 +67,10 @@ func TestRuleTierMigrationMatchesFlowSource(t *testing.T) {
 	}
 }
 
-// TestLibraryWritesLeaveLegacyColumnsEmpty: a library created and then updated
-// through the store round trips with its profile only. The six legacy rule
-// columns are no longer written, so they keep their column defaults (task 76).
-func TestLibraryWritesLeaveLegacyColumnsEmpty(t *testing.T) {
+// TestLibraryWritesRoundTripProfileOnly: a library created and then updated
+// through the store round trips with its profile only. The rule comes from the
+// profile (task 74); the legacy columns are gone after 0019 (task 78).
+func TestLibraryWritesRoundTripProfileOnly(t *testing.T) {
 	st := openTemp(t)
 	ctx := context.Background()
 	p := &Profile{Name: "Standard", Tier: RuleTierModerate, Graph: graphA, ResultPolicy: ResultPolicyKeepBoth}
@@ -108,13 +92,4 @@ func TestLibraryWritesLeaveLegacyColumnsEmpty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Renamed", again.Name)
 	assert.Equal(t, p.ID, again.ProfileID)
-
-	var flow, target, tier, policy string
-	require.NoError(t, st.db.QueryRowContext(ctx, `SELECT flow_json, target, rule_tier, result_policy FROM libraries WHERE id = ?`, lib.ID).Scan(&flow, &target, &tier, &policy))
-	assert.Empty(t, flow)
-	assert.Empty(t, target)
-	assert.Empty(t, tier)
-	// result_policy has a schema default; the profile says keep_both, the
-	// column keeps the default because the library write no longer sets it.
-	assert.Equal(t, "replace_if_smaller", policy)
 }
