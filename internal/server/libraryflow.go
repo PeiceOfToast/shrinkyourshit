@@ -214,6 +214,53 @@ func (m *LibraryManager) backfillFlows(ctx context.Context) {
 	}
 }
 
+// backfillProfiles gives every library without an encode profile one (encode
+// profiles wave, spec 5.2). It runs after backfillFlows, so a library that
+// compiled has its stored graph to hash; a library with no usable graph gets the
+// default seed (the default Target compiled to a flow). One log line names each
+// library and the profile it got. The step is idempotent: a second boot finds
+// every library assigned and logs nothing.
+func (m *LibraryManager) backfillProfiles(ctx context.Context) {
+	seed, err := defaultProfileGraph()
+	if err != nil {
+		m.log.Error("library: profile backfill: default graph", "err", err)
+		return
+	}
+	report, err := m.st.BackfillProfiles(ctx, seed)
+	if err != nil {
+		m.log.Error("library: profile backfill", "err", err)
+		return
+	}
+	for _, e := range report {
+		if e.Err != nil {
+			m.log.Error("library: profile backfill", "library", e.LibraryID, "err", e.Err)
+			continue
+		}
+		switch {
+		case e.Seeded:
+			m.log.Warn("library had no graph, seeded default profile", "library", e.LibraryName, "profile", e.ProfileName)
+		case e.Created:
+			m.log.Info("library profile created", "library", e.LibraryName, "profile", e.ProfileName)
+		default:
+			m.log.Info("library profile assigned", "library", e.LibraryName, "profile", e.ProfileName)
+		}
+	}
+}
+
+// defaultProfileGraph is the canonical graph of the default Target, the seed
+// for a library that has no stored graph.
+func defaultProfileGraph() (string, error) {
+	g, err := flow.TargetToFlow(flow.Default())
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(g)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
 // UpdateFlow validates and stores a flow graph from the API (PUT
 // /libraries/{id}/flow): the graph becomes the library's rule, the source
 // records the tier that produced it, and every file is re-evaluated against

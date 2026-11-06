@@ -297,6 +297,8 @@ func (s *Server) Start(ctx context.Context) {
 	// Libraries created before the flow columns exist get their canonical
 	// rule graph compiled and stored once (task 14, no manual migration).
 	s.libs.backfillFlows(ctx)
+	// Every library gets an encode profile once (task 70, spec 5.2).
+	s.libs.backfillProfiles(ctx)
 
 	libs, err := s.libs.List(ctx)
 	if err != nil {
