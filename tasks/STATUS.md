@@ -122,7 +122,7 @@ Tasks run in order, one at a time. `DECISIONS.md` stays read only.
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
 | 79 | 79-syscall-mount.md | done | PR #81 https://github.com/PeiceOfToast/shrinkyourshit/pull/81, squash 1804f3e, v1.11 fix queue, CI run 42265097035 green (9 checks incl. e2e and docker-arm64; attempt 1 e2e hung 25 min in its ffmpeg apt step, run cancelled and rerun, attempt 2 e2e green in 3m35s), make test exit 0 (go all packages ok, web vitest green), make lint exit 0 (go vet, golangci-lint 0 issues, spdx, eslint, prettier), DECISIONS.md unchanged, checklist 9/9 ticked; no real NFS or SMB mount yet (task 81), hostname source resolution risk recorded in tasks/79-notes.md |
-| 80 | 80-nfs-version-default.md | in_progress | branch task/80-nfs-version-default (PR to be opened by the supervisor); checklist 7/7 ticked, make test and make lint green, DECISIONS.md unchanged; G1 recommendation in tasks/80-notes.md |
+| 80 | 80-nfs-version-default.md | done | PR #82 https://github.com/PeiceOfToast/shrinkyourshit/pull/82, squash 4dfb29a, v1.11 fix queue, CI run 42279139724 green (9 checks incl. e2e and docker-arm64), make test exit 0 run by the supervisor (go all packages ok, web 69 files / 525 tests), make lint exit 0 (golangci 0 issues, spdx, eslint, prettier), DECISIONS.md unchanged, checklist 7/7 ticked; G1 SMB vers=3.1.1 recommendation in tasks/80-notes.md, real mounts still unproven (task 81) |
 | 81 | 81-verify-mount-fixes.md | todo | real-hardware verification of both fixes plus SMB, restart remount and the watchdog |
 
 ## v1.12 queue (drop the library rule columns)
