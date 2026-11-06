@@ -334,3 +334,10 @@ every library has a profile (0 without), tier and policy carried. The v1.10 orig
 - **G10. Not exercised: the NFS default options** (`vers=3,soft,timeo=50,retrans=2`). nfs1 used `vers=4.1`, the
   version the test bed proved with ganesha. Library creation and the profile edits were API calls, not the
   library form or the profile editor; storage add, mount, test and every failure path went through the WebUI.
+
+## Checks (bookkeeping rerun, 2026-11-06)
+
+make is not installed on this VM, so each `make` target was run by hand with the same commands.
+Go test results were served from the Go test cache for unchanged packages (`(cached)`).
+
+checks: go test ./... exit 0; go vet ./... exit 0; golangci-lint run exit 0 (0 issues); ./scripts/check-spdx.sh exit 0; web npm run test exit 0 (69 files, 524 tests); web npm run lint exit 0; web npm run format:check exit 0.

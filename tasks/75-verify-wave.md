@@ -27,10 +27,10 @@ The whole spec. Verification is evidence, not a self report.
 6. Docs, ROADMAP and STATUS updated.
 
 ## Acceptance
-- [ ] The mount table and both mountpoints are quoted in the notes with their real output.
-- [ ] The encode proof includes the ffmpeg command line and the profile it came from.
-- [ ] The migration proof includes row counts before and after.
-- [ ] `make test` and `make lint` green.
+- [x] The mount table and both mountpoints are quoted in the notes with their real output.
+- [x] The encode proof includes the ffmpeg command line and the profile it came from.
+- [x] The migration proof includes row counts before and after.
+- [x] `make test` and `make lint` green.
 
 ## Notes
 `tasks/75-notes.md` is the evidence file for this wave.
