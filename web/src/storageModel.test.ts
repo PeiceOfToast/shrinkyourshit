@@ -5,10 +5,14 @@ import { ApiError, type Storage } from './api'
 import {
   NFS_DEFAULT_OPTIONS,
   blankStorageForm,
+  checkTypedPath,
   fieldErrorsOf,
+  freeSpaceText,
   librariesUsing,
   removeText,
   storageBodyOf,
+  storageContaining,
+  storageCrumbs,
   storageFormOf,
   storageState,
 } from './storageModel'
@@ -163,5 +167,81 @@ describe('storageState', () => {
     expect(storageState(row({ mounted: true })).label).toBe('Mounted')
     expect(storageState(row({ enabled: true })).label).toBe('Not mounted')
     expect(storageState(row({ enabled: false })).label).toBe('Off')
+  })
+})
+
+describe('library path picker helpers (task 69)', () => {
+  const nas = row({
+    id: 'st-nas',
+    name: 'nas',
+    mountpoint: '/storage/nas',
+    mounted: true,
+  })
+  const off = row({
+    id: 'st-off',
+    name: 'off',
+    mountpoint: '/storage/off',
+    mounted: false,
+  })
+
+  it('finds the share that holds a path, longest mountpoint winning', () => {
+    const inner = row({
+      id: 'st-in',
+      name: 'nas/movies',
+      mountpoint: '/storage/nas/movies',
+    })
+    expect(storageContaining('/storage/nas/TV', [nas, off])?.id).toBe('st-nas')
+    expect(
+      storageContaining('/storage/nas/movies/2026', [nas, inner])?.id,
+    ).toBe('st-in')
+    expect(storageContaining('/storage/nas2/x', [nas])).toBeUndefined()
+    expect(storageContaining('/media/movies', [nas])).toBeUndefined()
+  })
+
+  it('keeps breadcrumbs inside the share, with the share name first', () => {
+    expect(storageCrumbs('/storage/nas/Movies/2026', nas)).toEqual([
+      { name: 'nas', path: '/storage/nas' },
+      { name: 'Movies', path: '/storage/nas/Movies' },
+      { name: '2026', path: '/storage/nas/Movies/2026' },
+    ])
+    expect(storageCrumbs('/storage/nas', nas)).toEqual([
+      { name: 'nas', path: '/storage/nas' },
+    ])
+  })
+
+  it('accepts a typed path inside a mounted share', () => {
+    const r = checkTypedPath('/storage/nas/Movies/', [nas, off])
+    expect(r).toEqual({ ok: true, path: '/storage/nas/Movies', storage: nas })
+  })
+
+  it('refuses a typed path outside every mounted share, with the reason', () => {
+    for (const typed of [
+      '/media/movies',
+      '/storage/nas2/x',
+      '/storage/nasty',
+    ]) {
+      const r = checkTypedPath(typed, [nas, off])
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.message).toMatch(/not inside a mounted storage/)
+    }
+  })
+
+  it('refuses a typed path inside a share that is not mounted', () => {
+    const r = checkTypedPath('/storage/off/Movies', [nas, off])
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toMatch(/off is not mounted/)
+  })
+
+  it('refuses relative paths and dot dot walks', () => {
+    expect(checkTypedPath('storage/nas', [nas]).ok).toBe(false)
+    expect(checkTypedPath('/storage/nas/../nas2', [nas]).ok).toBe(false)
+    expect(checkTypedPath('   ', [nas]).ok).toBe(false)
+  })
+
+  it('states free space only when both figures are known', () => {
+    expect(freeSpaceText(2_000_000_000, 4_000_000_000)).toBe(
+      '2.0 GB free of 4.0 GB',
+    )
+    expect(freeSpaceText(null, 4_000_000_000)).toBe('')
   })
 })

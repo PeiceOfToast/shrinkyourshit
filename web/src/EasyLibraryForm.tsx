@@ -7,10 +7,24 @@
  * the edit page is the only place codec names appear.
  */
 import { useId, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { createLibrary, type Library } from './api'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  browseStorage,
+  createLibrary,
+  getStorages,
+  type Library,
+  type Storage,
+} from './api'
 import Checkbox from './Checkbox'
 import { initialEasyValue, toEasyInput, type EasyFormValue } from './easyModel'
+import {
+  checkTypedPath,
+  freeSpaceText,
+  storageBrowseKey,
+  storageContaining,
+  storagesKey,
+} from './storageModel'
+import StorageBrowser from './StorageBrowser'
 import ErrorBox from './ErrorBox'
 import {
   AudioSlider,
@@ -21,7 +35,7 @@ import {
 import { FormActions, FormSection } from './FormSection'
 import FolderPickerModal from './FolderPickerModal'
 import FlowPreviewPanel from './FlowPreviewPanel'
-import { btn, btnGhost, btnPrimary } from './uiControls'
+import { btn, btnGhost, btnPrimary, input, link, select } from './uiControls'
 import { useToast } from './toastContext'
 
 export default function EasyLibraryForm({
@@ -43,8 +57,51 @@ export default function EasyLibraryForm({
     ...initial,
   })
   const [picking, setPicking] = useState(false)
+  const [typing, setTyping] = useState('')
+  const [typingError, setTypingError] = useState('')
+  /** null means "follow the path": the share holding the chosen folder. */
+  const [pickedShareId, setPickedShareId] = useState<string | null>(null)
   const set = (patch: Partial<EasyFormValue>) =>
     setValue((v) => ({ ...v, ...patch }))
+
+  // Storages the folder can come from (task 69). A failed read hides the
+  // storage choice and leaves the server folder picker, so the form still works.
+  const shareQuery = useQuery({
+    queryKey: storagesKey,
+    queryFn: getStorages,
+    select: (list) => list.items,
+    retry: false,
+  })
+  const shares: Storage[] = shareQuery.data ?? []
+  const containing = storageContaining(value.path, shares)
+  const pickedId = pickedShareId ?? containing?.id ?? ''
+  const share = shares.find((s) => s.id === pickedId)
+
+  // Free space for the chosen share, read from its top folder (the same
+  // listing the browser opens, so the cache is shared).
+  const spaceId = share?.id ?? ''
+  const spaceMount = share?.mountpoint ?? ''
+  const spaceQuery = useQuery({
+    queryKey: storageBrowseKey(spaceId, spaceMount),
+    queryFn: () => browseStorage(spaceId, spaceMount),
+    enabled: Boolean(share?.mounted),
+    retry: false,
+  })
+  const space = spaceQuery.data
+    ? freeSpaceText(spaceQuery.data.free_bytes, spaceQuery.data.total_bytes)
+    : ''
+
+  const useTypedPath = () => {
+    const checked = checkTypedPath(typing, shares)
+    if (!checked.ok) {
+      setTypingError(checked.message)
+      return
+    }
+    setTypingError('')
+    setPickedShareId(checked.storage.id)
+    set({ path: checked.path })
+    setTyping('')
+  }
 
   const create = useMutation({
     mutationFn: () =>
@@ -68,6 +125,51 @@ export default function EasyLibraryForm({
         title="Folder"
         description="The folder to watch. Subfolders are included."
       >
+        {shares.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <label htmlFor={`${helpId}-share`} className="text-body text-fg">
+              Storage
+            </label>
+            <select
+              id={`${helpId}-share`}
+              value={pickedId}
+              onChange={(e) => {
+                setPickedShareId(e.target.value)
+                setTypingError('')
+              }}
+              className={select}
+              data-testid="easy-storage-select"
+            >
+              <option value="">This server</option>
+              {shares.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.mounted ? '' : ' (not mounted)'}
+                </option>
+              ))}
+            </select>
+            {share && (
+              <p className="flex flex-wrap items-center gap-2 text-caption text-fg-muted">
+                <span
+                  className="rounded-control bg-raised px-2 py-0.5"
+                  data-testid="easy-storage-badge"
+                >
+                  {share.mounted ? 'Mounted' : 'Not mounted'}
+                </span>
+                {space && <span data-testid="easy-storage-space">{space}</span>}
+                {!share.mounted && (
+                  <span>
+                    Mount it on the{' '}
+                    <a href="/storage" className={link}>
+                      Storage page
+                    </a>{' '}
+                    before you add this folder.
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex gap-2">
           {hasPath ? (
             <p
@@ -88,12 +190,56 @@ export default function EasyLibraryForm({
           <button
             type="button"
             onClick={() => setPicking(true)}
+            disabled={share !== undefined && !share.mounted}
             className={`${btn} shrink-0`}
             data-testid="easy-choose-folder"
           >
             Choose…
           </button>
         </div>
+        <details
+          className="text-body text-fg-muted"
+          data-testid="easy-typed-path"
+        >
+          <summary className="inline-flex min-h-11 cursor-pointer items-center hover:text-fg">
+            Type the path instead
+          </summary>
+          <div className="mt-2 flex flex-col gap-2">
+            <label htmlFor={`${helpId}-typed`} className="text-caption">
+              Full path, inside a mounted storage, for example
+              /storage/nas/Movies
+            </label>
+            <div className="flex gap-2">
+              <input
+                id={`${helpId}-typed`}
+                value={typing}
+                onChange={(e) => {
+                  setTyping(e.target.value)
+                  setTypingError('')
+                }}
+                className={input}
+                data-testid="easy-typed-path-input"
+              />
+              <button
+                type="button"
+                onClick={useTypedPath}
+                className={`${btn} shrink-0`}
+                data-testid="easy-use-typed-path"
+              >
+                Use this path
+              </button>
+            </div>
+            {typingError && (
+              <p
+                role="alert"
+                className="text-caption text-danger"
+                data-testid="easy-typed-path-error"
+              >
+                {typingError}
+              </p>
+            )}
+          </div>
+        </details>
       </FormSection>
 
       <FormSection
@@ -169,7 +315,18 @@ export default function EasyLibraryForm({
         )}
       </FormActions>
 
-      {picking && (
+      {picking && share && (
+        <StorageBrowser
+          storage={share}
+          initialPath={value.path || undefined}
+          onClose={() => setPicking(false)}
+          onPick={(path) => {
+            set({ path })
+            setPicking(false)
+          }}
+        />
+      )}
+      {picking && !share && (
         <FolderPickerModal
           initialPath={value.path || undefined}
           onClose={() => setPicking(false)}
