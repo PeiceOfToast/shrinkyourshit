@@ -25,10 +25,10 @@ Spec 5.4. Every reader of `libraries.flow`, `libraries.easy`, `libraries.rule_ti
 4. Update `ARCHITECTURE.md` and `API.md`.
 
 ## Acceptance
-- [ ] No code path reads the legacy columns as truth any more, proven by grep output in the notes.
-- [ ] An old client payload still succeeds and the response marks the deprecated fields.
-- [ ] Docs updated and the removal task is in ROADMAP.
-- [ ] `make test` and `make lint` green.
+- [x] No code path reads the legacy columns as truth any more, proven by grep output in the notes.
+- [x] An old client payload still succeeds and the response marks the deprecated fields.
+- [x] Docs updated and the removal task is in ROADMAP.
+- [x] `make test` and `make lint` green.
 
 ## Notes
 Write the plan, the grep evidence and the deprecation message in `tasks/74-notes.md`.

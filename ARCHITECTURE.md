@@ -59,7 +59,7 @@ Status enums are fixed strings; do not add values without updating this file.
 
 **Kind (task 34):** what a file is, decided by extension, never by probing: `video | audio | subtitle | image | other`. The extension table lives in `internal/probe/kind.go` (`KindForPath`); unknown extensions are `other`, never an error. Only `internal/probe`, `internal/encoders` and `internal/flow` know what a Kind means for encoding — `store`, `queue` and `job` carry Kinds as opaque strings and hold no media assumptions of their own (AGENTS.md rule 9). A file whose kind is `image` or `other` (and subtitles standing alone) is never probed: its fingerprint is its identity and size.
 
-**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), rule_tier (basic | moderate | advanced, default basic; task 59: the editor the library offers, independent of the graph, changed only by its own column write so a downgrade never rewrites flow), watch bool, schedule (cron string or empty), result_policy, file_kinds (JSON array of Kind, default ["video"], at least one value, no duplicates), profile_id (task 73: the encode profile the library follows, NULL when none; while it is set the library runs the profile's graph, and its own flow, target and rule_tier stay as stored but do not run), created_at, updated_at, last_scan_at, last_scan (JSON summary of the last successful scan, empty when never scanned; task 34)`.
+**Library:** `id, name, path, target (JSON), easy (JSON, empty unless the library was saved from the easy screen), flow (JSON), flow_source (easy | steps | advanced), rule_tier (basic | moderate | advanced, default basic; task 59: the editor the library offers, independent of the graph, changed only by its own column write so a downgrade never rewrites flow), watch bool, schedule (cron string or empty), result_policy, file_kinds (JSON array of Kind, default ["video"], at least one value, no duplicates), profile_id (task 73: the encode profile the library follows; task 74: every library follows one, and the rule it runs is the profile's graph, tier and result policy; `flow`, `target`, `easy`, `flow_source`, `rule_tier` and `result_policy` are legacy columns, a rollback snapshot written on save and read by nothing that runs, dropped in v1.12), created_at, updated_at, last_scan_at, last_scan (JSON summary of the last successful scan, empty when never scanned; task 34)`.
 
 **Profile:** `id, name (unique), description, tier (basic | moderate | advanced), graph (JSON flow graph), result_policy (replace_if_smaller | replace | keep_both), created_at, updated_at` (task 71, spec 5.1). Libraries reference it through `profile_id`; deleting a profile is refused while one does. The scanner skips files whose kind is not in `file_kinds` before probing, counts them under `skipped_kinds`, and records a row that had them as satisfied with the reason `not the file type this library looks for`. A last_scan summary carries `{seen, probed, reused, skipped, skipped_kinds, queued, satisfied, missing, errors}` so the library detail page can show why a photos library is doing nothing.
 
@@ -406,15 +406,17 @@ Edge{ from, to, when }
     rename with a verified copy fallback) and removes the original only
     after the destination is verified at its expected size — replace
     policies remove it, keep-both keeps it.
-- Storage: libraries carry `flow_json` plus `flow_source` of `easy`,
-  `steps` or `advanced`. Easy mode and target-only saves keep writing
-  `target` and regenerate the equivalent flow
-  (`flow.TargetToFlow`); a target-only save with an unchanged Target
-  keeps a hand-built flow, so name/watch edits never destroy manual
-  steps. When both `target` and `flow` exist, `flow` wins and a mismatch
-  is logged at warn; `PUT /libraries/{id}/flow` re-syncs the stored Target
-  from the compiled flow so the compat column never lies. Legacy rows are
-  backfilled at startup and lazily compiled on read — no manual migration.
+- Storage (superseded by task 74 for the running path): a library's rule is
+  its encode profile's graph, tier and result policy, joined on read as
+  `ProfileGraph`, `ProfileTier` and `ProfileResultPolicy`. `LibraryFlow` reads
+  only the profile and fails with `ErrNoProfile` without one. The legacy
+  `flow_json`, `flow_source`, `target`, `easy`, `rule_tier` and `result_policy`
+  columns are read only by the boot migration (`legacyLibraryFlow`,
+  `BackfillProfiles`). Every library save writes them from the profile as a
+  snapshot for rollback, and nothing reads that snapshot as truth. The
+  removal is in ROADMAP v1.12. Before task 74, a library's own `flow_json`
+  was the rule and `target` the compat column; legacy rows were backfilled at
+  startup and compiled lazily on read.
 - Rule tiers (task 59, spec 6). `flow.RepresentableAt(graph, tier)` lists
   the steps a tier cannot express, one error per step, path `nodes[i].type`.
   Basic: only what `CompileEasyMode` regenerates (probe, the if_codec_not

@@ -701,6 +701,7 @@ No new endpoints. Settings and the heartbeat gain the Intel QSV opt-ins:
 
 Tier storage and the representability check (spec sections 6 and 8, decision 4).
 
+- Superseded by task 74: `PUT /api/v1/libraries/{id}/tier` answers `409 follows_profile` (the tier is the profile's; see task 74). The text below describes the removed v1.10 behaviour.
 - `PUT /api/v1/libraries/{id}/tier` with body `{"tier": "basic" | "moderate" | "advanced"}`.
   Admin only. Returns `200 {"tier": "...", "unrepresentable": [{path, message}]}`.
   An unknown tier is `400 invalid_request`; an unknown library is `404`.
@@ -811,8 +812,23 @@ Encode profiles (spec 5.3). A profile is a named, reusable graph with a tier and
 
 Library side of encode profiles (spec 5.1, 5.5). A library follows the graph of the profile it names, so editing a profile changes every library using it and switching a library's profile changes what it runs.
 
-- `POST /api/v1/libraries` and `PUT /api/v1/libraries/{id}` accept `profile_id`. It must name an existing profile, or the save is `400 invalid_request` ("no such profile") and nothing changes. An empty value detaches the library, which then runs its own stored flow again. A library created without `profile_id` (the old API) has none.
-- On update, `target` or `easy` is no longer required when `profile_id` is sent. A profile-only save keeps the library's stored target.
+- `POST /api/v1/libraries` and `PUT /api/v1/libraries/{id}` accept `profile_id`. It must name an existing profile, or the save is `400 invalid_request` ("no such profile") and nothing changes. Superseded by task 74: an empty value no longer detaches; see the task 74 section.
+- On update, `target` or `easy` is no longer required when `profile_id` is sent. Task 74 ignores both fields; a profile-only save switches the library to that profile.
 - A profile whose move step writes into the library folder is refused when a library attaches it: `400 invalid_flow` with the field error. A profile whose plugin step is not installed is `422 plugin_unavailable`. Profiles are not bound to one folder, so the move check runs at attach time, not when the profile is saved.
 - `LibraryDTO` gains `profile_id` (empty when none). `flow`, `flow_source` and `rule_tier` on the reply still describe the library's own stored columns, except that `flow` is the profile's graph while a profile is set.
-- `PUT /api/v1/libraries/{id}/flow` is refused with `409 follows_profile` while the library follows a profile. The flow belongs to the profile now; a flow saved to the library would never run. Edit the profile through `PUT /api/v1/profiles/{id}` instead.
+- `PUT /api/v1/libraries/{id}/flow` is refused with `409 follows_profile` while the library follows a profile. The flow belongs to the profile now; a flow saved to the library would never run. Edit the profile through `PUT /api/v1/profiles/{id}` instead. Task 74: every library follows a profile, so this is `409` for every library; a graph that fails validation is still `400 invalid_flow` first.
+
+### Task 74
+
+Result policy and tier move to the encode profile; the library's legacy rule fields are deprecated (spec 5.4, task file 74). Nothing reads the legacy columns any more. `libraries.flow_json`, `flow_source`, `target`, `easy`, `rule_tier` and `result_policy` are written from the profile as a snapshot on each library save, so a rollback to v1.10 finds the rule of the last save. The follow up removal is in ROADMAP (v1.12).
+
+- The library rule is the profile's graph, tier and result policy. `LibraryDTO` reports them: `flow` is the profile's graph, `rule_tier` the profile's tier, `result_policy` the profile's policy, `flow_source` is derived from the tier (`basic` gives `easy`, `moderate` gives `steps`, `advanced` gives `advanced`), `target` is the compiled view of that graph and `easy` is derived from it. None of these is an input any more.
+- `POST /api/v1/libraries` and `PUT /api/v1/libraries/{id}` ignore `target`, `easy` and `result_policy`. The request still succeeds. The reply carries `deprecated`, an array of `{field, message}` with one entry per ignored field that was sent. The array is always present: empty when the request sent `profile_id` and no legacy field.
+- `profile_id` decides the rule. On create, an absent or empty `profile_id` takes the default profile: the first profile in list order, the one the form pre-selects. A fresh install with no profile gets the default seed first.
+- On update, an absent or empty `profile_id` keeps the library's current profile. It never detaches. This replaces the task 73 rule that an empty value detaches. A library with no profile (only possible after a failed boot backfill) takes the default profile on its next save.
+- Whenever `profile_id` is absent from a save, the reply's `deprecated` list has a `profile_id` entry that names the profile the library follows, on create and on update.
+- `GET /api/v1/libraries/{id}/flow` runs the profile's graph and judges it at the profile's tier unless `?tier=` says otherwise. A library with no profile answers `409 no_profile`.
+- `PUT /api/v1/libraries/{id}/tier` answers `409 follows_profile` for a valid tier, with the message "the tier belongs to the encode profile this library follows; change it with PUT /api/v1/profiles/{id}". An invalid tier is still `400 invalid_request`, and an unknown library `404`. Nothing changes.
+- `PUT /api/v1/libraries/{id}/flow` keeps its validation first (`400 invalid_flow`), then answers `409 follows_profile` for every library.
+- Results of a job use the profile's result policy (the library's `result_policy` is deprecated).
+- At startup the server logs one warning per boot while any library row still holds a non empty legacy column (`flow_json`, `flow_source`, `target`, `easy`, `rule_tier` or `result_policy`), with the count. The snapshot keeps those columns filled, so the warning stays until the removal in v1.12.
