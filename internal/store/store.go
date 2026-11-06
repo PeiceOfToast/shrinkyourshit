@@ -29,30 +29,19 @@ const (
 	FileStatusMissing    = "missing"
 )
 
-// Library is a folder plus a Target and watch/schedule settings. Target,
-// easy and flow are opaque JSON validated by internal/flow (easy is the
-// easy-screen input that compiled to Target; empty when the library was
-// created from a full Target). flow_json is the canonical rule graph every
-// tier generates and edits; flow_source records its owner (easy, steps or
-// advanced). flow wins over target when both disagree (ARCHITECTURE.md).
+// Library is a folder plus its watch and schedule settings. The rule it runs
+// is the encode profile it follows (ProfileID); the library row holds no rule
+// of its own. The legacy rule columns (flow_json, flow_source, target, easy,
+// rule_tier, result_policy) are still in the schema until migration 0019 drops
+// them (v1.12, task 78): nothing here reads or writes them.
 type Library struct {
-	ID         string
-	Name       string
-	Path       string
-	TargetJSON string
-	EasyJSON   string
-	FlowJSON   string
-	FlowSource string // easy | steps | advanced; empty on legacy rows
-	// RuleTier is the legacy editor tier column (task 59). Since task 74 the
-	// tier is the profile's (ProfileTier); this column is a snapshot written
-	// on save for rollback and read by nothing that runs. Empty is stored as
-	// basic on create.
-	RuleTier     string
-	Watch        bool
-	Schedule     string // cron string or empty
-	ResultPolicy string // replace_if_smaller | replace | keep_both
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID        string
+	Name      string
+	Path      string
+	Watch     bool
+	Schedule  string // cron string or empty
+	CreatedAt time.Time
+	UpdatedAt time.Time
 	// LastScanAt is when a scan of this library last finished without
 	// error (task 19). Zero means "never scanned".
 	LastScanAt time.Time
@@ -67,7 +56,7 @@ type Library struct {
 	FileKinds []string
 	// ProfileID is the encode profile the library follows (encode profiles
 	// wave, spec 5). Empty means no profile: NULL in the database. Set by
-	// SetLibraryProfile or BackfillProfiles, never by the flow columns.
+	// SetLibraryProfile or BackfillProfiles.
 	ProfileID string
 	// ProfileGraph is the attached profile's graph JSON, joined on read
 	// (task 73, spec 5.1). Read only: writes ignore it. Empty when no
@@ -75,7 +64,6 @@ type Library struct {
 	ProfileGraph string
 	// ProfileTier and ProfileResultPolicy are the attached profile's tier and
 	// result policy, joined on read like ProfileGraph (task 74, spec 5.4).
-	// They are the rule the library runs; the columns above are legacy.
 	// Read only: writes ignore them. Empty when no profile is attached.
 	ProfileTier         string
 	ProfileResultPolicy string
@@ -253,7 +241,7 @@ const (
 	SettingStorageAllowedHosts = "storage_allowed_hosts"
 )
 
-// Rule tiers as stored in libraries.rule_tier (ARCHITECTURE.md; the typed
+// Rule tiers as stored in profiles.tier (ARCHITECTURE.md; the typed
 // values live in internal/flow). basic is the default for a new library.
 const (
 	RuleTierBasic    = "basic"

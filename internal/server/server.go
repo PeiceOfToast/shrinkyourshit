@@ -294,18 +294,13 @@ func (s *Server) Start(ctx context.Context) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.scanner.setContext(s.ctx)
 
-	// Libraries created before the flow columns exist get their canonical
-	// rule graph compiled and stored once (task 14, no manual migration).
-	s.libs.backfillFlows(ctx)
-	// Every library gets an encode profile once (task 70, spec 5.2).
+	// Every library gets an encode profile once (task 70, spec 5.2). The
+	// backfill reads no legacy rule column (task 76).
 	s.libs.backfillProfiles(ctx)
 	// A fresh install gets one default profile to select (task 71, spec 5.2).
 	if _, err := s.libs.defaultProfile(ctx); err != nil {
 		s.log.Error("server: default encode profile", "err", err)
 	}
-	// The legacy rule columns are a snapshot now (task 74): say so while any
-	// of them still holds data, so the removal is visibly still pending.
-	s.libs.logLegacyColumns(ctx)
 
 	libs, err := s.libs.List(ctx)
 	if err != nil {

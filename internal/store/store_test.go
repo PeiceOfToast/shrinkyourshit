@@ -24,12 +24,10 @@ func openTemp(t *testing.T) *SQLite {
 
 func validLibrary() *Library {
 	return &Library{
-		Name:         "Movies",
-		Path:         "/media/movies",
-		TargetJSON:   `{"video":{"codec":"hevc","quality":3},"audio":{"mode":"keep_all"},"subtitles":{"mode":"keep_all"},"container":"mkv"}`,
-		Watch:        true,
-		Schedule:     "0 3 * * *",
-		ResultPolicy: ResultPolicyReplaceIfSmaller,
+		Name:     "Movies",
+		Path:     "/media/movies",
+		Watch:    true,
+		Schedule: "0 3 * * *",
 	}
 }
 
@@ -78,10 +76,8 @@ func TestLibraryCRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, lib.Name, got.Name)
 	assert.Equal(t, lib.Path, got.Path)
-	assert.Equal(t, lib.TargetJSON, got.TargetJSON)
 	assert.True(t, got.Watch)
 	assert.Equal(t, "0 3 * * *", got.Schedule)
-	assert.Equal(t, ResultPolicyReplaceIfSmaller, got.ResultPolicy)
 
 	got.Name = "Series"
 	require.NoError(t, s.UpdateLibrary(ctx, got))
@@ -107,46 +103,6 @@ func TestLibraryCRUD(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotFound)
 	_, err = s.GetLibrary(ctx, "does-not-exist")
 	assert.ErrorIs(t, err, ErrNotFound)
-}
-
-// TestLibraryEasyRoundTrip covers the easy column (task 07): it persists on
-// create and update, and stays empty for target-only libraries. Existing
-// rows written before migration 0003 read back with an empty easy value.
-func TestLibraryEasyRoundTrip(t *testing.T) {
-	s := openTemp(t)
-	ctx := context.Background()
-
-	// An easy-mode library stores both the compiled target and the easy
-	// input that produced it.
-	lib := validLibrary()
-	lib.EasyJSON = `{"quality":3,"remove_subtitles":true,"audio":2}`
-	require.NoError(t, s.CreateLibrary(ctx, lib))
-	got, err := s.GetLibrary(ctx, lib.ID)
-	require.NoError(t, err)
-	assert.Equal(t, lib.EasyJSON, got.EasyJSON)
-
-	// Saving new easy state overwrites it.
-	got.EasyJSON = `{"quality":5,"remove_subtitles":false,"audio":4}`
-	require.NoError(t, s.UpdateLibrary(ctx, got))
-	updated, err := s.GetLibrary(ctx, lib.ID)
-	require.NoError(t, err)
-	assert.Equal(t, `{"quality":5,"remove_subtitles":false,"audio":4}`, updated.EasyJSON)
-
-	// A target-only library (advanced editor) has an empty easy value.
-	plain := validLibrary()
-	require.NoError(t, s.CreateLibrary(ctx, plain))
-	got, err = s.GetLibrary(ctx, plain.ID)
-	require.NoError(t, err)
-	assert.Empty(t, got.EasyJSON)
-
-	// A row written before migration 0003 (easy column default '') lists
-	// with an empty easy value rather than failing the scan.
-	libs, err := s.ListLibraries(ctx)
-	require.NoError(t, err)
-	require.Len(t, libs, 2)
-	for _, l := range libs {
-		assert.NotNil(t, l)
-	}
 }
 
 // TestLibraryLastScanTime covers the last_scan_at column (task 19): a fresh
@@ -427,14 +383,6 @@ func TestEnumValidationRejectsBadValues(t *testing.T) {
 
 	lib := validLibrary()
 	require.NoError(t, s.CreateLibrary(ctx, lib))
-
-	// Result policy.
-	bad := validLibrary()
-	bad.ResultPolicy = "overwrite_always"
-	assert.Error(t, s.CreateLibrary(ctx, bad))
-	bad2 := validLibrary()
-	bad2.ResultPolicy = ResultPolicyKeepBoth
-	assert.NoError(t, s.CreateLibrary(ctx, bad2))
 
 	// File status.
 	for _, status := range []string{"gone", "", "SATISFIED"} {

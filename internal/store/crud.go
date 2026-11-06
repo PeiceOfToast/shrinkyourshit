@@ -11,7 +11,7 @@ import (
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, ''), COALESCE((SELECT graph FROM profiles WHERE profiles.id = libraries.profile_id), ''), COALESCE((SELECT tier FROM profiles WHERE profiles.id = libraries.profile_id), ''), COALESCE((SELECT result_policy FROM profiles WHERE profiles.id = libraries.profile_id), '')`
+const libraryColumns = `id, name, path, watch, schedule, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, ''), COALESCE((SELECT graph FROM profiles WHERE profiles.id = libraries.profile_id), ''), COALESCE((SELECT tier FROM profiles WHERE profiles.id = libraries.profile_id), ''), COALESCE((SELECT result_policy FROM profiles WHERE profiles.id = libraries.profile_id), '')`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
@@ -24,7 +24,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 		lastScanS string
 		fileKinds string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID, &l.ProfileGraph, &l.ProfileTier, &l.ProfileResultPolicy); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &watch, &l.Schedule, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID, &l.ProfileGraph, &l.ProfileTier, &l.ProfileResultPolicy); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
@@ -43,15 +43,12 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 // lastScanSummary receives the raw last_scan summary text.
 // fileKinds receives the raw file_kinds text; the caller parses it.
 func libraryDest(l *Library, watch *string, created, updated, lastScan, lastScanSummary, fileKinds *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID, &l.ProfileGraph, &l.ProfileTier, &l.ProfileResultPolicy}
+	return []any{&l.ID, &l.Name, &l.Path, watch, &l.Schedule, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID, &l.ProfileGraph, &l.ProfileTier, &l.ProfileResultPolicy}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled
 // when empty.
 func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
-	if err := validateResultPolicy(l.ResultPolicy); err != nil {
-		return err
-	}
 	if l.ID == "" {
 		l.ID = NewID()
 	}
@@ -60,11 +57,11 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 		l.CreatedAt = now
 	}
 	l.UpdatedAt = now
-	if l.RuleTier == "" {
-		l.RuleTier = RuleTierBasic // a library with no tier edits the easy shape
-	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, profile_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, l.RuleTier, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID))
+	// target is NOT NULL with no default (0001_init.sql) and the schema is not
+	// changed until task 78, so the insert names it with an empty literal. It
+	// is not the rule: nothing reads it and the Library struct has no field for it.
+	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, target, watch, schedule, created_at, updated_at, last_scan_at, last_scan, file_kinds, profile_id) VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.Name, l.Path, fmtBool(l.Watch), l.Schedule, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID))
 	if err != nil {
 		return fmt.Errorf("store: create library: %w", err)
 	}
@@ -98,12 +95,9 @@ func (s *SQLite) ListLibraries(ctx context.Context) ([]*Library, error) {
 
 // UpdateLibrary overwrites an existing library. UpdatedAt is refreshed.
 func (s *SQLite) UpdateLibrary(ctx context.Context, l *Library) error {
-	if err := validateResultPolicy(l.ResultPolicy); err != nil {
-		return err
-	}
 	l.UpdatedAt = nowUTC()
-	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, easy = ?, flow_json = ?, flow_source = ?, rule_tier = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ?, last_scan = ?, file_kinds = ?, profile_id = ? WHERE id = ?`,
-		l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, l.RuleTier, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID), l.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, watch = ?, schedule = ?, updated_at = ?, last_scan = ?, file_kinds = ?, profile_id = ? WHERE id = ?`,
+		l.Name, l.Path, fmtBool(l.Watch), l.Schedule, fmtTime(l.UpdatedAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID), l.ID)
 	if err != nil {
 		return fmt.Errorf("store: update library: %w", err)
 	}

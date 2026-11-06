@@ -62,42 +62,59 @@ func TestRuleTierMigrationMatchesFlowSource(t *testing.T) {
 	}
 	require.NoError(t, db.Close())
 
-	// The new release applies 0016 on open and every row gets its tier.
+	// The new release applies 0016 on open and every row gets its tier. The
+	// column is read raw: the Library struct no longer carries it (task 76).
 	st, err := New(path)
 	require.NoError(t, err)
 	defer func() { _ = st.Close() }()
-	libs, err := st.ListLibraries(ctx)
-	require.NoError(t, err)
 	got := map[string]string{}
-	for _, l := range libs {
-		got[l.ID] = l.RuleTier
+	rowsOut, err := st.db.QueryContext(ctx, `SELECT id, rule_tier FROM libraries`)
+	require.NoError(t, err)
+	for rowsOut.Next() {
+		var id, tier string
+		require.NoError(t, rowsOut.Scan(&id, &tier))
+		got[id] = tier
 	}
+	require.NoError(t, rowsOut.Err())
+	require.NoError(t, rowsOut.Close())
 	require.Len(t, got, len(rows))
 	for _, r := range rows {
 		assert.Equal(t, r.wantTier, got[r.id], "library %s (flow_source %q)", r.id, r.source)
 	}
 }
 
-// TestCreateLibraryDefaultsRuleTier: a library created without a tier is
-// stored as basic, and a save made from a fresh read keeps the tier the
-// library already has.
-func TestCreateLibraryDefaultsRuleTier(t *testing.T) {
+// TestLibraryWritesLeaveLegacyColumnsEmpty: a library created and then updated
+// through the store round trips with its profile only. The six legacy rule
+// columns are no longer written, so they keep their column defaults (task 76).
+func TestLibraryWritesLeaveLegacyColumnsEmpty(t *testing.T) {
 	st := openTemp(t)
 	ctx := context.Background()
+	p := &Profile{Name: "Standard", Tier: RuleTierModerate, Graph: graphA, ResultPolicy: ResultPolicyKeepBoth}
+	require.NoError(t, st.CreateProfile(ctx, p))
+
 	lib := validLibrary()
+	lib.ProfileID = p.ID
 	require.NoError(t, st.CreateLibrary(ctx, lib))
 	got, err := st.GetLibrary(ctx, lib.ID)
 	require.NoError(t, err)
-	assert.Equal(t, RuleTierBasic, got.RuleTier)
+	assert.Equal(t, p.ID, got.ProfileID)
+	assert.Equal(t, graphA, got.ProfileGraph)
+	assert.Equal(t, RuleTierModerate, got.ProfileTier)
+	assert.Equal(t, ResultPolicyKeepBoth, got.ProfileResultPolicy)
 
-	// The tier is written through the library row (task 74: the tier is the
-	// profile's; the column is a legacy snapshot, so the write is direct).
-	fresh, err := st.GetLibrary(ctx, lib.ID)
-	require.NoError(t, err)
-	fresh.RuleTier = RuleTierModerate
-	fresh.Name = "Renamed"
-	require.NoError(t, st.UpdateLibrary(ctx, fresh))
+	got.Name = "Renamed"
+	require.NoError(t, st.UpdateLibrary(ctx, got))
 	again, err := st.GetLibrary(ctx, lib.ID)
 	require.NoError(t, err)
-	assert.Equal(t, RuleTierModerate, again.RuleTier)
+	assert.Equal(t, "Renamed", again.Name)
+	assert.Equal(t, p.ID, again.ProfileID)
+
+	var flow, target, tier, policy string
+	require.NoError(t, st.db.QueryRowContext(ctx, `SELECT flow_json, target, rule_tier, result_policy FROM libraries WHERE id = ?`, lib.ID).Scan(&flow, &target, &tier, &policy))
+	assert.Empty(t, flow)
+	assert.Empty(t, target)
+	assert.Empty(t, tier)
+	// result_policy has a schema default; the profile says keep_both, the
+	// column keeps the default because the library write no longer sets it.
+	assert.Equal(t, "replace_if_smaller", policy)
 }

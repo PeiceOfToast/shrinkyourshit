@@ -49,13 +49,13 @@ tests that touch those fields, and the doc sentences that describe the snapshot 
 
 ## Acceptance
 
-- [ ] `store.Library` has no field for the six columns, and no query selects or writes them (grep
+- [x] `store.Library` has no field for the six columns, and no query selects or writes them (grep
       output in the notes).
-- [ ] Boot no longer calls `backfillFlows` or `logLegacyColumns`, and `BackfillProfiles` reads no
+- [x] Boot no longer calls `backfillFlows` or `logLegacyColumns`, and `BackfillProfiles` reads no
       legacy column (test with a v1.11 shaped database).
-- [ ] A v1.11 database with filled legacy columns opens and serves libraries unchanged (test).
-- [ ] Docs updated.
-- [ ] `make test` and `make lint` green.
+- [x] A v1.11 database with filled legacy columns opens and serves libraries unchanged (test).
+- [x] Docs updated.
+- [x] `make test` and `make lint` green.
 
 ## Notes
 

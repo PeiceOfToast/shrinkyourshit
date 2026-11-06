@@ -49,7 +49,7 @@ type Store interface {
 	// profiles API (task 71). DeleteProfile refuses with ErrProfileInUse.
 	UpdateProfile(ctx context.Context, p *Profile) error
 	DeleteProfile(ctx context.Context, id string) error
-	BackfillProfiles(ctx context.Context, fallbackGraph string) ([]ProfileBackfill, error)
+	BackfillProfiles(ctx context.Context, profileID string) ([]ProfileBackfill, error)
 
 	// Files. UpsertFile keys on (LibraryID, Path): the scanner calls it
 	// for new and changed files alike.

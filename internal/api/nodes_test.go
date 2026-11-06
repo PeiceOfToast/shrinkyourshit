@@ -367,9 +367,7 @@ func TestNodeStatsAggregate(t *testing.T) {
 	mux := New("v0.0.0", testStatic(), svc)
 
 	ctx := context.Background()
-	lib := &store.Library{ID: "lib-1", Name: "Movies", Path: "/media/movies",
-		TargetJSON: `{"video":{"codec":"hevc","quality":3,"reencode_if_same_codec":false},"audio":{"mode":"keep_all","preferred_languages":["eng"],"compact_codec":"aac"},"subtitles":{"mode":"keep_all","preferred_languages":["eng"],"extract_removed":false},"container":"mkv"}`,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller}
+	lib := &store.Library{ID: "lib-1", Name: "Movies", Path: "/media/movies"}
 	require.NoError(t, counting.CreateLibrary(ctx, lib))
 	file := &store.File{ID: "file-1", LibraryID: lib.ID, Path: "/media/movies/movie.mkv", Status: store.FileStatusSatisfied}
 	require.NoError(t, counting.UpsertFile(ctx, file))
