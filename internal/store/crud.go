@@ -11,7 +11,7 @@ import (
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, '')`
+const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, ''), COALESCE((SELECT graph FROM profiles WHERE profiles.id = libraries.profile_id), '')`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
@@ -24,7 +24,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 		lastScanS string
 		fileKinds string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID, &l.ProfileGraph); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
@@ -43,7 +43,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 // lastScanSummary receives the raw last_scan summary text.
 // fileKinds receives the raw file_kinds text; the caller parses it.
 func libraryDest(l *Library, watch *string, created, updated, lastScan, lastScanSummary, fileKinds *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID}
+	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID, &l.ProfileGraph}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled

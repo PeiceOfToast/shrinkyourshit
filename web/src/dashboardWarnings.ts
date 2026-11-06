@@ -5,7 +5,8 @@
  * are unit-testable without React. Every warning names the cause and
  * links to the place that fixes it.
  */
-import type { Job, Node, Stats } from './api'
+import type { Job, Node, Profile, Stats } from './api'
+import { tierLabel } from './tierModel'
 
 export interface DashboardWarning {
   /** Stable id, used as the test id on the surface. */
@@ -59,6 +60,12 @@ export function computeWarnings(input: {
    * which the server mounts at startup. Login off with mounts is standing.
    */
   storage?: { mounts: number; loginEnabled: boolean }
+  /**
+   * Encode profiles (task 73, spec 5.5). A profile whose own tier cannot
+   * show one of its steps warns once for each library that follows it, so
+   * the warning names the library and the profile.
+   */
+  profiles?: Profile[]
 }): DashboardWarning[] {
   const { nodes, jobs, stats, now } = input
   const warnings: DashboardWarning[] = []
@@ -111,6 +118,21 @@ export function computeWarnings(input: {
       linkTo: '/nodes',
       linkLabel: 'Go to Nodes',
     })
+  }
+
+  for (const p of input.profiles ?? []) {
+    const hidden = p.unrepresentable?.length ?? 0
+    if (hidden === 0) continue
+    for (const [i, lib] of (p.used_by_names ?? []).entries()) {
+      warnings.push({
+        id: `profile-unrepresentable-${p.id}-${i}`,
+        message: `${lib} follows the profile “${p.name}”. ${
+          hidden === 1 ? 'One step' : `${hidden} steps`
+        } in it cannot be shown or changed in the ${tierLabel(p.tier)} editor. Open the profile to see them.`,
+        linkTo: `/encode/profiles/${p.id}`,
+        linkLabel: 'Go to the profile',
+      })
+    }
   }
 
   // Heartbeat lost: a node that should be running has not checked in.

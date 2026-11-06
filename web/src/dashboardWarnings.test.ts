@@ -5,7 +5,7 @@
  * React, timestamps injected so the windows are exact.
  */
 import { describe, expect, it } from 'vitest'
-import type { Job, Node } from './api'
+import type { Job, Node, Profile } from './api'
 import { computeWarnings, HEARTBEAT_STALE_MS } from './dashboardWarnings'
 
 const NOW = Date.parse('2026-10-29T12:00:00Z')
@@ -239,5 +239,46 @@ describe('storage login warning (task 68, spec 4.6)', () => {
       computeWarnings({ ...base, storage: { mounts: 0, loginEnabled: false } }),
     ).toHaveLength(0)
     expect(computeWarnings({ ...base })).toHaveLength(0)
+  })
+})
+
+describe('encode profile warning (task 73, spec 5.5)', () => {
+  const base = { nodes: [], jobs: [], stats: { queued: 0 }, now: NOW }
+  const profile = (overrides: Record<string, unknown> = {}) =>
+    ({
+      id: 'prof-1',
+      name: 'Small files',
+      description: '',
+      tier: 'basic',
+      result_policy: 'replace_if_smaller',
+      graph: { schema: 1, nodes: [], edges: [] },
+      used_by: 2,
+      used_by_names: ['Movies', 'TV'],
+      unrepresentable: [{ path: 'nodes.raw_args', message: 'needs advanced' }],
+      created_at: '',
+      updated_at: '',
+      ...overrides,
+    }) as Profile
+
+  it('warns once per library that follows a profile its tier cannot show, naming both', () => {
+    const warnings = computeWarnings({ ...base, profiles: [profile()] }).filter(
+      (w) => w.id.startsWith('profile-unrepresentable-'),
+    )
+    expect(warnings).toHaveLength(2)
+    expect(warnings[0].message).toContain('Movies')
+    expect(warnings[0].message).toContain('“Small files”')
+    expect(warnings[0].message).toContain('Basic editor')
+    expect(warnings[0].linkTo).toBe('/encode/profiles/prof-1')
+    expect(warnings[1].message).toContain('TV')
+  })
+
+  it('stays quiet when every step fits the profile tier, or before the list loads', () => {
+    expect(
+      computeWarnings({
+        ...base,
+        profiles: [profile({ unrepresentable: [] })],
+      }).some((w) => w.id.startsWith('profile-unrepresentable-')),
+    ).toBe(false)
+    expect(computeWarnings({ ...base, profiles: undefined })).toHaveLength(0)
   })
 })

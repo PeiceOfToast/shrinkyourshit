@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The task-07 acceptance browser test: choose a folder, slider at 3,
- * remove subs, audio 2, Start — the created library request must carry the
- * easy object that compiles to the expected Target JSON (the Go side
- * asserts the compilation itself).
+ * The library form (task 07, rebuilt in task 73): choose a folder, choose an
+ * encode profile, Start. The created library request carries the folder, the
+ * profile id and the watch flag. The form no longer holds sliders; the
+ * profile's plain-language steps show under the picker.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it } from 'vitest'
 import EasyLibraryForm from './EasyLibraryForm'
 import { ToastProvider } from './toast'
-import { installFetchMock, type FetchMock } from './test/fetchMock'
+import {
+  installFetchMock,
+  type FetchMock,
+  type MockRoute,
+} from './test/fetchMock'
 
 function renderForm() {
   const client = new QueryClient({
@@ -26,6 +30,43 @@ function renderForm() {
   )
 }
 
+/** The profile list the picker reads: the boot seed plus one Moderate. */
+function profileList() {
+  const profile = (id: string, name: string, tier: string, nodes: number) => ({
+    id,
+    name,
+    description: '',
+    tier,
+    result_policy: 'replace_if_smaller',
+    graph: {
+      schema: 1,
+      nodes: Array.from({ length: nodes }, (_, i) => ({
+        id: `n${i}`,
+        type: 'probe',
+      })),
+      edges: [],
+    },
+    used_by: 0,
+    used_by_names: [],
+    unrepresentable: [],
+    created_at: '',
+    updated_at: '',
+  })
+  return {
+    items: [
+      profile('prof-basic', 'Default (basic)', 'basic', 2),
+      profile('prof-moderate', 'Small files', 'moderate', 3),
+    ],
+    total: 2,
+  }
+}
+
+const PROFILES_ROUTE: MockRoute = {
+  method: 'GET',
+  match: /\/api\/v1\/profiles$/,
+  body: profileList(),
+}
+
 let mock: FetchMock
 
 afterEach(() => mock?.restore())
@@ -34,6 +75,7 @@ describe('EasyLibraryForm', () => {
   it('walks the easy screen and posts the easy object', async () => {
     let created = false
     mock = installFetchMock([
+      PROFILES_ROUTE,
       {
         method: 'GET',
         match: /\/api\/v1\/fs\/browse$/,
@@ -113,10 +155,10 @@ describe('EasyLibraryForm', () => {
     )
     expect(screen.getByTestId('easy-folder')).toHaveTextContent('/media/movies')
 
-    // Slider at 3, remove subs, audio 2; watch stays on by default.
-    fireEvent.click(screen.getByTestId('quality-stop-3'))
-    fireEvent.click(screen.getByTestId('subtitles-checkbox'))
-    fireEvent.click(screen.getByTestId('audio-stop-2'))
+    // The first profile is chosen by default; watch stays on.
+    expect(screen.getByTestId('library-profile-select')).toHaveValue(
+      'prof-basic',
+    )
     expect(screen.getByTestId('easy-watch-checkbox')).toBeChecked()
 
     fireEvent.click(screen.getByTestId('easy-start'))
@@ -126,13 +168,13 @@ describe('EasyLibraryForm', () => {
     require1(posts)
     expect(posts[0].body).toEqual({
       path: '/media/movies',
-      easy: { quality: 3, remove_subtitles: true, audio: 2 },
+      profile_id: 'prof-basic',
       watch: true,
     })
   })
 
   it('disables Start until a folder is chosen', () => {
-    mock = installFetchMock([])
+    mock = installFetchMock([PROFILES_ROUTE])
     renderForm()
     expect(screen.getByTestId('easy-start')).toBeDisabled()
     expect(screen.getByTestId('easy-folder-empty')).toHaveTextContent(
@@ -140,100 +182,60 @@ describe('EasyLibraryForm', () => {
     )
   })
 
-  it('lists one plain language line per generated step in "what this does"', async () => {
-    // The server compiles the easy input; the panel shows one line per
-    // step (task 14 acceptance). The lines arrive from POST /flows/preview.
-    const steps = [
-      {
-        id: 'probe',
-        type: 'probe',
-        plain: 'Look inside the file to see what it is.',
-      },
-      {
-        id: 'transcode_video',
-        type: 'transcode_video',
-        plain:
-          'Only when the video is not HEVC: Encode the video as HEVC at quality 3 of 5.',
-      },
-      {
-        id: 'remux_container',
-        type: 'remux_container',
-        plain: 'Put everything into a MKV file.',
-      },
-      {
-        id: 'convert_audio',
-        type: 'convert_audio',
-        plain: 'Keep every audio track exactly as it is.',
-      },
-      { id: 'subtitles', type: 'subtitles', plain: 'Keep all subtitles.' },
-    ]
+  it('shows the chosen profile in plain language and posts that profile', async () => {
+    // The summary is the server's rendering of the profile's own graph, so
+    // the lines follow the profile the user picked, not a copy in the UI.
     mock = installFetchMock([
+      PROFILES_ROUTE,
       {
         method: 'POST',
         match: /\/api\/v1\/flows\/preview$/,
         bodyFn: (ctx) => {
-          // The preview carries the easy input the panel compiled.
-          expect(ctx.body).toMatchObject({ easy: { quality: 3, audio: 1 } })
-          return { graph: { schema: 1, nodes: [], edges: [] }, steps }
+          const graph = ctx.body as { graph: { nodes: unknown[] } }
+          return {
+            graph: graph.graph,
+            steps: [
+              {
+                id: 'n0',
+                type: 'probe',
+                plain: `Steps for a profile of ${graph.graph.nodes.length} nodes.`,
+              },
+            ],
+          }
         },
       },
     ])
     renderForm()
 
-    // Collapsed by default.
-    expect(screen.queryByTestId('flow-preview')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('flow-preview-toggle'))
-
-    const lines = await waitFor(() => {
-      const els = screen.getAllByTestId('flow-preview-line')
-      expect(els).toHaveLength(steps.length)
-      return els
+    await waitFor(() =>
+      expect(screen.getByTestId('profile-summary-line')).toHaveTextContent(
+        'Steps for a profile of 2 nodes.',
+      ),
+    )
+    fireEvent.change(screen.getByTestId('library-profile-select'), {
+      target: { value: 'prof-moderate' },
     })
-    lines.forEach((line, i) => {
-      expect(line.textContent).toContain(steps[i].plain)
-    })
-  })
-
-  it('updates the preview lines when the sliders move', async () => {
-    mock = installFetchMock([
-      {
-        method: 'POST',
-        match: /\/api\/v1\/flows\/preview$/,
-        body: {
-          graph: { schema: 1, nodes: [], edges: [] },
-          steps: [
-            {
-              id: 'probe',
-              type: 'probe',
-              plain: 'Look inside the file to see what it is.',
-            },
-          ],
-        },
-      },
-    ])
-    renderForm()
-    fireEvent.click(screen.getByTestId('flow-preview-toggle'))
-    await waitFor(() => screen.getAllByTestId('flow-preview-line'))
-    // Moving the audio slider re-runs the preview with the new input.
-    fireEvent.click(screen.getByTestId('audio-stop-4'))
-    await waitFor(() => {
-      const posts = mock.calls('POST', /\/api\/v1\/flows\/preview$/)
-      expect(posts.at(-1)?.body).toMatchObject({ easy: { audio: 4 } })
-    })
+    await waitFor(() =>
+      expect(screen.getByTestId('profile-summary-line')).toHaveTextContent(
+        'Steps for a profile of 3 nodes.',
+      ),
+    )
+    expect(screen.getByTestId('library-profile-select')).toHaveValue(
+      'prof-moderate',
+    )
+    expect(screen.queryByTestId('easy-quality')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('flow-preview-toggle')).not.toBeInTheDocument()
   })
 
   it('shows the failure message when the server rejects the request', async () => {
     mock = installFetchMock([
-      {
-        method: 'GET',
-        match: /\/api\/v1\/fs\/browse$/,
-        body: { path: '/', parent: '', entries: [] },
-      },
+      PROFILES_ROUTE,
+      { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
       {
         method: 'POST',
         match: /\/api\/v1\/libraries$/,
         status: 400,
-        body: { error: 'invalid easy audio', code: 'invalid_request' },
+        body: { error: 'invalid profile', code: 'invalid_request' },
       },
     ])
     const client = new QueryClient({
@@ -242,14 +244,21 @@ describe('EasyLibraryForm', () => {
     render(
       <QueryClientProvider client={client}>
         <ToastProvider>
-          <EasyLibraryForm initial={{ path: '/media/movies' }} />
+          <EasyLibraryForm />
         </ToastProvider>
       </QueryClientProvider>,
     )
+    await screen.findByTestId('easy-storage-select')
+    fireEvent.click(screen.getByText('Type the path instead'))
+    fireEvent.change(screen.getByTestId('easy-typed-path-input'), {
+      target: { value: '/storage/nas/Movies' },
+    })
+    fireEvent.click(screen.getByTestId('easy-use-typed-path'))
+    await waitFor(() => expect(screen.getByTestId('easy-start')).toBeEnabled())
     fireEvent.click(screen.getByTestId('easy-start'))
     await waitFor(() =>
       expect(screen.getByTestId('easy-error')).toHaveTextContent(
-        'invalid easy audio',
+        'invalid profile',
       ),
     )
   })
@@ -305,6 +314,7 @@ function storageListing(path: string) {
 describe('EasyLibraryForm storage picker (task 69)', () => {
   it('picks a folder inside a storage and posts that path', async () => {
     mock = installFetchMock([
+      PROFILES_ROUTE,
       { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
       {
         method: 'GET',
@@ -366,6 +376,7 @@ describe('EasyLibraryForm storage picker (task 69)', () => {
 
   it('refuses a typed path outside every mounted storage, with the reason', async () => {
     mock = installFetchMock([
+      PROFILES_ROUTE,
       { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
       {
         method: 'GET',
@@ -391,6 +402,7 @@ describe('EasyLibraryForm storage picker (task 69)', () => {
 
   it('accepts a typed path inside a mounted storage', async () => {
     mock = installFetchMock([
+      PROFILES_ROUTE,
       { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
       {
         method: 'GET',
@@ -417,6 +429,7 @@ describe('EasyLibraryForm storage picker (task 69)', () => {
 
   it('refuses to browse a share that is not mounted', async () => {
     mock = installFetchMock([
+      PROFILES_ROUTE,
       { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
     ])
     renderForm()

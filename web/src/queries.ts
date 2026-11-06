@@ -6,7 +6,13 @@
  * refresh stays happy.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getMe, getSetupStatus, getUpdateStatus, type SetupStatus } from './api'
+import {
+  getMe,
+  getSetupStatus,
+  getUpdateStatus,
+  listProfiles,
+  type SetupStatus,
+} from './api'
 
 export const setupStatusKey = ['setup-status'] as const
 export const meKey = ['me'] as const
@@ -41,4 +47,13 @@ export function useMarkSetupComplete() {
   return (status: SetupStatus) => {
     client.setQueryData<SetupStatus>(setupStatusKey, status)
   }
+}
+
+/** Every profile, oldest first (the list page and the pickers share it). */
+export function useProfiles() {
+  return useQuery({
+    queryKey: ['profiles'],
+    queryFn: listProfiles,
+    select: (list) => list.items,
+  })
 }

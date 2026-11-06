@@ -132,8 +132,16 @@ const cases: {
     path: '/libraries/lib-1/edit',
     title: 'Edit library · Movies · ShrinkYourShit',
   },
-  { path: '/libraries/lib-1/rules', title: 'Rules · Movies · ShrinkYourShit' },
-  { path: '/libraries/lib-1/flow', title: 'Rules · Movies · ShrinkYourShit' },
+  // The old rule routes redirect (task 73): this library follows no profile,
+  // so they land on its edit page, where a profile is chosen.
+  {
+    path: '/libraries/lib-1/rules',
+    title: 'Edit library · Movies · ShrinkYourShit',
+  },
+  {
+    path: '/libraries/lib-1/flow',
+    title: 'Edit library · Movies · ShrinkYourShit',
+  },
   { path: '/nodes', title: 'Nodes · ShrinkYourShit' },
   { path: '/storage', title: 'Storage · ShrinkYourShit' },
   { path: '/encode', title: 'Encode settings · ShrinkYourShit' },

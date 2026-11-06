@@ -2,8 +2,8 @@
 
 /**
  * Library detail (tasks 07, 13, 19 and 44). Spec 5.6: a PageHeader with the
- * library's actions (Rules, Edit, Scan now), a summary Card with four
- * numbers and the rules in plain language, then the file list. The list
+ * library's actions (Profile, Edit, Scan now), a summary Card with four
+ * numbers and the inherited encode profile in plain language, then the file list. The list
  * carries before and after, the saved size with its ratio, the encoder in
  * plain words and a History action that opens the per-file job history.
  * Search, sort and filtering happen server side (q, sort, dir); the browser
@@ -18,17 +18,16 @@ import {
   cancelJob,
   getFiles,
   getLibrary,
-  getLibraryFlow,
+  getProfile,
   getStats,
   previewFlow,
-  putLibraryTier,
   retryJob,
   scanLibrary,
   type FileItem,
   type Library,
-  type RuleTier,
 } from './api'
 import Badge, { type BadgeTone } from './Badge'
+import Banner from './Banner'
 import Card from './Card'
 import ConfirmDialog from './ConfirmDialog'
 import DataList, { type Column } from './DataList'
@@ -45,10 +44,9 @@ import {
 import { kindLabel, KIND_AGNOSTIC_STEPS } from './kinds'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
-import SegmentedControl from './SegmentedControl'
 import StatusChip from './StatusChip'
 import { SkeletonRows } from './skeleton'
-import { TIER_OPTIONS, isLocked, tierLabel } from './tierModel'
+import { isLocked, tierLabel } from './tierModel'
 import { UnrepresentableBanner } from './TierNotices'
 import { useToast } from './toastContext'
 import {
@@ -128,13 +126,6 @@ function isCancellable(f: FileItem): boolean {
 function formatRatio(before: number, after: number): string {
   if (after <= 0 || before <= 0) return '—'
   return `${(before / after).toFixed(1)}×`
-}
-
-/** The tier a library runs, as the word the Rules page uses. */
-function tierWord(source: string): string {
-  if (source === 'easy') return 'Easy'
-  if (source === 'advanced') return 'Advanced'
-  return 'Steps'
 }
 
 /** The file name, and the path under the library when it differs from it. */
@@ -234,32 +225,23 @@ export default function LibraryDetailPage() {
         offset: page * pageSize,
       }),
   })
-  // The target in plain language: the same server-rendered lines the easy
-  // screen's "what this does" panel shows — the UI holds no second copy.
+  // The steps in plain language: the library's effective graph, which is
+  // its profile's graph (task 73). Keyed on the graph, so a profile edit
+  // shows here without a reload. The UI holds no second copy of the wording.
   const plain = useQuery({
-    queryKey: ['target-plain', id],
+    queryKey: ['target-plain', id, library.data?.flow ?? null],
     // enabled guarantees the library and its flow exist when this runs.
     queryFn: () => previewFlow({ graph: library.data!.flow! }),
     enabled: !!library.data?.flow,
   })
 
-  // The flow judged at the library's own tier (task 62). Its unrepresentable
-  // list drives the downgrade banner, so the banner survives a reload.
-  const flow = useQuery({
-    queryKey: ['library-flow', id],
-    queryFn: () => getLibraryFlow(id),
-  })
-
-  // Changing the tier never rewrites the flow (spec 6, decision 4).
-  const setTier = useMutation({
-    mutationFn: (tier: RuleTier) => putLibraryTier(id, tier),
-    onSuccess: (res) => {
-      toast.success(`Editor set to ${tierLabel(res.tier)}.`)
-      void client.invalidateQueries({ queryKey: ['library', id] })
-      void client.invalidateQueries({ queryKey: ['library-flow', id] })
-      void client.invalidateQueries({ queryKey: ['libraries'] })
-    },
-    onError: (err: unknown) => toast.failure('Changing the editor failed', err),
+  // The inherited profile: its name, its tier, and the steps its own tier
+  // cannot show (spec 5.5).
+  const profileId = library.data?.profile_id ?? ''
+  const profile = useQuery({
+    queryKey: ['profile', profileId],
+    queryFn: () => getProfile(profileId),
+    enabled: profileId !== '',
   })
 
   const refresh = () => {
@@ -332,11 +314,11 @@ export default function LibraryDetailPage() {
   const headerActions = lib ? (
     <>
       <Link
-        to={`/libraries/${lib.id}/rules`}
+        to={lib.profile_id ? `/encode/profiles/${lib.profile_id}` : '/encode'}
         className={btn}
         data-testid="library-detail-rules"
       >
-        Rules
+        Profile
       </Link>
       <Link
         to={`/libraries/${lib.id}/edit`}
@@ -676,34 +658,45 @@ export default function LibraryDetailPage() {
           <NonMediaHint lib={lib} />
 
           <div className="space-y-2 border-t border-line pt-4">
-            <h3 className="text-body font-semibold text-fg">
-              Rules · {tierWord(lib.flow_source)}
-            </h3>
-            <div className="flex flex-col gap-2" data-testid="library-tier">
-              <SegmentedControl
-                label="Rule editor"
-                value={lib.rule_tier ?? 'basic'}
-                onChange={(t) => {
-                  if (t !== (lib.rule_tier ?? 'basic')) {
-                    setTier.mutate(t as RuleTier)
-                  }
-                }}
-                options={TIER_OPTIONS.map((t) => ({
-                  id: t.id,
-                  label: t.label,
-                  testId: `library-tier-${t.id}`,
-                }))}
-              />
-              <p className="text-caption text-fg-muted">
-                Basic: sliders. Moderate: a rule tree. Advanced: a visual graph.
-                Changing it never changes the steps.
+            <h3 className="text-body font-semibold text-fg">Encode profile</h3>
+            {!lib.profile_id && (
+              <Banner
+                tone="warning"
+                title="No encode profile"
+                testId="library-no-profile"
+              >
+                <p>
+                  This library does not follow a profile, so it does not shrink
+                  anything. Choose one on the{' '}
+                  <Link
+                    to={`/libraries/${lib.id}/edit`}
+                    className={linkTouch}
+                    data-testid="library-no-profile-edit"
+                  >
+                    edit page
+                  </Link>
+                  .
+                </p>
+              </Banner>
+            )}
+            {lib.profile_id && profile.data && (
+              <p
+                className="text-body font-medium text-fg"
+                data-testid="library-profile-name"
+              >
+                {profile.data.name}
+                <span className="font-normal text-fg-muted">
+                  {' '}
+                  · {tierLabel(profile.data.tier)}
+                </span>
               </p>
-            </div>
-            {flow.data && isLocked(flow.data.unrepresentable) && (
+            )}
+            {profile.data && isLocked(profile.data.unrepresentable) && (
               <UnrepresentableBanner
-                tier={flow.data.tier ?? lib.rule_tier ?? 'basic'}
-                steps={flow.data.unrepresentable ?? []}
-                libraryId={lib.id}
+                tier={profile.data.tier}
+                steps={profile.data.unrepresentable}
+                editHref={`/encode/profiles/${profile.data.id}`}
+                noun="profile"
               />
             )}
             {plain.data && plain.data.steps.length > 0 && (
@@ -718,20 +711,15 @@ export default function LibraryDetailPage() {
                 ))}
               </ul>
             )}
-            <Link
-              to={`/libraries/${lib.id}/rules`}
-              className={linkTouch}
-              data-testid="library-change-rules"
-            >
-              Change rules
-            </Link>
-            <Link
-              to={`/libraries/${lib.id}/tree`}
-              className={linkTouch}
-              data-testid="library-tree-editor"
-            >
-              Open the rule tree
-            </Link>
+            {lib.profile_id && (
+              <Link
+                to={`/encode/profiles/${lib.profile_id}`}
+                className={linkTouch}
+                data-testid="library-change-rules"
+              >
+                Edit this profile in Encode settings
+              </Link>
+            )}
           </div>
         </div>
       </Card>

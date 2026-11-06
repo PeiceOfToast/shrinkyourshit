@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The easy screen (task 07, restyled in task 41): pick a folder, move a
- * slider, tick a box, press "Add library". Everything else is a sensible
- * default. No technical terms on this screen — the Exact settings panel on
- * the edit page is the only place codec names appear.
+ * The library form (task 07, restyled in task 41, rebuilt in task 73): pick
+ * a folder, choose an encode profile, tick a box, press "Add library". The
+ * encode builder is gone from here: the profile holds the steps (spec 5.5).
+ * No technical terms on this screen.
  */
 import { useId, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -16,7 +16,8 @@ import {
   type Storage,
 } from './api'
 import Checkbox from './Checkbox'
-import { initialEasyValue, toEasyInput, type EasyFormValue } from './easyModel'
+import { ProfileSelect, ProfileSummary } from './ProfileChoice'
+import { useProfiles } from './queries'
 import {
   checkTypedPath,
   freeSpaceText,
@@ -26,25 +27,31 @@ import {
 } from './storageModel'
 import StorageBrowser from './StorageBrowser'
 import ErrorBox from './ErrorBox'
-import {
-  AudioSlider,
-  pathField,
-  QualitySlider,
-  RemoveSubtitlesCheckbox,
-} from './easyControls'
 import { FormActions, FormSection } from './FormSection'
 import FolderPickerModal from './FolderPickerModal'
-import FlowPreviewPanel from './FlowPreviewPanel'
-import { btn, btnGhost, btnPrimary, input, link, select } from './uiControls'
+import { pathField } from './easyControls'
+import {
+  btn,
+  btnGhost,
+  btnPrimary,
+  input,
+  link,
+  linkTouch,
+  select,
+} from './uiControls'
 import { useToast } from './toastContext'
 
+/** What the form holds: the folder, and whether to watch it. */
+interface LibraryFormValue {
+  path: string
+  watch: boolean
+}
+
 export default function EasyLibraryForm({
-  initial,
   onSaved,
   onCancel,
   submitLabel = 'Add library',
 }: {
-  initial?: Partial<EasyFormValue>
   onSaved?: (lib: Library) => void
   /** When given, the action bar shows a Cancel button. */
   onCancel?: () => void
@@ -52,17 +59,25 @@ export default function EasyLibraryForm({
 }) {
   const toast = useToast()
   const helpId = useId()
-  const [value, setValue] = useState<EasyFormValue>({
-    ...initialEasyValue,
-    ...initial,
+  const profileSelectId = useId()
+  const [value, setValue] = useState<LibraryFormValue>({
+    path: '',
+    watch: true,
   })
+  /** null means "the first profile", which is the one the boot seed made. */
+  const [pickedProfile, setPickedProfile] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
   const [typing, setTyping] = useState('')
   const [typingError, setTypingError] = useState('')
   /** null means "follow the path": the share holding the chosen folder. */
   const [pickedShareId, setPickedShareId] = useState<string | null>(null)
-  const set = (patch: Partial<EasyFormValue>) =>
+  const set = (patch: Partial<LibraryFormValue>) =>
     setValue((v) => ({ ...v, ...patch }))
+
+  const profiles = useProfiles()
+  const profileList = profiles.data ?? []
+  const profileId = pickedProfile ?? profileList[0]?.id ?? ''
+  const profile = profileList.find((p) => p.id === profileId)
 
   // Storages the folder can come from (task 69). A failed read hides the
   // storage choice and leaves the server folder picker, so the form still works.
@@ -107,7 +122,7 @@ export default function EasyLibraryForm({
     mutationFn: () =>
       createLibrary({
         path: value.path,
-        easy: toEasyInput(value),
+        profile_id: profileId,
         watch: value.watch,
       }),
     onSuccess: (lib) => {
@@ -118,6 +133,7 @@ export default function EasyLibraryForm({
   })
 
   const hasPath = Boolean(value.path)
+  const canStart = hasPath && profileId !== '' && !create.isPending
 
   return (
     <div className="flex flex-col gap-6" data-testid="easy-form">
@@ -243,29 +259,40 @@ export default function EasyLibraryForm({
       </FormSection>
 
       <FormSection
-        title="How much to shrink"
-        description="You can change this later in Rules."
+        title="Encode profile"
+        description="The profile decides how files are shrunk. Make or change profiles in Encode settings."
       >
-        <QualitySlider
-          value={value.quality}
-          onChange={(quality) => set({ quality })}
-        />
-        <AudioSlider value={value.audio} onChange={(audio) => set({ audio })} />
-        <RemoveSubtitlesCheckbox
-          checked={value.remove_subtitles}
-          onChange={(remove_subtitles) => set({ remove_subtitles })}
-        />
+        {profiles.isError ? (
+          <p
+            className="text-body text-danger"
+            data-testid="easy-profiles-error"
+          >
+            The profiles could not be loaded. Reload the page to try again.
+          </p>
+        ) : (
+          <>
+            <ProfileSelect
+              id={profileSelectId}
+              value={profileId}
+              onChange={setPickedProfile}
+              profiles={profileList}
+            />
+            {profile && (
+              <ProfileSummary
+                profile={profile}
+                testId="library-form-profile-summary"
+              />
+            )}
+          </>
+        )}
+        <a
+          href="/encode"
+          className={linkTouch}
+          data-testid="easy-profiles-link"
+        >
+          Encode settings
+        </a>
       </FormSection>
-
-      {/* The generated rule in plain language (task 14): one line per
-          step, the bridge that teaches the step stack's vocabulary. */}
-      <FlowPreviewPanel
-        easy={{
-          quality: value.quality,
-          remove_subtitles: value.remove_subtitles,
-          audio: value.audio,
-        }}
-      />
 
       <FormSection title="Watching">
         <div data-testid="easy-watch">
@@ -291,7 +318,7 @@ export default function EasyLibraryForm({
         <button
           type="button"
           onClick={() => create.mutate()}
-          disabled={!hasPath || create.isPending}
+          disabled={!canStart}
           aria-describedby={hasPath ? undefined : helpId}
           className={btnPrimary}
           data-testid="easy-start"

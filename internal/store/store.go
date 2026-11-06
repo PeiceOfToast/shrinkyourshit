@@ -68,6 +68,10 @@ type Library struct {
 	// wave, spec 5). Empty means no profile: NULL in the database. Set by
 	// SetLibraryProfile or BackfillProfiles, never by the flow columns.
 	ProfileID string
+	// ProfileGraph is the attached profile's graph JSON, joined on read
+	// (task 73, spec 5.1). Read only: writes ignore it. Empty when no
+	// profile is attached.
+	ProfileGraph string
 }
 
 // File is one media file inside a library. Probe is opaque JSON produced by

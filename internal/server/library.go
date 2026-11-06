@@ -34,6 +34,9 @@ type LibraryParams struct {
 	Schedule     string
 	ResultPolicy string
 	FileKinds    []string
+	// ProfileID is the encode profile the library follows (task 73). Empty
+	// detaches: the library then runs its own stored flow.
+	ProfileID string
 }
 
 // LibraryManager owns library CRUD and the target-driven re-evaluation of a
@@ -100,6 +103,9 @@ func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Li
 	if err != nil {
 		return nil, err
 	}
+	if err := m.checkProfile(ctx, lib); err != nil {
+		return nil, err
+	}
 	if err := m.st.CreateLibrary(ctx, lib); err != nil {
 		return nil, fmt.Errorf("library: create: %w", err)
 	}
@@ -127,6 +133,9 @@ func (m *LibraryManager) Update(ctx context.Context, id string, p LibraryParams)
 	}
 	lib, err := m.build(old, p)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.checkProfile(ctx, lib); err != nil {
 		return nil, err
 	}
 	if err := m.st.UpdateLibrary(ctx, lib); err != nil {
@@ -265,6 +274,11 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		seen[k] = true
 	}
 
+	// A save that names a profile and no rule keeps the stored Target, so a
+	// profile-only update does not reset the library's compat rule.
+	if p.TargetJSON == nil && p.EasyJSON == nil && old != nil && old.TargetJSON != "" {
+		p.TargetJSON = []byte(old.TargetJSON)
+	}
 	target := flow.Default()
 	if p.TargetJSON != nil {
 		var err error
@@ -287,6 +301,7 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		Schedule:     p.Schedule,
 		ResultPolicy: policy,
 		FileKinds:    p.FileKinds,
+		ProfileID:    p.ProfileID,
 	}
 	if old != nil {
 		lib.ID = old.ID
@@ -329,6 +344,40 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		}
 	}
 	return lib, nil
+}
+
+// checkProfile validates the profile a library is about to follow (task 73).
+// A profile that does not exist is refused; its plugin steps must be
+// installed (ErrPluginStep, 422), and its move destinations must sit outside
+// this library's folder (ErrInvalidFlow). The profile graph is then carried
+// on the library so LibraryFlow and the reply see what will run. A profile
+// is not bound to one folder, so the move check runs here, per library.
+func (m *LibraryManager) checkProfile(ctx context.Context, lib *store.Library) error {
+	lib.ProfileGraph = ""
+	if lib.ProfileID == "" {
+		return nil
+	}
+	prof, err := m.st.GetProfile(ctx, lib.ProfileID)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("no such profile %q", lib.ProfileID)
+	}
+	if err != nil {
+		return err
+	}
+	g, err := flow.ParseGraph([]byte(prof.Graph))
+	if err != nil {
+		return fmt.Errorf("profile %q: %w", prof.Name, err)
+	}
+	if m.pluginCheck != nil {
+		if err := m.pluginCheck(ctx, g); err != nil {
+			return err
+		}
+	}
+	if errs := validateMoveDestinations(lib, g); len(errs) > 0 {
+		return &ErrInvalidFlow{Errors: errs}
+	}
+	lib.ProfileGraph = prof.Graph
+	return nil
 }
 
 // reevaluate applies the library's flow to every file from its cached

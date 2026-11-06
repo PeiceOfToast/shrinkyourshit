@@ -62,6 +62,24 @@ function libraryDoc(extra: Record<string, unknown> = {}) {
   }
 }
 
+/** One encode profile as GET /profiles/{id} answers it (task 71). */
+function profileDoc(extra: Record<string, unknown> = {}) {
+  return {
+    id: 'prof-1',
+    name: 'Small files',
+    description: '',
+    tier: 'moderate',
+    result_policy: 'replace_if_smaller',
+    graph: { schema: 1, nodes: [], edges: [] },
+    used_by: 1,
+    used_by_names: ['Movies'],
+    unrepresentable: [],
+    created_at: '',
+    updated_at: '',
+    ...extra,
+  }
+}
+
 /** The per-library breakdown the header summary reads (task 19). */
 const statsDoc = {
   files: 3,
@@ -798,7 +816,12 @@ function layoutRoutes(items: unknown[], total: number): MockRoute[] {
     {
       method: 'GET',
       match: /\/api\/v1\/libraries\/lib-1$/,
-      body: libraryDoc({ flow_source: 'easy' }),
+      body: libraryDoc({ flow_source: 'easy', profile_id: 'prof-1' }),
+    },
+    {
+      method: 'GET',
+      match: /\/api\/v1\/profiles\/prof-1$/,
+      body: profileDoc(),
     },
     { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
     ...previewRoutes(),
@@ -823,7 +846,7 @@ describe('LibraryDetailPage layout (task 44, spec 5.6)', () => {
     expect(scan).toHaveTextContent('Scan now')
     expect(scan.className).toContain('bg-accent')
     expect(screen.getByTestId('library-detail-rules')).toHaveTextContent(
-      'Rules',
+      'Profile',
     )
     expect(screen.getByTestId('library-detail-edit')).toHaveTextContent('Edit')
     // The header is the only place the page title lives.
@@ -852,15 +875,76 @@ describe('LibraryDetailPage layout (task 44, spec 5.6)', () => {
       screen.getByTestId('library-summary-failed-count'),
     ).toHaveTextContent('0')
     expect(
-      screen.getByRole('heading', { level: 3, name: 'Rules · Easy' }),
+      screen.getByRole('heading', { level: 3, name: 'Encode profile' }),
     ).toBeInTheDocument()
+    // The inherited profile: its name and tier, then a link to its editor.
+    expect(await screen.findByTestId('library-profile-name')).toHaveTextContent(
+      'Small files',
+    )
     expect(screen.getByTestId('library-change-rules')).toHaveAttribute(
       'href',
-      '/libraries/lib-1/rules',
+      '/encode/profiles/prof-1',
     )
     expect(
       await within(summary).findAllByTestId('target-plain-line'),
     ).toHaveLength(2)
+    expect(screen.queryByTestId('library-no-profile')).not.toBeInTheDocument()
+  })
+
+  it('warns when the library follows no encode profile', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc({ flow_source: 'easy' }),
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+      ...previewRoutes(),
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderPage()
+    expect(await screen.findByTestId('library-no-profile')).toHaveTextContent(
+      'does not follow a profile',
+    )
+    expect(screen.queryByTestId('library-profile-name')).not.toBeInTheDocument()
+  })
+
+  it('names the profile steps its own tier cannot show', async () => {
+    mock = installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1$/,
+        body: libraryDoc({ profile_id: 'prof-1' }),
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/profiles\/prof-1$/,
+        body: profileDoc({
+          tier: 'basic',
+          unrepresentable: [
+            {
+              path: 'nodes.raw_args',
+              message: 'step "raw_args" needs the advanced editor',
+            },
+          ],
+        }),
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: statsDoc },
+      ...previewRoutes(),
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries\/lib-1\/files/,
+        body: { items: [], total: 0 },
+      },
+    ])
+    renderPage()
+    const banner = await screen.findByTestId('tier-banner')
+    expect(banner).toHaveTextContent('This profile has a step')
+    expect(banner).toHaveTextContent('raw_args')
   })
 
   it('puts a label above each toolbar control', async () => {

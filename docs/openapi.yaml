@@ -303,7 +303,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [flows]
-      summary: Store a flow graph for the library (switches it off the easy screen).
+      summary: Store a flow graph for the library (switches it off the easy screen). Refused while the library follows an encode profile (task 73).
       requestBody:
         required: true
         content:
@@ -319,6 +319,11 @@ paths:
                 $ref: '#/components/schemas/LibraryFlow'
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The library follows an encode profile (code follows_profile). Edit the profile instead.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /api/v1/libraries/{id}/tier:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1606,6 +1611,7 @@ components:
         flow: { type: ["object", "null"], description: The flow graph while the library uses the editor. }
         flow_source: { type: string, description: empty for easy libraries, easy or editor. }
         rule_tier: { type: string, enum: [basic, moderate, advanced], description: The editor the library offers (task 59). Changing it never rewrites the flow. }
+        profile_id: { type: string, description: The encode profile the library follows (task 73). Empty when the library runs its own stored flow. The flow above is the profile's graph while it is set. }
         watch: { type: boolean }
         schedule: { type: string, description: cron expression; empty means no schedule. }
         result_policy: { type: string, description: replace_if_smaller or keep_both. }
@@ -1614,7 +1620,8 @@ components:
         updated_at: { type: string, format: date-time }
     LibraryParams:
       type: object
-      required: [name, path, target]
+      description: On create, target or easy is optional (the default rule applies). On update, a save with profile_id and no target or easy is valid (task 73).
+      required: [name, path]
       properties:
         name: { type: string }
         path: { type: string }
@@ -1623,6 +1630,7 @@ components:
         watch: { type: boolean }
         schedule: { type: string }
         result_policy: { type: string }
+        profile_id: { type: string, description: The encode profile to follow (task 73). Must exist. Empty detaches the library from its profile. }
     FieldError:
       type: object
       description: A validation finding on one field of a flow (path such as nodes[2].params.height) and a plain message.
