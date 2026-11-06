@@ -125,6 +125,9 @@ Commands run on this VM from the repository root, `PATH=/home/mb/.local/go/bin:/
 - `./scripts/check-spdx.sh`: ok.
 - Targeted: `go test ./internal/store/ -run 'Backfill|Profile|Library|RuleTier|Migrations'`: ok.
 - `go test ./internal/server/ -run TestV111`: ok.
+- `make lint` (no `make` on this VM, so its steps were run by hand, same commands as the Makefile):
+  `go vet ./...` clean; `golangci-lint run`: 0 issues; `./scripts/check-spdx.sh` ok;
+  `cd web && npm run lint && npm run format:check`: clean, Prettier "All matched files use Prettier code style!".
 - Full: see Verification, full run below.
 
 Full run, same tree (after the last comment-only edit in `dto.go`):
