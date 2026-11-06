@@ -28,11 +28,11 @@ feed if it already has a warnings type.
 5. Tests use a fake runner, so nothing needs real privileges in CI.
 
 ## Acceptance
-- [ ] Argument vectors asserted exactly for nfs and smb, including the credentials file path.
-- [ ] A mount failure surfaces stderr and leaves the server running, proven by a test.
-- [ ] The credentials file does not exist after mount returns, success or failure.
-- [ ] Watchdog remounts a mount that vanished and backs off on repeated failure.
-- [ ] `make test` green.
+- [x] Argument vectors asserted exactly for nfs and smb, including the credentials file path.
+- [x] A mount failure surfaces stderr and leaves the server running, proven by a test.
+- [x] The credentials file does not exist after mount returns, success or failure.
+- [x] Watchdog remounts a mount that vanished and backs off on repeated failure.
+- [x] `make test` green.
 
 ## Notes
 Write the plan and the exact argument vectors in `tasks/66-notes.md`.

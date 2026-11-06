@@ -101,7 +101,7 @@ Storage first because libraries need somewhere to point before profiles make sen
 |------|------|--------|-----------|
 | 64 | 64-storage-store-and-secrets.md | done | PR #68 https://github.com/PeiceOfToast/shrinkyourshit/pull/68, v1.11, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (go all packages green, web 65 files / 474 tests), make lint exit 0, DECISIONS.md unchanged, checklist 4/4 ticked |
 | 65 | 65-storage-api.md | done | PR #69 https://github.com/PeiceOfToast/shrinkyourshit/pull/69, v1.11, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (go 14 packages ok, web 65 files / 474 tests), make lint exit 0, DECISIONS.md unchanged, checklist 5/5 ticked; 3 open owner questions in tasks/65-notes.md |
-| 66 | 66-mount-executor.md | todo | |
+| 66 | 66-mount-executor.md | in_progress | branch task/66-mount-executor, PR not yet opened (supervisor opens it) |
 | 67 | 67-container-capabilities.md | todo | |
 | 68 | 68-storage-page.md | todo | |
 | 69 | 69-storage-browser-and-path-picker.md | todo | |

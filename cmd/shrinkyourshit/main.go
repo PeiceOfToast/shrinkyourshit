@@ -21,6 +21,7 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/api"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/config"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/discovery"
+	"github.com/PeiceOfToast/shrinkyourshit/internal/mount"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/secret"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/server"
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
@@ -200,6 +201,16 @@ func serve(args []string, info buildInfo) error {
 
 	svc.Start(ctx)
 
+	// Storage mounts (task 66): remount every enabled share once at startup,
+	// then keep them mounted with the watchdog. It runs beside the server and
+	// never stops it; a broken share shows as an error in the storage status.
+	mounts := mount.New(st, mount.Options{
+		ScratchDir: cfg.ScratchDir,
+		Log:        logger,
+		Allow:      storageHostGate(st),
+	})
+	go mounts.Run(ctx)
+
 	// The in-app update check (task 17): one background refresh after
 	// start, never blocking it; everything else is on demand.
 	svc.Update().StartBackgroundCheck(ctx)
@@ -221,7 +232,7 @@ func serve(args []string, info buildInfo) error {
 		}
 		joined <- joinChoice{url: serverURL, token: token}
 		return nil
-	}), api.WithBuiltinNode(builtin.ID))
+	}), api.WithBuiltinNode(builtin.ID), api.WithStorageMounter(mountAdapter{mounts}))
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

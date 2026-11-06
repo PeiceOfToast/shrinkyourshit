@@ -475,6 +475,21 @@ func (p hostPolicy) refusal(host string) string {
 	return fmt.Sprintf("host %q is not in storage_allowed_hosts; add it to the setting or pick another host", host)
 }
 
+// CheckStorageHost applies the storage_allowed_hosts rule to a stored source,
+// for the mount executor's gate (task 66). It is the same rule the handlers
+// use, so a host refused by the API is refused on startup and by the watchdog.
+func CheckStorageHost(setting, protocol, source string) error {
+	host, errs := checkStorageSource(protocol, source)
+	if len(errs) > 0 {
+		return errors.New(errs[0].Message)
+	}
+	policy := parseHostPolicy(setting)
+	if !policy.allows(host) {
+		return errors.New(policy.refusal(host))
+	}
+	return nil
+}
+
 // storageHostPolicy loads the current allowlist.
 func (a *API) storageHostPolicy(r *http.Request) (hostPolicy, error) {
 	raw, _, err := a.st.GetSetting(r.Context(), store.SettingStorageAllowedHosts)
