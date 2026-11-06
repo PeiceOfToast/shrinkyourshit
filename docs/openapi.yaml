@@ -37,6 +37,8 @@ tags:
     description: In-app self update.
   - name: integrations
     description: Outgoing media-server refresh integrations.
+  - name: storages
+    description: Network storage the server mounts (NFS, SMB). Writes need login on.
   - name: webhooks
     description: Outgoing webhooks and their delivery history.
   - name: plugins
@@ -586,6 +588,129 @@ paths:
               schema:
                 $ref: '#/components/schemas/IntegrationTest'
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/storages:
+    get:
+      tags: [storages]
+      summary: Every storage, with its mount status and the host allowlist state. Open to any admin session; with login off, open to everyone.
+      responses:
+        '200':
+          description: The storage list and the host policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorageList' }
+    post:
+      tags: [storages]
+      summary: Create a storage. Needs login on (403 otherwise). An NFS storage with no options gets the soft default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StorageParams' }
+      responses:
+        '201':
+          description: The created storage. The password is never returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Storage' }
+        '400': { $ref: '#/components/responses/StorageInvalid' }
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/storages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [storages]
+      summary: One storage.
+      responses:
+        '200':
+          description: The storage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Storage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [storages]
+      summary: Replace a storage. The name and protocol cannot change. An empty password keeps the stored one. Needs login on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StorageParams' }
+      responses:
+        '200':
+          description: The updated storage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Storage' }
+        '400': { $ref: '#/components/responses/StorageInvalid' }
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [storages]
+      summary: Remove a storage. Refused while it is mounted. Needs login on.
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/storages/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [storages]
+      summary: Mount, check and unmount the storage. A failed check is 200 with ok false. Needs login on.
+      responses:
+        '200':
+          description: The test result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorageTest' }
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /api/v1/storages/{id}/mount:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [storages]
+      summary: Mount the storage. The host allowlist is checked again first. Needs login on.
+      responses:
+        '200':
+          description: The storage, mounted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Storage' }
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /api/v1/storages/{id}/unmount:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [storages]
+      summary: Unmount the storage. Needs login on.
+      responses:
+        '200':
+          description: The storage, unmounted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Storage' }
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
+  /api/v1/storages/{id}/browse:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [storages]
+      summary: Browse a mounted storage. The listing arrives with the storage browser; until then a mounted storage answers 501. Needs login on.
+      responses:
+        '403': { $ref: '#/components/responses/LoginRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
   /api/v1/webhooks:
     get:
       tags: [webhooks]
@@ -1204,6 +1329,34 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    StorageInvalid:
+      description: One or more storage fields are not valid. errors lists each field and why.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, errors]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [invalid_request] }
+              errors:
+                type: array
+                items:
+                  type: object
+                  required: [path, message]
+                  properties:
+                    path: { type: string, description: The JSON field name. }
+                    message: { type: string }
+    LoginRequired:
+      description: Login is off, so storage cannot be changed or mounted (code login_required). Or the source host is not in storage_allowed_hosts (code host_not_allowed).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotImplemented:
+      description: The mount executor is not available on this server (code not_implemented).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
       description: No session (admin endpoints) or no valid node key (worker endpoints).
       content:
@@ -1512,6 +1665,59 @@ components:
             active: { type: boolean }
             stage: { type: string }
             error: { type: string }
+    Storage:
+      type: object
+      required: [id, name, protocol, source, mountpoint, mounted, enabled]
+      properties:
+        id: { type: string }
+        name: { type: string, description: Slug and mountpoint, /storage/<name>. Fixed after create. }
+        protocol: { type: string, enum: [nfs, smb] }
+        source: { type: string, description: host:/export for NFS, //host/share for SMB. }
+        options: { type: string, description: Comma separated mount options from the allowlist. }
+        username: { type: string }
+        domain: { type: string }
+        password_set: { type: boolean, description: The password itself never leaves the server. }
+        read_only: { type: boolean }
+        enabled: { type: boolean }
+        mountpoint: { type: string, example: /storage/nas }
+        mounted: { type: boolean, description: Filled by the mount executor (task 66). }
+        error: { type: string, description: The last mount problem, when there is one. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    StorageParams:
+      type: object
+      required: [name, protocol, source]
+      properties:
+        name: { type: string, description: 1 to 64 lowercase letters, digits and dashes. Fixed after create. }
+        protocol: { type: string, enum: [nfs, smb] }
+        source: { type: string }
+        options: { type: string, description: Empty on NFS means vers=3,soft,timeo=50,retrans=2. }
+        username: { type: string, description: SMB only. }
+        domain: { type: string, description: SMB only. }
+        password: { type: string, description: SMB only. Write only. On update, empty keeps the stored password. }
+        read_only: { type: boolean }
+        enabled: { type: boolean, description: Defaults to true on create. On update, absent keeps the stored value. }
+    StorageHostPolicy:
+      type: object
+      required: [restricted, allowed, message]
+      properties:
+        restricted: { type: boolean, description: False when storage_allowed_hosts is empty, so any host can be mounted. }
+        allowed: { type: array, items: { type: string } }
+        message: { type: string }
+        error: { type: string, description: Present when storage_allowed_hosts has an invalid entry. Nothing can be mounted then. }
+    StorageList:
+      type: object
+      required: [items, total, host_policy]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Storage' } }
+        total: { type: integer }
+        host_policy: { $ref: '#/components/schemas/StorageHostPolicy' }
+    StorageTest:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        error: { type: string }
     Integration:
       type: object
       required: [id, kind, name, base_url]
