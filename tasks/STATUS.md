@@ -133,7 +133,7 @@ Order is code first, API second, schema last, so every intermediate commit keeps
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 76 | 76-remove-legacy-code.md | done | PR #80 https://github.com/PeiceOfToast/shrinkyourshit/pull/80 (branch task/76-remove-legacy-code, head e68a5fc); CI run 42256512635 in progress when recorded, supervisor merge gate pending; go test ./... -count=1 exit 0, web vitest 524 pass, make lint steps run by hand clean (go vet, golangci-lint 0 issues, spdx, web lint and format:check); checklist 5/5 ticked; owner to confirm NOT NULL target literal (decision 1) and direct v1.10 to v1.12 upgrade behaviour (notes in tasks/76-notes.md) |
+| 76 | 76-remove-legacy-code.md | done | PR #80 https://github.com/PeiceOfToast/shrinkyourshit/pull/80, squash 6dd6761, v1.12, CI run 42256604764 green (8 checks incl. e2e and docker-arm64), make test exit 0 (go all packages ok, internal/api 550s, internal/server 507s, internal/store 215s, web 69 files / 524 tests), make lint exit 0 (go vet, golangci-lint 0 issues, spdx, eslint, prettier), DECISIONS.md unchanged, checklist 5/5 ticked; owner to confirm the NOT NULL target literal (decision 1) and the direct v1.10 to v1.12 upgrade path, both in tasks/76-notes.md |
 | 77 | 77-remove-api-surface.md | todo | removes the deprecated request fields, the `deprecated` reply list, `PUT /libraries/{id}/tier` |
 | 78 | 78-drop-columns.md | todo | forward only migration 0019 drops the six columns, release notes, wave verification |
 
