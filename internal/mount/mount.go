@@ -65,6 +65,9 @@ type Options struct {
 	// ProcStatus is the file read for the CAP_SYS_ADMIN check at startup.
 	// Defaults to /proc/self/status.
 	ProcStatus string
+	// Resolve turns an NFS host name into addresses. Defaults to the system
+	// resolver. An NFS source that is already an IP never uses it.
+	Resolve Resolver
 	// BusyWait is the pause before a busy unmount is retried with MNT_DETACH.
 	// Defaults to DefaultBusyWait.
 	BusyWait time.Duration
@@ -129,6 +132,9 @@ func New(st Store, opt Options) *Executor {
 	}
 	if opt.ProcStatus == "" {
 		opt.ProcStatus = "/proc/self/status"
+	}
+	if opt.Resolve == nil {
+		opt.Resolve = lookupHost
 	}
 	if opt.BusyWait <= 0 {
 		opt.BusyWait = DefaultBusyWait
@@ -499,6 +505,10 @@ func (e *Executor) mountOnce(ctx context.Context, st *store.Storage) error {
 	}
 
 	spec := BuildMountSpec(st, mp, credsPath)
+	spec, err = e.withServerAddr(ctx, spec)
+	if err != nil {
+		return err
+	}
 	return e.callBounded(ctx, st.ID, e.opt.MountTimeout, func() error {
 		return mountErr(spec, e.opt.Mounter.Mount(spec.Source, spec.Target, spec.Fstype, spec.Flags, spec.Data))
 	})

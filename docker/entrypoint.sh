@@ -65,6 +65,19 @@ main() {
       chown "$PUID:$PGID" "$dir"
     done
     chown -R "$PUID:$PGID" /config
+    # Keep CAP_SYS_ADMIN across the privilege drop. Docker grants the container
+    # the capability when it starts as root, but gosu/su then clear permitted
+    # and effective capabilities for the new uid, so the server could never call
+    # mount(2) even though the container "has" SYS_ADMIN. setpriv raises it as an
+    # ambient capability, which survives execve for a non-root uid.
+    # Losing this is invisible until the first mount fails with EPERM.
+    if command -v setpriv >/dev/null 2>&1 &&
+       setpriv --reuid="$PUID" --regid="$PGID" --init-groups \
+         --inh-caps=+sys_admin --ambient-caps=+sys_admin true >/dev/null 2>&1; then
+      exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups \
+        --inh-caps=+sys_admin --ambient-caps=+sys_admin \
+        /usr/local/bin/shrinkyourshit "$@"
+    fi
     exec gosu "$PUID:$PGID" /usr/local/bin/shrinkyourshit "$@"
   fi
 
