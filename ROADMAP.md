@@ -204,7 +204,11 @@ dashboard does not show a broken share, keep_both outputs are rescanned as sourc
 an earlier output, ffmpeg auto-detect fails without `--ffmpeg`, and the Docker `SYS_ADMIN` posture was not
 exercised (no Docker on the lab VM).
 
-## v1.12 drop the library rule columns (follow up to v1.11 task 74, scheduled)
+## v1.12 drop the library rule columns (follow up to v1.11 task 74, owner confirmed 2026-11-06)
+
+Owner confirmed the drop on 2026-11-06 and it is scheduled as tasks 76, 77 and 78, in that
+order: code first (76), deprecated API surface second (77), the migration last (78), so main stays
+usable between merges. Task files carry the scope and the acceptance checklists.
 
 - Drop the library columns that v1.11 deprecated, in one forward-only migration: `libraries.flow_json`,
   `libraries.flow_source`, `libraries.target`, `libraries.easy`, `libraries.rule_tier` and

@@ -111,3 +111,16 @@ Storage first because libraries need somewhere to point before profiles make sen
 | 73 | 73-library-profile-wiring.md | done | PR #77 https://github.com/PeiceOfToast/shrinkyourshit/pull/77, v1.11, CI run 42214823336 green (8 checks incl. e2e and docker-arm64), go test ./... exit 0 (all packages ok, internal/api 547s, internal/server 495s, internal/store 250s), make lint exit 0 (golangci 0 issues, spdx, eslint, prettier), web 524 unit tests, Playwright 153 passed / 8 skipped / 0 failed, DECISIONS.md unchanged, checklist 4/4 ticked; library follows its profile graph, library flow save answers 409 follows_profile; 10 open gaps in tasks/73-notes.md |
 | 74 | 74-deprecate-library-rules.md | done | PR #78 https://github.com/PeiceOfToast/shrinkyourshit/pull/78, v1.11, CI run 42226207282 green (8 checks incl. e2e and docker-arm64), make test exit 0 (go all packages ok, web 69 files / 524 tests), make lint exit 0, DECISIONS.md unchanged, checklist 4/4 ticked; 8 open gaps in tasks/74-notes.md (owner questions 1 to 3) |
 | 75 | 75-verify-wave.md | done | branch task/75-verify-wave, PR https://github.com/PeiceOfToast/shrinkyourshit/pull/79, v1.11 wave complete, checks green (make test exit 0: go 15 packages ok, web 69 files / 524 tests; make lint exit 0; integration exit 0), DECISIONS.md unchanged, checklist 4/4 ticked; 10 findings G1 to G10 in tasks/75-notes.md |
+
+## v1.12 queue (drop the library rule columns)
+
+Follow up to v1.11 task 74. Owner confirmed the drop on 2026-11-06 (option A, schedule).
+Tasks run in order, one at a time. `DECISIONS.md` stays read only.
+Order is code first, API second, schema last, so every intermediate commit keeps main usable.
+
+| Task | File | Status | PR / note |
+|------|------|--------|-----------|
+| 76 | 76-remove-legacy-code.md | todo | removes the legacy readers and writers, keeps the columns in the schema |
+| 77 | 77-remove-api-surface.md | todo | removes the deprecated request fields, the `deprecated` reply list, `PUT /libraries/{id}/tier` |
+| 78 | 78-drop-columns.md | todo | forward only migration 0019 drops the six columns, release notes, wave verification |
+
