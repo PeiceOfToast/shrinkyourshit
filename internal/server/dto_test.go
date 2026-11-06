@@ -27,18 +27,13 @@ func profiledLibrary(t *testing.T, name string, g flow.Graph) *store.Library {
 }
 
 // TestLibraryDTOEasy covers the easy state of the DTO (task 07, derived from
-// the profile's graph since task 74): an easy-shaped graph describes back, a
-// hand-edited graph yields null, and a stored easy input is not read.
+// the profile's graph since task 74): an easy-shaped graph describes back and a
+// hand-edited graph yields null.
 func TestLibraryDTOEasy(t *testing.T) {
 	g, err := flow.TargetToFlow(flow.Default())
 	require.NoError(t, err)
 	lib := profiledLibrary(t, "B", g)
 	dto := NewLibraryDTO(lib)
-	require.JSONEq(t, `{"quality":3,"remove_subtitles":false,"audio":1}`, string(dto.Easy))
-
-	// A stored easy input on the row is not the rule: the profile decides.
-	lib.EasyJSON = `{"quality":5,"remove_subtitles":true,"audio":4}`
-	dto = NewLibraryDTO(lib)
 	require.JSONEq(t, `{"quality":3,"remove_subtitles":false,"audio":1}`, string(dto.Easy))
 
 	// A hand-edited graph (copy codec) has no easy representation.

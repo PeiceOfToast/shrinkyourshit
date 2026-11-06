@@ -38,8 +38,8 @@ func newTransferHarness(t *testing.T) *transferHarness {
 
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
-	lib := &store.Library{Name: "Movies", Path: "/srv/media", TargetJSON: string(target),
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller}
+	lib := &store.Library{Name: "Movies", Path: "/srv/media",
+		ProfileID: targetProfile(t, st, target, store.ResultPolicyReplaceIfSmaller)}
 	require.NoError(t, st.CreateLibrary(context.Background(), lib))
 
 	h := &transferHarness{

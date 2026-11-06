@@ -4,7 +4,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -12,217 +11,184 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Graphs used by the migration tests. graphAReformatted is graphA with other
-// key order, whitespace and nothing else, so it must canonicalise to the same
-// text and share its profile.
-const (
-	graphA            = `{"schema":1,"nodes":[{"id":"probe","type":"probe"}],"edges":[]}`
-	graphAReformatted = "{\n  \"edges\": [],\n  \"nodes\": [ {\"type\":\"probe\",\"id\":\"probe\"} ],\n  \"schema\": 1\n}"
-	graphB            = `{"schema":1,"nodes":[{"id":"probe","type":"probe"},{"id":"scale","type":"scale"}],"edges":[]}`
-	graphC            = `{"schema":1,"nodes":[{"id":"probe","type":"probe"},{"id":"subs","type":"subs"}],"edges":[]}`
-	// graphACanonical is graphA after canonicalJSON: sorted keys, no spaces.
-	graphACanonical = `{"edges":[],"nodes":[{"id":"probe","type":"probe"}],"schema":1}`
-	// fallbackGraph stands in for the server's default seed.
-	fallbackGraph = `{"schema":1,"nodes":[{"id":"seed","type":"seed"}],"edges":[]}`
-)
+// legacyLibrary is one library row written the way v1.11 leaves it: the six
+// legacy rule columns filled, the profile not yet assigned.
+type legacyLibrary struct {
+	id, name, flow, source, tier, policy string
+}
 
-// buildV110DB creates a database as the v1.10 release leaves it: every
-// migration before 0018 applied by hand, then the given library rows inserted.
-// It returns the path; the caller opens it with New.
-func buildV110DB(t *testing.T, rows []legacyLibrary) string {
+// buildV111DB creates a database with the current schema (every migration,
+// 0018 included, which is what v1.11 shipped) and inserts the given rows with
+// their legacy rule columns filled. It returns the path. The rows have no
+// profile_id, the state a failed v1.11 boot can leave behind.
+func buildV111DB(t *testing.T, rows []legacyLibrary) string {
 	t.Helper()
-	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "data.db")
-
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
+	st, err := New(path)
 	require.NoError(t, err)
-	db.SetMaxOpenConns(1)
-	defer func() { _ = db.Close() }()
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    )`)
-	require.NoError(t, err)
-	migrations, err := loadMigrations()
-	require.NoError(t, err)
-	for _, m := range migrations {
-		if m.name >= "0018_profiles.sql" {
-			continue
-		}
-		_, err := db.ExecContext(ctx, m.sql)
-		require.NoError(t, err, m.name)
-		_, err = db.ExecContext(ctx, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, m.name, "2026-11-01T00:00:00Z")
-		require.NoError(t, err, m.name)
-	}
-
+	defer func() { _ = st.Close() }()
 	const insert = `INSERT INTO libraries (id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, file_kinds)
-		VALUES (?, ?, ?, '{}', '', ?, ?, ?, 0, '', ?, ?, ?, '["video"]')`
+		VALUES (?, ?, ?, '{"video":{"codec":"hevc","quality":3},"container":"mkv"}', '{"quality":3}', ?, ?, ?, 0, '', ?, ?, ?, '["video"]')`
 	for i, r := range rows {
 		created := "2026-11-01T00:00:0" + string(rune('0'+i)) + "Z"
-		_, err := db.ExecContext(ctx, insert, r.id, r.name, "/media/"+r.id, r.flow, r.source, r.tier, r.policy, created, created)
+		_, err := st.db.ExecContext(context.Background(), insert, r.id, r.name, "/media/"+r.id, r.flow, r.source, r.tier, r.policy, created, created)
 		require.NoError(t, err, r.id)
 	}
 	return path
 }
 
-// legacyLibrary is one row of a v1.10 database.
-type legacyLibrary struct {
-	id, name, flow, source, tier, policy string
-}
+// graphA is a valid stored graph for the legacy rows; the backfill never reads it.
+const graphA = `{"schema":1,"nodes":[{"id":"probe","type":"probe"}],"edges":[]}`
 
-// v110Libraries covers the dedupe rules: identical graphs (once reformatted),
-// a different graph, the same graph at another tier, the same graph under
-// another result policy, a graphless row, and a second library named "shows"
-// with a new graph (the name must be suffixed).
-var v110Libraries = []legacyLibrary{
-	{id: "films", name: "Films", flow: graphA, source: "advanced", tier: RuleTierBasic, policy: "replace"},
-	{id: "films-copy", name: "Films copy", flow: graphAReformatted, source: "advanced", tier: RuleTierBasic, policy: "replace"},
-	{id: "shows", name: "shows", flow: graphB, source: "steps", tier: RuleTierModerate, policy: "replace"},
-	{id: "films-moderate", name: "Films moderate", flow: graphA, source: "steps", tier: RuleTierModerate, policy: "replace"},
-	{id: "films-keep", name: "Films keep", flow: graphA, source: "advanced", tier: RuleTierBasic, policy: "keep_both"},
+// v111Libraries: a healthy row, a row whose legacy graph is not JSON, a graphless
+// row, and a row with a non default tier and policy. None of that matters to the
+// backfill: each one gets the default profile and nothing else.
+var v111Libraries = []legacyLibrary{
+	{id: "films", name: "Films", flow: graphA, source: "advanced", tier: RuleTierAdvanced, policy: "keep_both"},
+	{id: "broken", name: "Broken", flow: `{not json`, source: "advanced", tier: RuleTierBasic, policy: "replace"},
 	{id: "bare", name: "Bare", flow: "", source: "", tier: RuleTierBasic, policy: "replace_if_smaller"},
-	{id: "shows-two", name: "shows", flow: graphC, source: "advanced", tier: RuleTierAdvanced, policy: "replace"},
+	{id: "shows", name: "Shows", flow: graphA, source: "steps", tier: RuleTierModerate, policy: "replace"},
 }
 
-// openV110 builds the v1.10 database and opens it the way the new release does,
-// which applies 0018 and nothing else. The boot backfill is run by the caller.
-func openV110(t *testing.T, rows []legacyLibrary) *SQLite {
+// openV111 builds the v1.11 database and opens it the way the new release does.
+func openV111(t *testing.T, rows []legacyLibrary) *SQLite {
 	t.Helper()
-	st, err := New(buildV110DB(t, rows))
+	st, err := New(buildV111DB(t, rows))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	return st
 }
 
-// TestProfilesMigrationBackfillsV110Database is the migration test from task
-// 70: the v1.10 shape, the migration, then the backfill. It asserts the profile
-// count, the hashes, and every library's profile_id.
-func TestProfilesMigrationBackfillsV110Database(t *testing.T) {
+// defaultProfileFor creates the profile the backfill assigns and returns it.
+func defaultProfileFor(t *testing.T, st *SQLite) *Profile {
+	t.Helper()
+	p := &Profile{Name: "Default (basic)", Tier: RuleTierBasic, Graph: graphA, ResultPolicy: ResultPolicyReplaceIfSmaller}
+	require.NoError(t, st.CreateProfile(context.Background(), p))
+	return p
+}
+
+// TestBackfillAssignsOnlyTheDefaultProfile: every unassigned row gets the given
+// profile, whatever its legacy columns say, and no profile is created or
+// changed on the way.
+func TestBackfillAssignsOnlyTheDefaultProfile(t *testing.T) {
 	ctx := context.Background()
-	st := openV110(t, v110Libraries)
+	st := openV111(t, v111Libraries)
+	def := defaultProfileFor(t, st)
 
-	report, err := st.BackfillProfiles(ctx, fallbackGraph)
+	report, err := st.BackfillProfiles(ctx, def.ID)
 	require.NoError(t, err)
-	require.Len(t, report, len(v110Libraries))
-	seeded := map[string]bool{}
+	require.Len(t, report, len(v111Libraries))
 	for _, e := range report {
-		require.NoError(t, e.Err, e.LibraryID)
-		seeded[e.LibraryID] = e.Seeded
+		assert.Equal(t, def.ID, e.ProfileID, e.LibraryID)
+		assert.Equal(t, def.Name, e.ProfileName, e.LibraryID)
 	}
-	assert.True(t, seeded["bare"], "a graphless library is seeded")
-	assert.False(t, seeded["films"])
-
-	profiles, err := st.ListProfiles(ctx)
-	require.NoError(t, err)
-	// films, films-copy and films-moderate differ in tier or policy; films-keep
-	// differs in policy; shows, bare and shows-two are one each.
-	require.Len(t, profiles, 6, "profile count")
-	byName := map[string]*Profile{}
-	for _, p := range profiles {
-		byName[p.Name] = p
-	}
-	require.NotNil(t, byName["Films"])
-	assert.Equal(t, graphACanonical, byName["Films"].Graph)
-	assert.Equal(t, sha256Hex(graphACanonical), sha256Hex(byName["Films"].Graph), "hash of the stored graph")
-	assert.Equal(t, RuleTierBasic, byName["Films"].Tier)
-	assert.Equal(t, "replace", byName["Films"].ResultPolicy)
-	assert.Equal(t, "shows (2)", byName["shows (2)"].Name, "a taken name gets a suffix")
-	assert.Equal(t, RuleTierAdvanced, byName["shows (2)"].Tier)
-	assert.Equal(t, RuleTierModerate, byName["shows"].Tier)
-	canon, err := canonicalJSON(fallbackGraph)
-	require.NoError(t, err)
-	assert.Equal(t, canon, byName["Bare"].Graph, "a graphless library gets the seed graph")
 
 	libs, err := st.ListLibraries(ctx)
 	require.NoError(t, err)
-	require.Len(t, libs, len(v110Libraries))
-	byLib := map[string]*Library{}
+	require.Len(t, libs, len(v111Libraries))
 	for _, l := range libs {
-		require.NotEmpty(t, l.ProfileID, "library %s has no profile", l.ID)
-		byLib[l.ID] = l
+		assert.Equal(t, def.ID, l.ProfileID, "library %s", l.ID)
+		assert.Equal(t, def.Graph, l.ProfileGraph, "library %s runs the default graph", l.ID)
+		assert.Equal(t, RuleTierBasic, l.ProfileTier, "library %s", l.ID)
+		assert.Equal(t, ResultPolicyReplaceIfSmaller, l.ProfileResultPolicy, "library %s", l.ID)
 	}
-	// Two libraries with identical graphs share one profile.
-	assert.Equal(t, byLib["films"].ProfileID, byLib["films-copy"].ProfileID)
-	// A different graph gets its own profile.
-	assert.NotEqual(t, byLib["films"].ProfileID, byLib["shows"].ProfileID)
-	// Same graph, different tier or policy: its own profile.
-	assert.NotEqual(t, byLib["films"].ProfileID, byLib["films-moderate"].ProfileID)
-	assert.NotEqual(t, byLib["films"].ProfileID, byLib["films-keep"].ProfileID)
-	assert.Equal(t, byName["Films"].ID, byLib["films"].ProfileID)
+
+	profiles, err := st.ListProfiles(ctx)
+	require.NoError(t, err)
+	assert.Len(t, profiles, 1, "no profile is created by the backfill")
 }
 
-// TestProfilesBackfillIsIdempotent: a second run, and a restart of the whole
-// store, change nothing. Old columns are not touched either.
-func TestProfilesBackfillIsIdempotent(t *testing.T) {
+// TestBackfillIsIdempotent: a second run, and a restart of the whole store,
+// assign nothing and change nothing.
+func TestBackfillIsIdempotent(t *testing.T) {
 	ctx := context.Background()
-	path := buildV110DB(t, v110Libraries)
+	path := buildV111DB(t, v111Libraries)
 	st, err := New(path)
 	require.NoError(t, err)
-	_, err = st.BackfillProfiles(ctx, fallbackGraph)
+	def := defaultProfileFor(t, st)
+	_, err = st.BackfillProfiles(ctx, def.ID)
 	require.NoError(t, err)
-
 	before, err := st.ListLibraries(ctx)
-	require.NoError(t, err)
-	beforeProfiles, err := st.ListProfiles(ctx)
 	require.NoError(t, err)
 	require.NoError(t, st.Close())
 
-	// A restart runs the (already applied) migrations again and the backfill.
 	st, err = New(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	report, err := st.BackfillProfiles(ctx, fallbackGraph)
+	report, err := st.BackfillProfiles(ctx, def.ID)
 	require.NoError(t, err)
 	assert.Empty(t, report, "nothing is left to assign")
 
 	after, err := st.ListLibraries(ctx)
 	require.NoError(t, err)
-	afterProfiles, err := st.ListProfiles(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, beforeProfiles, afterProfiles)
 	require.Len(t, after, len(before))
 	for i := range before {
 		assert.Equal(t, before[i].ProfileID, after[i].ProfileID, before[i].ID)
-		assert.Equal(t, before[i].FlowJSON, after[i].FlowJSON, "flow_json kept")
-		assert.Equal(t, before[i].RuleTier, after[i].RuleTier, "rule_tier kept")
-		assert.Equal(t, before[i].ResultPolicy, after[i].ResultPolicy, "result_policy kept")
 	}
 }
 
-// TestProfilesBackfillSkipsBrokenGraph: a library whose stored graph is not
-// JSON is reported with an error and left unassigned; the others still get
-// their profile, so one bad row never blocks the boot.
-func TestProfilesBackfillSkipsBrokenGraph(t *testing.T) {
+// TestBackfillNeedsAnExistingProfile: an unknown or empty profile id is refused
+// and no library is touched.
+func TestBackfillNeedsAnExistingProfile(t *testing.T) {
 	ctx := context.Background()
-	st := openV110(t, []legacyLibrary{
-		{id: "good", name: "Good", flow: graphA, source: "advanced", tier: RuleTierBasic, policy: "replace"},
-		{id: "broken", name: "Broken", flow: `{not json`, source: "advanced", tier: RuleTierBasic, policy: "replace"},
-	})
-	report, err := st.BackfillProfiles(ctx, fallbackGraph)
-	require.NoError(t, err)
-	require.Len(t, report, 2)
+	st := openV111(t, v111Libraries)
 
-	good, err := st.GetLibrary(ctx, "good")
+	_, err := st.BackfillProfiles(ctx, "missing")
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = st.BackfillProfiles(ctx, "")
+	require.Error(t, err)
+
+	libs, err := st.ListLibraries(ctx)
 	require.NoError(t, err)
-	assert.NotEmpty(t, good.ProfileID)
-	broken, err := st.GetLibrary(ctx, "broken")
-	require.NoError(t, err)
-	assert.Empty(t, broken.ProfileID)
-	for _, e := range report {
-		if e.LibraryID == "broken" {
-			assert.Error(t, e.Err)
-		} else {
-			assert.NoError(t, e.Err)
-		}
+	for _, l := range libs {
+		assert.Empty(t, l.ProfileID, "library %s stays unassigned", l.ID)
 	}
+}
+
+// TestBackfillLeavesAssignedLibrariesAlone: a library that already has a profile
+// keeps it, even when the backfill is given another one.
+func TestBackfillLeavesAssignedLibrariesAlone(t *testing.T) {
+	ctx := context.Background()
+	st := openV111(t, v111Libraries[:2])
+	def := defaultProfileFor(t, st)
+	other := &Profile{Name: "Other", Tier: RuleTierModerate, Graph: graphA, ResultPolicy: ResultPolicyKeepBoth}
+	require.NoError(t, st.CreateProfile(ctx, other))
+	require.NoError(t, st.SetLibraryProfile(ctx, "films", other.ID))
+
+	report, err := st.BackfillProfiles(ctx, def.ID)
+	require.NoError(t, err)
+	require.Len(t, report, 1, "only the unassigned library")
+	assert.Equal(t, "broken", report[0].LibraryID)
+
+	films, err := st.GetLibrary(ctx, "films")
+	require.NoError(t, err)
+	assert.Equal(t, other.ID, films.ProfileID)
+}
+
+// TestBackfillDoesNotWriteLegacyColumns: the backfill sets profile_id and nothing
+// else; the legacy columns keep their v1.11 values until task 78 drops them.
+func TestBackfillDoesNotWriteLegacyColumns(t *testing.T) {
+	ctx := context.Background()
+	st := openV111(t, v111Libraries)
+	def := defaultProfileFor(t, st)
+
+	_, err := st.BackfillProfiles(ctx, def.ID)
+	require.NoError(t, err)
+
+	var flow, tier, policy string
+	require.NoError(t, st.db.QueryRowContext(ctx, `SELECT flow_json, rule_tier, result_policy FROM libraries WHERE id = ?`, "films").Scan(&flow, &tier, &policy))
+	assert.Equal(t, graphA, flow)
+	assert.Equal(t, RuleTierAdvanced, tier)
+	assert.Equal(t, "keep_both", policy)
 }
 
 // TestProfileIDSurvivesLibraryWrites: UpdateLibrary from a fresh read keeps the
 // profile, and SetLibraryProfile changes only the reference.
 func TestProfileIDSurvivesLibraryWrites(t *testing.T) {
 	ctx := context.Background()
-	st := openV110(t, v110Libraries[:1])
-	_, err := st.BackfillProfiles(ctx, fallbackGraph)
+	st := openV111(t, v111Libraries[:1])
+	def := defaultProfileFor(t, st)
+	_, err := st.BackfillProfiles(ctx, def.ID)
 	require.NoError(t, err)
 
 	lib, err := st.GetLibrary(ctx, "films")
@@ -231,7 +197,7 @@ func TestProfileIDSurvivesLibraryWrites(t *testing.T) {
 	require.NoError(t, st.UpdateLibrary(ctx, lib))
 	again, err := st.GetLibrary(ctx, "films")
 	require.NoError(t, err)
-	assert.Equal(t, lib.ProfileID, again.ProfileID)
+	assert.Equal(t, def.ID, again.ProfileID)
 	assert.Equal(t, "Renamed", again.Name)
 }
 
@@ -240,7 +206,7 @@ func TestProfileCRUD(t *testing.T) {
 	ctx := context.Background()
 	st := openTemp(t)
 
-	p := &Profile{Name: "Standard", Description: "d", Tier: RuleTierModerate, Graph: graphACanonical, ResultPolicy: "replace_if_smaller"}
+	p := &Profile{Name: "Standard", Description: "d", Tier: RuleTierModerate, Graph: graphA, ResultPolicy: "replace_if_smaller"}
 	require.NoError(t, st.CreateProfile(ctx, p))
 	require.NotEmpty(t, p.ID)
 
@@ -248,7 +214,7 @@ func TestProfileCRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Standard", got.Name)
 	assert.Equal(t, RuleTierModerate, got.Tier)
-	assert.Equal(t, graphACanonical, got.Graph)
+	assert.Equal(t, graphA, got.Graph)
 
 	_, err = st.GetProfile(ctx, "missing")
 	require.ErrorIs(t, err, ErrNotFound)
@@ -274,20 +240,4 @@ func TestProfileCRUD(t *testing.T) {
 	assert.Empty(t, cleared.ProfileID)
 
 	require.ErrorIs(t, st.SetLibraryProfile(ctx, "missing", p.ID), ErrNotFound)
-}
-
-// TestCanonicalJSONIgnoresFormatting: the same graph in two layouts canonicalises
-// to one string, and malformed or trailing input is rejected.
-func TestCanonicalJSONIgnoresFormatting(t *testing.T) {
-	a, err := canonicalJSON(graphA)
-	require.NoError(t, err)
-	b, err := canonicalJSON(graphAReformatted)
-	require.NoError(t, err)
-	assert.Equal(t, graphACanonical, a)
-	assert.Equal(t, a, b)
-
-	_, err = canonicalJSON(`{"a":1} {"b":2}`)
-	require.Error(t, err)
-	_, err = canonicalJSON(`{not json`)
-	require.Error(t, err)
 }

@@ -19,13 +19,11 @@ import (
 
 // LibraryDTO is the JSON shape of a library. Target is the parsed Target
 // object (validated when the library was written), so UIs never re-parse it.
-// Easy is the easy-screen state: the stored easy input when the library was
-// saved from the easy screen, the described state when the Target is
+// Easy is the easy-screen state: the described state when the Target is
 // easy-shaped, or null when the library has no easy-mode representation.
 // Flow is the canonical rule graph (ARCHITECTURE.md flow schema) and
-// FlowSource records who owns it: easy, steps or advanced. The flow wins
-// when it disagrees with the Target; legacy rows without a stored flow
-// get the flow compiled from their Target. FileKinds is what the library
+// FlowSource records who owns it: easy, steps or advanced, derived from the
+// profile's tier. FileKinds is what the library
 // holds (task 34) and LastScan is the summary of the last successful scan,
 // including the distinct count of files skipped because their kind is not
 // what the library looks for.
@@ -210,9 +208,9 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 	}
 }
 
-// libraryFlowOrNull returns the library's rule graph for the DTO. A legacy
-// row (no stored flow) gets the flow compiled from its Target so every
-// library always carries a flow; an unparsable Target yields a null flow.
+// libraryFlowOrNull returns the library's rule graph for the DTO: the graph of
+// its profile, or null when it has no profile or the profile's graph is
+// unusable (task 76: the legacy columns are no longer compiled from).
 func libraryFlowOrNull(l *store.Library) (*flow.Graph, string) {
 	g, source, err := LibraryFlow(l)
 	if err != nil {

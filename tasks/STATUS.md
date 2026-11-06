@@ -120,7 +120,7 @@ Order is code first, API second, schema last, so every intermediate commit keeps
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 76 | 76-remove-legacy-code.md | todo | removes the legacy readers and writers, keeps the columns in the schema |
+| 76 | 76-remove-legacy-code.md | in_progress | branch task/76-remove-legacy-code (pushed, PR not opened by agent); make lint and go vet clean, go test ./... ok, web vitest 524 pass; notes in tasks/76-notes.md; owner to confirm NOT NULL target literal (decision 1) and direct v1.10 to v1.12 upgrade behaviour |
 | 77 | 77-remove-api-surface.md | todo | removes the deprecated request fields, the `deprecated` reply list, `PUT /libraries/{id}/tier` |
 | 78 | 78-drop-columns.md | todo | forward only migration 0019 drops the six columns, release notes, wave verification |
 

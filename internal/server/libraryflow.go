@@ -26,8 +26,7 @@ var ErrNoProfile = errors.New("the library has no encode profile; attach one")
 
 // LibraryFlow returns the library's rule graph and its source: the graph of
 // the encode profile it follows (spec 5.1, 5.4). Source is derived from the
-// profile's tier. The legacy flow_json, target and easy columns are not read
-// here; see legacyLibraryFlow, which only the boot migration uses.
+// profile's tier. The legacy flow_json, target and easy columns are not read.
 func LibraryFlow(lib *store.Library) (flow.Graph, string, error) {
 	if s := trimJSON(lib.ProfileGraph); s != "" {
 		g, err := flow.ParseGraph([]byte(s))
@@ -55,33 +54,6 @@ func sourceForTier(tier string) string {
 // LibraryTier returns the rule tier the library's profile is edited at (task
 // 59 moved to the profile in task 74). Empty when no profile is attached.
 func LibraryTier(lib *store.Library) string { return lib.ProfileTier }
-
-// legacyLibraryFlow is the pre-profile rule of a library: its stored flow,
-// else the flow compiled from its Target, with the source inferred from the
-// easy input. Only the boot migration (backfillFlows) reads it, to fill in the
-// profile a library did not have yet. Nothing that runs a job calls it.
-func legacyLibraryFlow(lib *store.Library) (flow.Graph, string, error) {
-	if s := trimJSON(lib.FlowJSON); s != "" {
-		g, err := flow.ParseGraph([]byte(s))
-		if err != nil {
-			return flow.Graph{}, "", fmt.Errorf("library flow: %w", err)
-		}
-		return g, lib.FlowSource, nil
-	}
-	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
-	if err != nil {
-		return flow.Graph{}, "", fmt.Errorf("library flow: %w", err)
-	}
-	g, err := flow.TargetToFlow(target)
-	if err != nil {
-		return flow.Graph{}, "", fmt.Errorf("library flow: %w", err)
-	}
-	source := flow.FlowSourceAdvanced
-	if trimJSON(lib.EasyJSON) != "" {
-		source = flow.FlowSourceEasy
-	}
-	return g, source, nil
-}
 
 // LibraryPlan compiles the library's flow into the executable plan. It is
 // the entry point for the scanner, re-evaluation and the job spec builder.
@@ -195,108 +167,41 @@ func IsPluginStepError(err error) bool {
 	return errors.As(err, &e)
 }
 
-// backfillFlows compiles and persists the flow of every library that
-// predates the flow columns, so the flow API and the step stack work with
-// no manual migration (TestLegacyTargetStillRuns). Failures are logged per
-// library; the lazy compile in LibraryFlow keeps them working either way.
-func (m *LibraryManager) backfillFlows(ctx context.Context) {
+// backfillProfiles gives every library with no encode profile the default
+// profile (encode profiles wave, spec 5.2). It runs once per boot and reads no
+// legacy rule column: since v1.11 every library is assigned, so a row is
+// unassigned only after a failed boot. The default profile is created first when
+// the table is empty (defaultProfile). One log line names each library it gave a
+// profile. The step is idempotent: a second boot finds every library assigned
+// and logs nothing.
+func (m *LibraryManager) backfillProfiles(ctx context.Context) {
 	libs, err := m.st.ListLibraries(ctx)
 	if err != nil {
-		m.log.Error("library: flow backfill", "err", err)
+		m.log.Error("library: profile backfill", "err", err)
 		return
 	}
+	unassigned := false
 	for _, lib := range libs {
-		if trimJSON(lib.FlowJSON) != "" {
-			continue
+		if lib.ProfileID == "" {
+			unassigned = true
+			break
 		}
-		g, source, err := legacyLibraryFlow(lib)
-		if err != nil {
-			m.log.Error("library: flow backfill", "library", lib.ID, "err", err)
-			continue
-		}
-		raw, err := json.Marshal(g)
-		if err != nil {
-			m.log.Error("library: flow backfill", "library", lib.ID, "err", err)
-			continue
-		}
-		updated := *lib
-		updated.FlowJSON = string(raw)
-		updated.FlowSource = source
-		if err := m.st.UpdateLibrary(ctx, &updated); err != nil {
-			m.log.Error("library: flow backfill", "library", lib.ID, "err", err)
-			continue
-		}
-		m.log.Debug("library flow backfilled", "library", lib.ID, "source", source)
 	}
-}
-
-// backfillProfiles gives every library without an encode profile one (encode
-// profiles wave, spec 5.2). It runs after backfillFlows, so a library that
-// compiled has its stored graph to hash; a library with no usable graph gets the
-// default seed (the default Target compiled to a flow). One log line names each
-// library and the profile it got. The step is idempotent: a second boot finds
-// every library assigned and logs nothing.
-func (m *LibraryManager) backfillProfiles(ctx context.Context) {
-	seed, err := defaultProfileGraph()
-	if err != nil {
-		m.log.Error("library: profile backfill: default graph", "err", err)
+	if !unassigned {
 		return
 	}
-	report, err := m.st.BackfillProfiles(ctx, seed)
+	def, err := m.defaultProfile(ctx)
+	if err != nil {
+		m.log.Error("library: profile backfill: default profile", "err", err)
+		return
+	}
+	report, err := m.st.BackfillProfiles(ctx, def.ID)
 	if err != nil {
 		m.log.Error("library: profile backfill", "err", err)
 		return
 	}
 	for _, e := range report {
-		if e.Err != nil {
-			m.log.Error("library: profile backfill", "library", e.LibraryID, "err", e.Err)
-			continue
-		}
-		switch {
-		case e.Seeded:
-			m.log.Warn("library had no graph, seeded default profile", "library", e.LibraryName, "profile", e.ProfileName)
-		case e.Created:
-			m.log.Info("library profile created", "library", e.LibraryName, "profile", e.ProfileName)
-		default:
-			m.log.Info("library profile assigned", "library", e.LibraryName, "profile", e.ProfileName)
-		}
-	}
-}
-
-// logLegacyColumns warns once per boot while any library row still holds a non
-// empty legacy rule column (task 74). The encode profile is the rule now; the
-// columns are a snapshot kept for rollback and dropped in v1.12 (ROADMAP). The
-// migration fills flow_json for every row, so the warning stays until the drop.
-func (m *LibraryManager) logLegacyColumns(ctx context.Context) {
-	libs, err := m.st.ListLibraries(ctx)
-	if err != nil {
-		m.log.Error("library: legacy column check", "err", err)
-		return
-	}
-	rows := 0
-	counts := map[string]int{}
-	for _, lib := range libs {
-		hit := false
-		for name, v := range map[string]string{
-			"flow_json":     lib.FlowJSON,
-			"flow_source":   lib.FlowSource,
-			"target":        lib.TargetJSON,
-			"easy":          lib.EasyJSON,
-			"rule_tier":     lib.RuleTier,
-			"result_policy": lib.ResultPolicy,
-		} {
-			if trimJSON(v) != "" {
-				counts[name]++
-				hit = true
-			}
-		}
-		if hit {
-			rows++
-		}
-	}
-	if rows > 0 {
-		m.log.Warn("library rule columns are legacy: the encode profile is the rule; these columns are dropped in v1.12",
-			"libraries", rows, "columns", counts)
+		m.log.Info("library profile assigned", "library", e.LibraryName, "profile", e.ProfileName)
 	}
 }
 

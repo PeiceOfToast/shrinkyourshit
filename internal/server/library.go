@@ -276,10 +276,8 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 // one folder, so the move check runs here, per library.
 //
 // The profile's graph, tier and result policy are carried on the library so
-// LibraryFlow and the reply see what will run. The legacy columns (flow_json,
-// flow_source, target, easy, rule_tier, result_policy) are written from the
-// profile as a snapshot: nothing reads them any more, but a rollback to v1.10
-// finds a rule that matches the last save (task 74, decision 4).
+// LibraryFlow and the reply see what will run. The legacy rule columns are no
+// longer written (task 76): the library row holds the profile id only.
 func (m *LibraryManager) attachProfile(ctx context.Context, lib *store.Library) error {
 	lib.ProfileGraph, lib.ProfileTier, lib.ProfileResultPolicy = "", "", ""
 	prof, err := m.st.GetProfile(ctx, lib.ProfileID)
@@ -293,8 +291,7 @@ func (m *LibraryManager) attachProfile(ctx context.Context, lib *store.Library) 
 	if err != nil {
 		return fmt.Errorf("profile %q: %w", prof.Name, err)
 	}
-	plan, err := flow.Compile(g)
-	if err != nil {
+	if _, err := flow.Compile(g); err != nil {
 		return fmt.Errorf("profile %q: %w", prof.Name, err)
 	}
 	if m.pluginCheck != nil {
@@ -308,15 +305,6 @@ func (m *LibraryManager) attachProfile(ctx context.Context, lib *store.Library) 
 	lib.ProfileGraph = prof.Graph
 	lib.ProfileTier = prof.Tier
 	lib.ProfileResultPolicy = prof.ResultPolicy
-
-	lib.FlowJSON = prof.Graph
-	lib.FlowSource = sourceForTier(prof.Tier)
-	lib.RuleTier = prof.Tier
-	lib.ResultPolicy = prof.ResultPolicy
-	lib.EasyJSON = ""
-	if raw, err := json.Marshal(plan.Target()); err == nil {
-		lib.TargetJSON = string(raw)
-	}
 	return nil
 }
 

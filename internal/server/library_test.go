@@ -25,7 +25,7 @@ func TestLibraryCreateValidation(t *testing.T) {
 	lib, err := m.Create(ctx, LibraryParams{Name: "Movies", Path: h.root, Watch: true})
 	require.NoError(t, err)
 	assert.NotEmpty(t, lib.ProfileID)
-	assert.Equal(t, flow.CodecHEVC, mustTarget(t, lib.TargetJSON).Video.Codec)
+	assert.Equal(t, flow.CodecHEVC, NewLibraryDTO(lib).Target.Video.Codec)
 
 	// A profile that does not exist is refused.
 	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: h.root, ProfileID: "no-such-profile"})
@@ -47,14 +47,6 @@ func TestLibraryCreateValidation(t *testing.T) {
 	lib2, err := m.Create(ctx, LibraryParams{Name: "Series", Path: h.root, Schedule: "0 3 * * *"})
 	require.NoError(t, err)
 	assert.Equal(t, "0 3 * * *", lib2.Schedule)
-}
-
-// mustTarget parses a stored Target JSON, failing the test on error.
-func mustTarget(t *testing.T, raw string) flow.Target {
-	t.Helper()
-	target, err := flow.ParseTarget([]byte(raw))
-	require.NoError(t, err)
-	return target
 }
 
 func TestLibraryUpdateReevaluates(t *testing.T) {
@@ -89,7 +81,7 @@ func TestLibraryUpdateReevaluates(t *testing.T) {
 		Name: "Movies", Path: h.root, ProfileID: targetProfile(t, h.st, raw, ""),
 	})
 	require.NoError(t, err)
-	assert.Equal(t, flow.CodecH264, mustTarget(t, updated.TargetJSON).Video.Codec)
+	assert.Equal(t, flow.CodecH264, NewLibraryDTO(updated).Target.Video.Codec)
 
 	fs = h.files(lib.ID)
 	// hevc.mkv now needs work (hevc file, h264 target): queued.
