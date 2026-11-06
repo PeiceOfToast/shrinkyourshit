@@ -135,6 +135,7 @@ const cases: {
   { path: '/libraries/lib-1/rules', title: 'Rules · Movies · ShrinkYourShit' },
   { path: '/libraries/lib-1/flow', title: 'Rules · Movies · ShrinkYourShit' },
   { path: '/nodes', title: 'Nodes · ShrinkYourShit' },
+  { path: '/storage', title: 'Storage · ShrinkYourShit' },
   { path: '/encode', title: 'Encode settings · ShrinkYourShit' },
   { path: '/app', title: 'App settings · ShrinkYourShit' },
   { path: '/integrations', title: 'Integrations · ShrinkYourShit' },

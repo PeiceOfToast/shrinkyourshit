@@ -147,23 +147,25 @@ describe('route guard', () => {
     // settings, Integrations, App settings.
     const nav = screen.getByRole('navigation', { name: 'Main' })
     const links = nav.querySelectorAll('a')
-    expect(links).toHaveLength(6)
+    expect(links).toHaveLength(7)
     const labels = Array.from(links).map((a) => a.textContent)
     expect(labels).toEqual([
       'Dashboard',
       'Libraries',
       'Nodes',
+      'Storage',
       'Encode settings',
       'Integrations',
       'App settings',
     ])
   })
 
-  it('renders each of the six nav routes with its page', async () => {
+  it('renders each of the seven nav routes with its page', async () => {
     const cases: Array<[string, string]> = [
       ['/', 'dashboard'],
       ['/libraries', 'libraries-page'],
       ['/nodes', 'nodes-page'],
+      ['/storage', 'storage-page'],
       ['/encode', 'encode-settings-page'],
       ['/integrations', 'integrations-page'],
       ['/app', 'app-settings-page'],

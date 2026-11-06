@@ -814,3 +814,83 @@ describe('DashboardPage', () => {
     expect(row).not.toHaveTextContent('job done-1')
   })
 })
+
+describe('DashboardPage storage login warning (task 68)', () => {
+  function storageMock(loginEnabled: boolean, enabled: boolean) {
+    return installFetchMock([
+      {
+        method: 'GET',
+        match: /\/api\/v1\/libraries$/,
+        body: { items: [library], total: 1 },
+      },
+      { method: 'GET', match: /\/api\/v1\/stats$/, body: zeros },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/jobs$/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/nodes$/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/storages$/,
+        body: {
+          items: [
+            {
+              id: 'st-1',
+              name: 'nas',
+              protocol: 'nfs',
+              source: '192.168.1.10:/export',
+              options: '',
+              username: '',
+              domain: '',
+              password_set: false,
+              read_only: false,
+              enabled,
+              mountpoint: '/storage/nas',
+              mounted: enabled,
+              error: '',
+              created_at: '2026-11-01T10:00:00Z',
+              updated_at: '2026-11-01T10:00:00Z',
+            },
+          ],
+          total: 1,
+          host_policy: { restricted: false, allowed: [], message: '' },
+        },
+      },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/settings$/,
+        body: { login_enabled: loginEnabled },
+      },
+    ])
+  }
+
+  it('shows the standing warning when a share is mounted and login is off', async () => {
+    mock = storageMock(false, true)
+    renderDashboard()
+    const warning = await waitFor(() =>
+      screen.getByTestId('warning-storage-login-off'),
+    )
+    expect(warning).toHaveTextContent(
+      'A network share is mounted while login is off',
+    )
+    expect(
+      screen.getByRole('link', { name: 'Go to App settings' }),
+    ).toHaveAttribute('href', '/app')
+  })
+
+  it('stays quiet with login on', async () => {
+    mock = storageMock(true, true)
+    renderDashboard()
+    await waitFor(() =>
+      expect(mock.calls('GET', /\/api\/v1\/settings$/)).not.toHaveLength(0),
+    )
+    expect(
+      screen.queryByTestId('warning-storage-login-off'),
+    ).not.toBeInTheDocument()
+  })
+})

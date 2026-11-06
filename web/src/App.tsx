@@ -11,6 +11,7 @@ import LibraryEditPage from './LibraryEditPage'
 import LoginPage from './LoginPage'
 import NewLibraryPage from './NewLibraryPage'
 import NodesPage from './NodesPage'
+import StoragePage from './StoragePage'
 import RulesPage from './RulesPage'
 import EncodeSettingsPage from './EncodeSettingsPage'
 import AppSettingsPage from './AppSettingsPage'
@@ -66,6 +67,7 @@ export default function App() {
           />
           <Route path="libraries/:id/tree" element={<FlowTreePage />} />
           <Route path="nodes" element={<NodesPage />} />
+          <Route path="storage" element={<StoragePage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />
           <Route path="app" element={<AppSettingsPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />

@@ -14,7 +14,9 @@ import {
   getJobs,
   getLibraries,
   getNodes,
+  getSettings,
   getStats,
+  getStorages,
   type Job,
   type Node,
 } from './api'
@@ -27,6 +29,7 @@ import Icon from './Icon'
 import PageContainer from './PageContainer'
 import PageHeader from './PageHeader'
 import { computeWarnings, type DashboardWarning } from './dashboardWarnings'
+import { storagesKey } from './storageModel'
 import {
   formatBytes,
   formatCount,
@@ -284,6 +287,8 @@ export default function DashboardPage() {
   })
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: getNodes })
   const update = useUpdateStatus()
+  const storages = useQuery({ queryKey: storagesKey, queryFn: getStorages })
+  const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings })
 
   if (libraries.data && libraries.data.total === 0) {
     return (
@@ -331,6 +336,14 @@ export default function DashboardPage() {
     update: update.data
       ? { available: update.data.update_available, version: update.data.latest }
       : undefined,
+    // Storage login warning (task 68). Quiet until both queries have answered.
+    storage:
+      storages.data && settings.data
+        ? {
+            mounts: storages.data.items.filter((s) => s.enabled).length,
+            loginEnabled: settings.data.login_enabled,
+          }
+        : undefined,
   })
 
   return (

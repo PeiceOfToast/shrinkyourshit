@@ -208,3 +208,36 @@ describe('computeWarnings', () => {
     ).toHaveLength(0)
   })
 })
+
+describe('storage login warning (task 68, spec 4.6)', () => {
+  it('warns when a share is mounted and login is off, and links to App settings', () => {
+    const warnings = computeWarnings({
+      ...base,
+      storage: { mounts: 1, loginEnabled: false },
+    })
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].id).toBe('storage-login-off')
+    expect(warnings[0].message).toContain(
+      'A network share is mounted while login is off',
+    )
+    expect(warnings[0].linkTo).toBe('/app')
+  })
+
+  it('uses plural wording for several shares', () => {
+    const warnings = computeWarnings({
+      ...base,
+      storage: { mounts: 2, loginEnabled: false },
+    })
+    expect(warnings[0].message).toContain('2 network shares are mounted')
+  })
+
+  it('stays quiet with login on, with no shares, or before storage has loaded', () => {
+    expect(
+      computeWarnings({ ...base, storage: { mounts: 3, loginEnabled: true } }),
+    ).toHaveLength(0)
+    expect(
+      computeWarnings({ ...base, storage: { mounts: 0, loginEnabled: false } }),
+    ).toHaveLength(0)
+    expect(computeWarnings({ ...base })).toHaveLength(0)
+  })
+})
