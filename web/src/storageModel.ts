@@ -15,7 +15,7 @@ import {
 import { formatBytes } from './format'
 
 /** The spec 4.4 default for NFS, shown and editable on the form (task 65). */
-export const NFS_DEFAULT_OPTIONS = 'vers=3,soft,timeo=50,retrans=2'
+export const NFS_DEFAULT_OPTIONS = 'vers=4.2,soft,timeo=50,retrans=2'
 
 /** The spec 4.4 option allowlist, surfaced as a hint on the form. */
 export const ALLOWED_OPTIONS = [

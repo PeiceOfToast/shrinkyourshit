@@ -217,6 +217,8 @@ func TestStorageOptionsAllowlist(t *testing.T) {
 	valid := []string{
 		"",
 		"vers=3,soft,timeo=50,retrans=2",
+		"vers=4.2,soft,timeo=50,retrans=2",
+		"vers=4.1,hard",
 		"ro,nosuid,nodev,noexec,noatime",
 		"uid=1000,gid=1000,file_mode=0644,dir_mode=0755",
 		"vers=3.0,sec=ntlmssp,iocharset=utf8,_netdev",
@@ -456,6 +458,10 @@ func TestStorageCRUDWithLogin(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
 	assert.Equal(t, "movies", created.Name)
 	assert.Equal(t, nfsDefaultOptions, created.Options, "NFS gets the soft default when no options are given")
+	assert.Equal(t, "vers=4.2,soft,timeo=50,retrans=2", created.Options, "the exact stored default string (task 80)")
+	stored, err := h.st.GetStorage(context.Background(), created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "vers=4.2,soft,timeo=50,retrans=2", stored.Options, "the row holds the same default the response shows")
 	assert.Equal(t, "/storage/movies", created.Mountpoint)
 	assert.True(t, created.Enabled)
 	assert.False(t, created.Mounted)

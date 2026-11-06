@@ -1832,7 +1832,7 @@ components:
         name: { type: string, description: 1 to 64 lowercase letters, digits and dashes. Fixed after create. }
         protocol: { type: string, enum: [nfs, smb] }
         source: { type: string }
-        options: { type: string, description: Empty on NFS means vers=3,soft,timeo=50,retrans=2. }
+        options: { type: string, description: Empty on NFS means vers=4.2,soft,timeo=50,retrans=2. }
         username: { type: string, description: SMB only. }
         domain: { type: string, description: SMB only. }
         password: { type: string, description: SMB only. Write only. On update, empty keeps the stored password. }

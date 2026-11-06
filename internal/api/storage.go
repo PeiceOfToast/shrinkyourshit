@@ -171,8 +171,11 @@ var storageMountOptions = map[string]mountOption{
 
 // nfsDefaultOptions are the spec 4.4 NFS defaults: soft mounts, so a NAS
 // hiccup returns an error instead of hanging the process (the 2026-11-05
-// NZBGet incident).
-const nfsDefaultOptions = "vers=3,soft,timeo=50,retrans=2"
+// NZBGet incident). The version is 4.2, not 3: NFSv3 locking needs
+// rpc.statd on the client, which the container does not run, so a vers=3
+// mount fails with "rpc.statd is not running" (real-hardware run, 2026-11-06).
+// vers=3 stays allowed when an operator sets it explicitly.
+const nfsDefaultOptions = "vers=4.2,soft,timeo=50,retrans=2"
 
 // defaultStorageOptions fills in the NFS defaults when no options were given.
 func defaultStorageOptions(protocol, options string) string {

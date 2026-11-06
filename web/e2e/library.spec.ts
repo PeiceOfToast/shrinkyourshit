@@ -258,7 +258,7 @@ test.describe('library folder picker (task 69)', () => {
       name: 'nas',
       protocol: 'nfs',
       source: 'nas.lan:/export/media',
-      options: 'vers=3,soft,timeo=50,retrans=2',
+      options: 'vers=4.2,soft,timeo=50,retrans=2',
       username: '',
       domain: '',
       password_set: false,

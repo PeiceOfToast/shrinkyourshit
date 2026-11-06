@@ -254,7 +254,7 @@ func (h *harness) mountpoint(name string) string { return filepath.Join(h.root, 
 func nfsStorage(id, name string) *store.Storage {
 	return &store.Storage{
 		ID: id, Name: name, Protocol: "nfs", Source: "nas:/export",
-		Options: "vers=3,soft,timeo=50,retrans=2", Enabled: true,
+		Options: "vers=4.2,soft,timeo=50,retrans=2", Enabled: true,
 	}
 }
 
@@ -270,7 +270,7 @@ func smbStorage(id, name string) *store.Storage {
 func TestBuildMountSpecNFSExact(t *testing.T) {
 	st := nfsStorage("st-1", "media")
 	got := BuildMountSpec(st, "/storage/media", "")
-	want := MountSpec{Fstype: "nfs", Source: "nas:/export", Target: "/storage/media", Flags: 0, Data: "vers=3,soft,timeo=50,retrans=2"}
+	want := MountSpec{Fstype: "nfs", Source: "nas:/export", Target: "/storage/media", Flags: 0, Data: "vers=4.2,soft,timeo=50,retrans=2"}
 	if got != want {
 		t.Fatalf("nfs spec:\n got %+v\nwant %+v", got, want)
 	}
@@ -367,7 +367,7 @@ func TestMountRunsExactSpecNFS(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("calls = %d, want 1: %+v", len(calls), calls)
 	}
-	want := MountSpec{Fstype: "nfs", Source: "nas:/export", Target: h.mountpoint("media"), Data: "vers=3,soft,timeo=50,retrans=2"}
+	want := MountSpec{Fstype: "nfs", Source: "nas:/export", Target: h.mountpoint("media"), Data: "vers=4.2,soft,timeo=50,retrans=2"}
 	if calls[0].op != "mount" || calls[0].spec != want {
 		t.Fatalf("mount call:\n got %+v\nwant %+v", calls[0].spec, want)
 	}
