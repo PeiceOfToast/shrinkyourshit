@@ -49,6 +49,11 @@ describe('EncodeSettingsPage', () => {
     mock = installFetchMock([
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
       {
+        method: 'GET',
+        match: /\/api\/v1\/profiles$/,
+        body: { items: [], total: 0 },
+      },
+      {
         method: 'PUT',
         match: /\/api\/v1\/settings$/,
         body: settings,
@@ -63,6 +68,11 @@ describe('EncodeSettingsPage', () => {
   it('renders the HTTP status, server code and raw JSON when a save fails (task 13)', async () => {
     mock = installFetchMock([
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/profiles$/,
+        body: { items: [], total: 0 },
+      },
       {
         method: 'PUT',
         match: /\/api\/v1\/settings$/,
@@ -92,6 +102,11 @@ describe('EncodeSettingsPage', () => {
   it('uses 44px controls on the encode settings page (task 20)', async () => {
     mock = installFetchMock([
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/profiles$/,
+        body: { items: [], total: 0 },
+      },
     ])
     renderPage()
     await screen.findByTestId('save-settings')
@@ -167,6 +182,11 @@ describe('EncodeSettingsPage', () => {
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
       {
         method: 'GET',
+        match: /\/api\/v1\/profiles$/,
+        body: { items: [], total: 0 },
+      },
+      {
+        method: 'GET',
         match: /\/api\/v1\/nodes$/,
         body: { items: [], total: 0 },
       },
@@ -181,6 +201,7 @@ describe('EncodeSettingsPage', () => {
       'Library defaults',
       'Rule tiers',
       'Intel Quick Sync extras',
+      'Profiles',
     ])
     expect(
       screen.getByText(
@@ -195,6 +216,11 @@ describe('EncodeSettingsPage', () => {
   it('says the QSV switches do nothing when no node reports Quick Sync (task 49)', async () => {
     mock = installFetchMock([
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/profiles$/,
+        body: { items: [], total: 0 },
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/nodes$/,
@@ -218,6 +244,11 @@ describe('EncodeSettingsPage', () => {
   it('hides the QSV notice when a node reports Quick Sync (task 49)', async () => {
     mock = installFetchMock([
       { method: 'GET', match: /\/api\/v1\/settings$/, body: settings },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/profiles$/,
+        body: { items: [], total: 0 },
+      },
       {
         method: 'GET',
         match: /\/api\/v1\/nodes$/,

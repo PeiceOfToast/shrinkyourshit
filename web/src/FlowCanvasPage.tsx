@@ -15,14 +15,11 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ApiError,
   getFlowStepTypes,
   getPlugins,
-  getLibrary,
-  getLibraryFlow,
-  putLibraryFlow,
   validateFlow,
   type FlowFieldError,
   type FlowGraph,
@@ -49,6 +46,8 @@ import { useToast } from './toastContext'
 import { useUnsavedGuard } from './useUnsavedGuard'
 import { useMediaQuery } from './useMediaQuery'
 import { btnGhost, btnPrimary, card, cardPad } from './uiControls'
+import { useFlowSubject, type SubjectKind } from './flowSubject'
+import { ProfileSaveConfirm, ProfileTierSwitch } from './ProfileControls'
 
 /** Every change re-validates; the debounce keeps typing in the inspector
  * from firing a request per keystroke. */
@@ -108,20 +107,16 @@ function tierOf(source: string): Tier {
   return 'steps'
 }
 
-export default function FlowCanvasPage() {
+/** The canvas for a library (its Rules route) or an encode profile (task 72). */
+export default function FlowCanvasPage({
+  subject: kind = 'library',
+}: {
+  subject?: SubjectKind
+}) {
   const { id = '' } = useParams()
-  const client = useQueryClient()
   const toast = useToast()
-  const libraryCrumb = { label: 'Libraries', to: '/libraries' }
-
-  const library = useQuery({
-    queryKey: ['library', id],
-    queryFn: () => getLibrary(id),
-  })
-  const flow = useQuery({
-    queryKey: ['library-flow', id],
-    queryFn: () => getLibraryFlow(id),
-  })
+  const subj = useFlowSubject({ kind, id })
+  const flow = { data: subj.flow, isPending: subj.isPending }
   const palette = useQuery({
     queryKey: ['flow-step-types'],
     queryFn: getFlowStepTypes,
@@ -144,7 +139,7 @@ export default function FlowCanvasPage() {
   const [validity, setValidity] = useState<Validity | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
 
-  useDocumentTitle(['Rules', library.data?.name])
+  useDocumentTitle([kind === 'profile' ? 'Profile' : 'Rules', subj.name])
 
   // First load: the graph is exactly the object the API returned.
   useEffect(() => {
@@ -217,22 +212,20 @@ export default function FlowCanvasPage() {
   const dirty =
     !!graph && baseline !== null && JSON.stringify(graph) !== baseline
 
-  const invalidate = () => {
-    void client.invalidateQueries({ queryKey: ['library', id] })
-    void client.invalidateQueries({ queryKey: ['library-flow', id] })
-    void client.invalidateQueries({ queryKey: ['libraries'] })
-  }
-
   const save = useMutation({
     mutationFn: () => {
       if (!graph) throw new Error('nothing to save')
-      return putLibraryFlow(id, { source: 'advanced', graph })
+      return subj.save(graph, 'advanced')
     },
-    onSuccess: (resp) => {
-      setGraphState(resp.graph)
-      setBaseline(JSON.stringify(resp.graph))
-      toast.success('Flow saved. This library now uses the visual editor.')
-      invalidate()
+    onSuccess: (saved) => {
+      setGraphState(saved)
+      setBaseline(JSON.stringify(saved))
+      toast.success(
+        kind === 'profile'
+          ? 'Profile saved.'
+          : 'Flow saved. This library now uses the visual editor.',
+      )
+      subj.invalidate()
     },
     onError: (err: unknown) => {
       if (err instanceof ApiError && err.code === 'invalid_flow' && graph) {
@@ -266,8 +259,8 @@ export default function FlowCanvasPage() {
     applyGraph(JSON.parse(baseline) as FlowGraph)
   }
 
-  const loading =
-    library.isPending || flow.isPending || palette.isPending || !graph
+  const libraryCrumb = subj.root
+  const loading = subj.isPending || palette.isPending || !graph
   if (loading) {
     return (
       <PageContainer className="pb-8" data-testid="flow-loading">
@@ -276,29 +269,27 @@ export default function FlowCanvasPage() {
       </PageContainer>
     )
   }
-  const lib = library.data
   if (
-    library.isError ||
-    flow.isError ||
+    subj.isError ||
     palette.isError ||
     !flow.data ||
-    !lib
+    subj.name === undefined
   ) {
     return (
       <PageContainer className="pb-8" data-testid="flow-canvas-page">
         <PageHeader breadcrumb={[libraryCrumb]} title="Rules" />
         <ErrorBox
           title="Cannot load the flow."
-          error={library.error ?? flow.error ?? palette.error}
+          error={subj.error ?? palette.error}
           onRetry={() => {
-            void library.refetch()
-            void flow.refetch()
+            subj.refetch()
             void palette.refetch()
           }}
         />
       </PageContainer>
     )
   }
+  const lib = { id, name: subj.name }
 
   const checking = !validity || validity.version !== version
   const canSave =
@@ -315,15 +306,16 @@ export default function FlowCanvasPage() {
             ? 'No changes to save.'
             : null
   const inUse = tierOf(flow.data.source)
+  const noun = kind === 'profile' ? 'profile' : 'library'
 
   return (
     <PageContainer className="pb-8" data-testid="flow-canvas-page">
       <PageHeader
         breadcrumb={[
           libraryCrumb,
-          { label: lib.name, to: `/libraries/${lib.id}` },
+          { label: lib.name, to: subj.paths.overview },
         ]}
-        title="Rules"
+        title={kind === 'profile' ? 'Profile flow' : 'Rules'}
         meta={
           <>
             <span
@@ -364,13 +356,17 @@ export default function FlowCanvasPage() {
               )}
               <button
                 type="button"
-                onClick={() => save.mutate()}
+                onClick={() => subj.requestSave(() => save.mutate())}
                 disabled={!canSave}
                 title={saveReason ?? undefined}
                 className={btnPrimary}
                 data-testid="flow-save"
               >
-                {save.isPending ? 'Saving…' : 'Save rules'}
+                {save.isPending
+                  ? 'Saving…'
+                  : kind === 'profile'
+                    ? 'Save profile'
+                    : 'Save rules'}
               </button>
             </>
           ) : (
@@ -386,29 +382,33 @@ export default function FlowCanvasPage() {
         }
       />
 
-      <div className="flex flex-col gap-2" data-testid="tier-selector">
-        <SegmentedControl
-          label="Rule editor"
-          value="advanced"
-          options={TIERS.map((t) => ({
-            id: t.id,
-            label: t.label,
-            testId: t.testId,
-            to: t.to(lib.id),
-            badge:
-              inUse === t.id ? (
-                <Badge tone="success" testId={`${t.testId}-in-use`}>
-                  In use
-                </Badge>
-              ) : undefined,
-          }))}
-        />
-      </div>
+      {kind === 'profile' ? (
+        <ProfileTierSwitch subject={subj} current="advanced" />
+      ) : (
+        <div className="flex flex-col gap-2" data-testid="tier-selector">
+          <SegmentedControl
+            label="Rule editor"
+            value="advanced"
+            options={TIERS.map((t) => ({
+              id: t.id,
+              label: t.label,
+              testId: t.testId,
+              to: t.to(lib.id),
+              badge:
+                inUse === t.id ? (
+                  <Badge tone="success" testId={`${t.testId}-in-use`}>
+                    In use
+                  </Badge>
+                ) : undefined,
+            }))}
+          />
+        </div>
+      )}
 
       {wide && !editing && (
         <Banner tone="info" testId="flow-readonly-banner">
-          This is the flow this library runs.{' '}
-          {flow.data.source === 'easy'
+          This is the flow this {noun} runs.{' '}
+          {kind === 'library' && flow.data.source === 'easy'
             ? 'The rules come from the Easy settings. Edit the flow to take over manually.'
             : 'Edit the flow to change it.'}
         </Banner>
@@ -420,7 +420,7 @@ export default function FlowCanvasPage() {
         </Banner>
       )}
 
-      {editing && flow.data.source === 'easy' && (
+      {editing && kind === 'library' && flow.data.source === 'easy' && (
         <Banner tone="warning" testId="flow-edit-warning">
           Saving here replaces the generated rules with your own flow. The easy
           sliders will no longer drive this library.
@@ -495,10 +495,12 @@ export default function FlowCanvasPage() {
         >
           <p>
             The edits you made to the flow are not saved. Discarding brings back
-            the flow the library currently runs.
+            the flow the {noun} currently runs.
           </p>
         </ConfirmDialog>
       )}
+
+      <ProfileSaveConfirm pending={subj.pendingSave} />
 
       {guard.pending && (
         <ConfirmDialog

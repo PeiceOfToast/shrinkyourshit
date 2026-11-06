@@ -14,6 +14,7 @@ import NodesPage from './NodesPage'
 import StoragePage from './StoragePage'
 import RulesPage from './RulesPage'
 import EncodeSettingsPage from './EncodeSettingsPage'
+import ProfileEditorPage from './ProfilesPage'
 import AppSettingsPage from './AppSettingsPage'
 import IntegrationsPage from './IntegrationsPage'
 import SetupPage from './SetupPage'
@@ -69,6 +70,19 @@ export default function App() {
           <Route path="nodes" element={<NodesPage />} />
           <Route path="storage" element={<StoragePage />} />
           <Route path="encode" element={<EncodeSettingsPage />} />
+          <Route path="encode/profiles/:id" element={<ProfileEditorPage />} />
+          <Route
+            path="encode/profiles/:id/tree"
+            element={<FlowTreePage subject="profile" />}
+          />
+          <Route
+            path="encode/profiles/:id/flow"
+            element={
+              <Suspense fallback={<FlowLoading />}>
+                <FlowCanvasPage subject="profile" />
+              </Suspense>
+            }
+          />
           <Route path="app" element={<AppSettingsPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
           {/* Old bookmarks and links keep working: /settings is /app now. */}

@@ -753,6 +753,75 @@ export function getLibraryFlow(
   return api<FlowResponse>(`/api/v1/libraries/${id}/flow${q}`)
 }
 
+/** Result policies the server stores (task 71). */
+export type ResultPolicy = 'replace_if_smaller' | 'replace' | 'keep_both'
+
+/**
+ * An encode profile (task 71, spec 5.1): a named, reusable graph with a tier
+ * and a result policy. `used_by_names` names the libraries that use it.
+ */
+export interface Profile {
+  id: string
+  name: string
+  description: string
+  tier: RuleTier
+  result_policy: ResultPolicy
+  graph: FlowGraph
+  used_by: number
+  used_by_names: string[]
+  /** Steps the profile's own tier (or `?tier=`) cannot express. */
+  unrepresentable: FlowFieldError[]
+  created_at: string
+  updated_at: string
+}
+
+/** POST and PUT /profiles body (task 71). */
+export interface ProfileParams {
+  name: string
+  description?: string
+  tier: RuleTier
+  result_policy: ResultPolicy
+  graph: FlowGraph
+}
+
+export function listProfiles(): Promise<ListResponse<Profile>> {
+  return api<ListResponse<Profile>>('/api/v1/profiles')
+}
+
+/**
+ * GET /profiles/{id}. With a tier the graph is judged at that tier (task 72,
+ * `?tier=`); the stored tier is not changed.
+ */
+export function getProfile(id: string, tier?: RuleTier): Promise<Profile> {
+  const q = tier ? `?tier=${tier}` : ''
+  return api<Profile>(`/api/v1/profiles/${id}${q}`)
+}
+
+export function createProfile(body: ProfileParams): Promise<Profile> {
+  return api<Profile>('/api/v1/profiles', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateProfile(
+  id: string,
+  body: ProfileParams,
+): Promise<Profile> {
+  return api<Profile>(`/api/v1/profiles/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteProfile(id: string): Promise<void> {
+  return api<void>(`/api/v1/profiles/${id}`, { method: 'DELETE' })
+}
+
+export function duplicateProfile(id: string): Promise<Profile> {
+  return api<Profile>(`/api/v1/profiles/${id}/duplicate`, { method: 'POST' })
+}
+
 /** PUT /libraries/{id}/tier reply (task 59). Nothing in the flow changes. */
 export interface TierResponse {
   tier: RuleTier
