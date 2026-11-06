@@ -14,128 +14,96 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// easyTargetJSON is the exact compiled Target of easy
-// {quality:3, remove_subtitles:true, audio:2} under the default settings
-// (codec hevc, languages eng). The stored target of an easy-mode library
-// must match this byte for byte (semantically).
-const easyTargetJSON = `{
-	"video": {"codec": "hevc", "quality": 3, "reencode_if_same_codec": false},
-	"audio": {"mode": "keep_preferred", "preferred_languages": ["eng"], "compact_codec": "aac"},
-	"subtitles": {"mode": "remove", "preferred_languages": ["eng"], "extract_removed": false},
-	"container": "mkv"
-}`
-
-// TestCreateLibraryWithEasy: the easy screen posts {quality, remove_subtitles,
-// audio}; the server compiles it to the exact Target, stores both, and
-// defaults the name to the folder's base name.
-func TestCreateLibraryWithEasy(t *testing.T) {
+// TestCreateLibraryIgnoresLegacyEasy (task 74): the easy input is a pre-profile
+// field. A create that sends it still succeeds, the library follows the default
+// profile, the easy input is not compiled, and the reply names the field.
+func TestCreateLibraryIgnoresLegacyEasy(t *testing.T) {
 	h := newAPIHarness(t)
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"path": h.root, "watch": true,
 		"easy": map[string]any{"quality": 3, "remove_subtitles": true, "audio": 2},
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var dto server.LibraryDTO
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &dto))
-	require.NotEmpty(t, dto.ID)
-	require.Equal(t, "library", dto.Name, "name defaults to the folder base name")
-	require.JSONEq(t, `{"quality":3,"remove_subtitles":true,"audio":2}`, string(dto.Easy))
-	targetRaw, err := json.Marshal(dto.Target)
-	require.NoError(t, err)
-	require.JSONEq(t, easyTargetJSON, string(targetRaw))
-
-	// The stored row carries both, so an easy library round-trips.
-	row, err := h.st.GetLibrary(context.Background(), dto.ID)
-	require.NoError(t, err)
-	require.JSONEq(t, easyTargetJSON, row.TargetJSON)
-	require.JSONEq(t, `{"quality":3,"remove_subtitles":true,"audio":2}`, row.EasyJSON)
+	var reply struct {
+		server.LibraryDTO
+		Deprecated []struct {
+			Field string `json:"field"`
+		} `json:"deprecated"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
+	require.Equal(t, "library", reply.Name, "name defaults to the folder base name")
+	require.NotEmpty(t, reply.ProfileID, "the library follows a profile")
+	require.Equal(t, flow.Default(), reply.Target, "the easy input was not compiled")
+	require.Contains(t, deprecatedFields(reply.Deprecated), "easy")
 }
 
-// TestCreateLibraryEasyValidation: bad easy values and target+easy are
-// rejected with 400.
-func TestCreateLibraryEasyValidation(t *testing.T) {
+// TestCreateLibraryIgnoresInvalidLegacyFields (task 74): values that used to be
+// 400s are ignored now, because nothing reads them. The reply still names each
+// field, so an old client can see what did not apply.
+func TestCreateLibraryIgnoresInvalidLegacyFields(t *testing.T) {
 	h := newAPIHarness(t)
-
-	// target and easy together are a client bug.
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"path": h.root, "target": flow.Default(),
-		"easy": map[string]any{"quality": 3, "remove_subtitles": false, "audio": 1},
+		"easy":          map[string]any{"quality": 9, "remove_subtitles": false, "audio": 1},
+		"result_policy": "delete_everything",
 	})
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-
-	// Every out-of-range slider value.
-	for _, easy := range []map[string]any{
-		{"quality": 0, "remove_subtitles": false, "audio": 1},
-		{"quality": 6, "remove_subtitles": false, "audio": 1},
-		{"quality": 3, "remove_subtitles": false, "audio": 0},
-		{"quality": 3, "remove_subtitles": false, "audio": 5},
-	} {
-		rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
-			"path": h.root, "easy": easy,
-		})
-		require.Equal(t, http.StatusBadRequest, rec.Code, "easy: %v", easy)
-	}
-
-	// A create without target or easy still gets the default Target.
-	rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{"path": h.root})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var dto server.LibraryDTO
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &dto))
-	require.Equal(t, flow.Default(), dto.Target)
+	var reply struct {
+		Deprecated []struct {
+			Field string `json:"field"`
+		} `json:"deprecated"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
+	require.ElementsMatch(t, []string{"target", "easy", "result_policy", "profile_id"}, deprecatedFields(reply.Deprecated))
 }
 
-// TestLibraryEasyRoundTripViaAPI: a target-only easy-shaped library still
-// opens in easy mode (the DTO describes it), while a hand-edited target has
-// no easy representation and an easy save updates the stored state.
-func TestLibraryEasyRoundTripViaAPI(t *testing.T) {
+// TestLegacyEasyOnUpdateIsIgnored (task 74): an old client's easy save on an
+// existing library changes nothing that runs. The library keeps its profile,
+// its target is unchanged, and the reply names the field. A save with neither
+// rule field is a plain update and keeps the profile (it used to be a 400).
+func TestLegacyEasyOnUpdateIsIgnored(t *testing.T) {
 	h := newAPIHarness(t)
-
-	// Created with a full target that happens to be easy-shaped.
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
-		"name": "Movies", "path": h.root, "target": flow.Default(),
+		"name": "Movies", "path": h.root,
 	})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	var lib server.LibraryDTO
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &lib))
-	require.JSONEq(t, `{"quality":3,"remove_subtitles":false,"audio":1}`, string(lib.Easy))
+	var created server.LibraryDTO
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
 
-	// Re-saving through the easy screen persists the new easy state.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, map[string]any{
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+created.ID, map[string]any{
 		"name": "Movies", "path": h.root, "watch": true,
 		"easy": map[string]any{"quality": 5, "remove_subtitles": true, "audio": 4},
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &lib))
-	require.JSONEq(t, `{"quality":5,"remove_subtitles":true,"audio":4}`, string(lib.Easy))
-	require.Equal(t, 5, lib.Target.Video.Quality)
-	require.Equal(t, flow.AudioCompact, lib.Target.Audio.Mode)
-	require.Equal(t, flow.SubsRemove, lib.Target.Subtitles.Mode)
-	row, err := h.st.GetLibrary(context.Background(), lib.ID)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"quality":5,"remove_subtitles":true,"audio":4}`, row.EasyJSON)
+	var reply struct {
+		server.LibraryDTO
+		Deprecated []struct {
+			Field string `json:"field"`
+		} `json:"deprecated"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
+	require.Equal(t, created.ProfileID, reply.ProfileID, "the profile is kept")
+	require.Equal(t, flow.Default(), reply.Target, "the easy input did not change the rule")
+	require.Contains(t, deprecatedFields(reply.Deprecated), "easy")
 
-	// A target-only save clears the stored easy input; a hand-edited
-	// (copy codec) target then has no easy representation at all.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, map[string]any{
-		"name": "Movies", "path": h.root, "watch": true,
-		"target": flow.Target{
-			Video:     flow.VideoTarget{Codec: flow.CodecCopy, Quality: 3},
-			Audio:     flow.AudioTarget{Mode: flow.AudioKeepAll},
-			Subtitles: flow.SubtitleTarget{Mode: flow.SubsKeepAll},
-			Container: flow.ContainerMKV,
-		},
-	})
+	// Name and watch only: a plain update, the profile stays.
+	rec = h.do(http.MethodPut, "/api/v1/libraries/"+created.ID, map[string]any{"name": "Movies", "path": h.root})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &lib))
-	require.JSONEq(t, "null", string(lib.Easy))
-	row, err = h.st.GetLibrary(context.Background(), lib.ID)
-	require.NoError(t, err)
-	require.Empty(t, row.EasyJSON)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
+	require.Equal(t, created.ProfileID, reply.ProfileID)
+	require.Equal(t, []string{"profile_id"}, deprecatedFields(reply.Deprecated),
+		"no profile_id sent: the reply says the library kept its profile")
+}
 
-	// An update with neither target nor easy is still a 400 (PUT
-	// semantics, API.md task 03).
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID, map[string]any{"name": "Movies"})
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+// deprecatedFields lists the field names of a deprecated list.
+func deprecatedFields(list []struct {
+	Field string `json:"field"`
+}) []string {
+	out := make([]string, 0, len(list))
+	for _, d := range list {
+		out = append(out, d.Field)
+	}
+	return out
 }
 
 // TestStatsEndpoint is the HTTP face of the stats acceptance: totals match

@@ -21,23 +21,18 @@ func TestLibraryCreateValidation(t *testing.T) {
 	ctx := context.Background()
 	m := h.svc.Libraries()
 
-	target, err := json.Marshal(flow.Default())
+	// No profile named: the default profile is followed (task 74).
+	lib, err := m.Create(ctx, LibraryParams{Name: "Movies", Path: h.root, Watch: true})
 	require.NoError(t, err)
-
-	// Missing target falls back to the default.
-	lib, err := m.Create(ctx, LibraryParams{
-		Name: "Movies", Path: h.root, Watch: true,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
-	})
-	require.NoError(t, err)
+	assert.NotEmpty(t, lib.ProfileID)
 	assert.Equal(t, flow.CodecHEVC, mustTarget(t, lib.TargetJSON).Video.Codec)
 
-	// Bad target rejected.
-	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: h.root, TargetJSON: []byte(`{"video":{"codec":"mpeg5"}}`)})
-	assert.ErrorContains(t, err, "codec")
+	// A profile that does not exist is refused.
+	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: h.root, ProfileID: "no-such-profile"})
+	assert.ErrorContains(t, err, "no such profile")
 
 	// Relative path rejected.
-	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: "relative/path", TargetJSON: target})
+	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: "relative/path"})
 	assert.Error(t, err)
 
 	// Empty name rejected.
@@ -46,10 +41,6 @@ func TestLibraryCreateValidation(t *testing.T) {
 
 	// Bad cron rejected.
 	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: h.root, Schedule: "99 * * * *"})
-	assert.Error(t, err)
-
-	// Bad result policy rejected.
-	_, err = m.Create(ctx, LibraryParams{Name: "X", Path: h.root, ResultPolicy: "delete_everything"})
 	assert.Error(t, err)
 
 	// Good schedule accepted.
@@ -95,8 +86,7 @@ func TestLibraryUpdateReevaluates(t *testing.T) {
 	require.NoError(t, err)
 
 	updated, err := h.svc.Libraries().Update(context.Background(), lib.ID, LibraryParams{
-		Name: "Movies", Path: h.root, TargetJSON: raw,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Movies", Path: h.root, ProfileID: targetProfile(t, h.st, raw, ""),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, flow.CodecH264, mustTarget(t, updated.TargetJSON).Video.Codec)
@@ -133,8 +123,7 @@ func TestLibraryUpdateCancelsJobsForSatisfiedFiles(t *testing.T) {
 	raw, err := json.Marshal(target)
 	require.NoError(t, err)
 	_, err = h.svc.Libraries().Update(context.Background(), lib.ID, LibraryParams{
-		Name: "Movies", Path: h.root, TargetJSON: raw,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Movies", Path: h.root, ProfileID: targetProfile(t, h.st, raw, ""),
 	})
 	require.NoError(t, err)
 
@@ -201,8 +190,7 @@ func TestLibraryWatcherFilesIgnoredByPathChange(t *testing.T) {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
-		Name: "Moves", Path: oldDir, TargetJSON: target,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Moves", Path: oldDir, ProfileID: targetProfile(t, h.st, target, ""),
 	})
 	require.NoError(t, err)
 	h.scan(lib.ID)
@@ -211,8 +199,7 @@ func TestLibraryWatcherFilesIgnoredByPathChange(t *testing.T) {
 	newDir := filepath.Join(h.root, "new")
 	require.NoError(t, os.MkdirAll(newDir, 0o755))
 	_, err = h.svc.Libraries().Update(context.Background(), lib.ID, LibraryParams{
-		Name: "Moves", Path: newDir, TargetJSON: target,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Moves", Path: newDir, ProfileID: targetProfile(t, h.st, target, ""),
 	})
 	require.NoError(t, err)
 	h.scan(lib.ID)

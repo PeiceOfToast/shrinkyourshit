@@ -16,26 +16,19 @@ import (
 )
 
 // LibraryParams are the editable fields of a library, used by both create
-// and update. TargetJSON may be nil on create (the default Target applies);
-// on update it must be present (PUT semantics). EasyJSON is the easy-screen
-// input that compiled to TargetJSON (task 07); empty means the library was
-// not saved from the easy screen. The flow graph (task 14) is always
-// generated from the compiled Target here; a hand-edited flow is stored
-// through UpdateFlow instead. On update an unchanged Target keeps the
-// stored flow, so a name/watch-only save cannot destroy manual steps.
+// and update. The rule a library runs is its encode profile's (task 74): the
+// target, easy and result policy fields of the API are no longer params.
 // FileKinds is what the library holds (task 34): a non-empty list of valid
 // probe.Kinds with no duplicates.
 type LibraryParams struct {
-	Name         string
-	Path         string
-	TargetJSON   []byte // raw Target JSON
-	EasyJSON     []byte // raw EasyModeInput JSON, empty to clear
-	Watch        bool
-	Schedule     string
-	ResultPolicy string
-	FileKinds    []string
-	// ProfileID is the encode profile the library follows (task 73). Empty
-	// detaches: the library then runs its own stored flow.
+	Name      string
+	Path      string
+	Watch     bool
+	Schedule  string
+	FileKinds []string
+	// ProfileID is the encode profile the library follows (task 73, task 74).
+	// Empty keeps the library's current profile on update, and takes the
+	// default profile on create. A library never runs without one.
 	ProfileID string
 }
 
@@ -92,24 +85,25 @@ func (m *LibraryManager) SetPluginCheck(check func(ctx context.Context, g flow.G
 // is refused while allow_raw_args is off (task 58).
 func (m *LibraryManager) SetSettings(s *Settings) { m.settings = s }
 
-// Create validates and stores a new library.
+// Create validates and stores a new library. It follows the profile the params
+// name, or the default profile (task 74).
 func (m *LibraryManager) Create(ctx context.Context, p LibraryParams) (*store.Library, error) {
+	profileID, err := m.resolveProfile(ctx, nil, p)
+	if err != nil {
+		return nil, err
+	}
+	p.ProfileID = profileID
 	lib, err := m.build(nil, p)
 	if err != nil {
 		return nil, err
 	}
-	// A new library inherits the app wide default tier (task 59).
-	lib.RuleTier, err = m.defaultRuleTier(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := m.checkProfile(ctx, lib); err != nil {
+	if err := m.attachProfile(ctx, lib); err != nil {
 		return nil, err
 	}
 	if err := m.st.CreateLibrary(ctx, lib); err != nil {
 		return nil, fmt.Errorf("library: create: %w", err)
 	}
-	m.log.Info("library created", "library", lib.ID, "name", lib.Name, "path", lib.Path)
+	m.log.Info("library created", "library", lib.ID, "name", lib.Name, "path", lib.Path, "profile", lib.ProfileID)
 	m.publish(EventLibraryUpdated, NewLibraryDTO(lib))
 
 	if m.watcher != nil {
@@ -131,11 +125,16 @@ func (m *LibraryManager) Update(ctx context.Context, id string, p LibraryParams)
 	if err != nil {
 		return nil, err
 	}
+	profileID, err := m.resolveProfile(ctx, old, p)
+	if err != nil {
+		return nil, err
+	}
+	p.ProfileID = profileID
 	lib, err := m.build(old, p)
 	if err != nil {
 		return nil, err
 	}
-	if err := m.checkProfile(ctx, lib); err != nil {
+	if err := m.attachProfile(ctx, lib); err != nil {
 		return nil, err
 	}
 	if err := m.st.UpdateLibrary(ctx, lib); err != nil {
@@ -193,31 +192,26 @@ func (m *LibraryManager) defaultRuleTier(ctx context.Context) (string, error) {
 	return vals.DefaultRuleTier, nil
 }
 
-// SetRuleTier stores the library's rule tier (task 59) and reports the steps
-// of its current graph that the tier cannot express. It writes the tier
-// column only, so the stored graph is byte identical afterwards, whatever the
-// tier. A non empty list is not an error: a downgrade is allowed and the UI
-// shows the steps that now open read only (decision 4).
-func (m *LibraryManager) SetRuleTier(ctx context.Context, id string, tier flow.Tier) (*store.Library, []flow.FieldError, error) {
-	if _, err := flow.ParseTier(string(tier)); err != nil {
-		return nil, nil, err
+// resolveProfile names the profile a save follows: the one the params name,
+// else the one the library already has, else the default profile (task 74).
+// An empty profile_id never detaches a library, so an old client's save cannot
+// drop it back to a rule that no longer runs.
+func (m *LibraryManager) resolveProfile(ctx context.Context, old *store.Library, p LibraryParams) (string, error) {
+	if p.ProfileID != "" {
+		return p.ProfileID, nil
 	}
-	if err := m.st.SetLibraryRuleTier(ctx, id, string(tier)); err != nil {
-		return nil, nil, err
+	if old != nil && old.ProfileID != "" {
+		return old.ProfileID, nil
 	}
-	lib, err := m.st.GetLibrary(ctx, id)
+	prof, err := m.defaultProfile(ctx)
 	if err != nil {
-		return nil, nil, err
+		return "", fmt.Errorf("library: default profile: %w", err)
 	}
-	m.log.Info("library rule tier set", "library", lib.ID, "tier", tier)
-	m.publish(EventLibraryUpdated, NewLibraryDTO(lib))
-	g, _, err := LibraryFlow(lib)
-	if err != nil {
-		return nil, nil, err
-	}
-	return lib, flow.RepresentableAt(g, tier), nil
+	return prof.ID, nil
 }
 
+// build validates params into a store.Library. old is nil for create. The
+// rule columns are left empty here: attachProfile fills them from the profile.
 func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Library, error) {
 	if p.Name == "" {
 		return nil, fmt.Errorf("library name must not be empty")
@@ -229,20 +223,6 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		if _, err := ParseSchedule(p.Schedule); err != nil {
 			return nil, err
 		}
-	}
-	policy := p.ResultPolicy
-	if policy == "" {
-		policy = store.ResultPolicyReplaceIfSmaller
-	}
-	valid := false
-	for _, v := range store.ResultPolicyValues() {
-		if v == policy {
-			valid = true
-			break
-		}
-	}
-	if !valid {
-		return nil, fmt.Errorf("invalid result_policy %q: want one of %v", policy, store.ResultPolicyValues())
 	}
 
 	// FileKinds (task 34): a missing list defaults to ["video"] so
@@ -274,89 +254,34 @@ func (m *LibraryManager) build(old *store.Library, p LibraryParams) (*store.Libr
 		seen[k] = true
 	}
 
-	// A save that names a profile and no rule keeps the stored Target, so a
-	// profile-only update does not reset the library's compat rule.
-	if p.TargetJSON == nil && p.EasyJSON == nil && old != nil && old.TargetJSON != "" {
-		p.TargetJSON = []byte(old.TargetJSON)
-	}
-	target := flow.Default()
-	if p.TargetJSON != nil {
-		var err error
-		target, err = flow.ParseTarget(p.TargetJSON)
-		if err != nil {
-			return nil, fmt.Errorf("library: %w", err)
-		}
-	}
-	canonical, err := json.Marshal(target)
-	if err != nil {
-		return nil, fmt.Errorf("library: marshal target: %w", err)
-	}
-
 	lib := &store.Library{
-		Name:         p.Name,
-		Path:         filepath.Clean(p.Path),
-		TargetJSON:   string(canonical),
-		EasyJSON:     string(p.EasyJSON),
-		Watch:        p.Watch,
-		Schedule:     p.Schedule,
-		ResultPolicy: policy,
-		FileKinds:    p.FileKinds,
-		ProfileID:    p.ProfileID,
+		Name:      p.Name,
+		Path:      filepath.Clean(p.Path),
+		Watch:     p.Watch,
+		Schedule:  p.Schedule,
+		FileKinds: p.FileKinds,
+		ProfileID: p.ProfileID,
 	}
 	if old != nil {
 		lib.ID = old.ID
 		lib.CreatedAt = old.CreatedAt
-		lib.FlowJSON = old.FlowJSON
-		lib.FlowSource = old.FlowSource
-		// The tier is not an editable field of a library save: it keeps
-		// its own value (task 59), changed only by SetRuleTier.
-		lib.RuleTier = old.RuleTier
-	}
-	// The flow must match the rule this save produced: regenerate it from
-	// the compiled Target when the rule changed. An easy save always
-	// regenerates (the easy tier owns the flow then); a target-only save
-	// keeps the stored flow when the Target is unchanged, so a name or
-	// watch-only update never destroys hand-built steps.
-	switch {
-	case p.EasyJSON != nil || old == nil || old.TargetJSON != string(canonical):
-		graph, err := flow.TargetToFlow(target)
-		if err != nil {
-			return nil, fmt.Errorf("library: %w", err)
-		}
-		raw, err := json.Marshal(graph)
-		if err != nil {
-			return nil, fmt.Errorf("library: marshal flow: %w", err)
-		}
-		lib.FlowJSON = string(raw)
-		if p.EasyJSON != nil {
-			lib.FlowSource = flow.FlowSourceEasy
-		} else {
-			lib.FlowSource = flow.FlowSourceAdvanced
-		}
-	case old.FlowJSON == "":
-		// Legacy row kept but never backfilled: store the generated flow.
-		graph, err := flow.TargetToFlow(target)
-		if err == nil {
-			if raw, err := json.Marshal(graph); err == nil {
-				lib.FlowJSON = string(raw)
-				lib.FlowSource = flow.FlowSourceAdvanced
-			}
-		}
 	}
 	return lib, nil
 }
 
-// checkProfile validates the profile a library is about to follow (task 73).
-// A profile that does not exist is refused; its plugin steps must be
-// installed (ErrPluginStep, 422), and its move destinations must sit outside
-// this library's folder (ErrInvalidFlow). The profile graph is then carried
-// on the library so LibraryFlow and the reply see what will run. A profile
-// is not bound to one folder, so the move check runs here, per library.
-func (m *LibraryManager) checkProfile(ctx context.Context, lib *store.Library) error {
-	lib.ProfileGraph = ""
-	if lib.ProfileID == "" {
-		return nil
-	}
+// attachProfile loads the profile a library is about to follow (task 73). A
+// profile that does not exist is refused; its graph must compile, its plugin
+// steps must be installed (ErrPluginStep, 422), and its move destinations must
+// sit outside this library's folder (ErrInvalidFlow). A profile is not bound to
+// one folder, so the move check runs here, per library.
+//
+// The profile's graph, tier and result policy are carried on the library so
+// LibraryFlow and the reply see what will run. The legacy columns (flow_json,
+// flow_source, target, easy, rule_tier, result_policy) are written from the
+// profile as a snapshot: nothing reads them any more, but a rollback to v1.10
+// finds a rule that matches the last save (task 74, decision 4).
+func (m *LibraryManager) attachProfile(ctx context.Context, lib *store.Library) error {
+	lib.ProfileGraph, lib.ProfileTier, lib.ProfileResultPolicy = "", "", ""
 	prof, err := m.st.GetProfile(ctx, lib.ProfileID)
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("no such profile %q", lib.ProfileID)
@@ -365,6 +290,10 @@ func (m *LibraryManager) checkProfile(ctx context.Context, lib *store.Library) e
 		return err
 	}
 	g, err := flow.ParseGraph([]byte(prof.Graph))
+	if err != nil {
+		return fmt.Errorf("profile %q: %w", prof.Name, err)
+	}
+	plan, err := flow.Compile(g)
 	if err != nil {
 		return fmt.Errorf("profile %q: %w", prof.Name, err)
 	}
@@ -377,6 +306,17 @@ func (m *LibraryManager) checkProfile(ctx context.Context, lib *store.Library) e
 		return &ErrInvalidFlow{Errors: errs}
 	}
 	lib.ProfileGraph = prof.Graph
+	lib.ProfileTier = prof.Tier
+	lib.ProfileResultPolicy = prof.ResultPolicy
+
+	lib.FlowJSON = prof.Graph
+	lib.FlowSource = sourceForTier(prof.Tier)
+	lib.RuleTier = prof.Tier
+	lib.ResultPolicy = prof.ResultPolicy
+	lib.EasyJSON = ""
+	if raw, err := json.Marshal(plan.Target()); err == nil {
+		lib.TargetJSON = string(raw)
+	}
 	return nil
 }
 
@@ -394,7 +334,6 @@ func (m *LibraryManager) reevaluate(ctx context.Context, lib *store.Library) {
 		m.log.Error("library: re-evaluate flow", "library", lib.ID, "err", err)
 		return
 	}
-	logFlowTargetMismatch(m.log, lib, plan)
 	files, err := m.st.ListFiles(ctx, lib.ID)
 	if err != nil {
 		m.log.Error("library: re-evaluate list", "library", lib.ID, "err", err)

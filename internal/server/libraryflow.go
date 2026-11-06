@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/PeiceOfToast/shrinkyourshit/internal/flow"
@@ -20,29 +19,54 @@ import (
 // source of truth: the stored Target is compat only, and the flow wins
 // when the two disagree (ARCHITECTURE.md).
 
-// LibraryFlow returns the library's rule graph and its source. A stored
-// flow is returned as-is; a legacy row without one gets the flow compiled
-// from its Target, with the source inferred from the stored easy input
-// (easy input present → easy, a hand-set target → advanced). Compile errors
-// of a stored flow surface; a legacy target that cannot compile is an error.
-//
-// An attached encode profile (task 73, spec 5.1) wins: the library follows
-// the profile's graph, so editing the profile changes every library using it.
-// The source stays the library's own, which only the old pages read.
+// ErrNoProfile is returned when a library has no encode profile attached.
+// Since task 74 the profile is the only rule a library runs: a library
+// without one runs nothing and the API says so.
+var ErrNoProfile = errors.New("the library has no encode profile; attach one")
+
+// LibraryFlow returns the library's rule graph and its source: the graph of
+// the encode profile it follows (spec 5.1, 5.4). Source is derived from the
+// profile's tier. The legacy flow_json, target and easy columns are not read
+// here; see legacyLibraryFlow, which only the boot migration uses.
 func LibraryFlow(lib *store.Library) (flow.Graph, string, error) {
 	if s := trimJSON(lib.ProfileGraph); s != "" {
 		g, err := flow.ParseGraph([]byte(s))
 		if err != nil {
 			return flow.Graph{}, "", fmt.Errorf("library profile flow: %w", err)
 		}
-		return g, storedFlowSource(lib), nil
+		return g, sourceForTier(lib.ProfileTier), nil
 	}
+	return flow.Graph{}, "", ErrNoProfile
+}
+
+// sourceForTier names the flow source a profile's editor tier implies: the
+// easy screen, the step stack or the advanced canvas.
+func sourceForTier(tier string) string {
+	switch tier {
+	case store.RuleTierBasic:
+		return flow.FlowSourceEasy
+	case store.RuleTierModerate:
+		return flow.FlowSourceSteps
+	default:
+		return flow.FlowSourceAdvanced
+	}
+}
+
+// LibraryTier returns the rule tier the library's profile is edited at (task
+// 59 moved to the profile in task 74). Empty when no profile is attached.
+func LibraryTier(lib *store.Library) string { return lib.ProfileTier }
+
+// legacyLibraryFlow is the pre-profile rule of a library: its stored flow,
+// else the flow compiled from its Target, with the source inferred from the
+// easy input. Only the boot migration (backfillFlows) reads it, to fill in the
+// profile a library did not have yet. Nothing that runs a job calls it.
+func legacyLibraryFlow(lib *store.Library) (flow.Graph, string, error) {
 	if s := trimJSON(lib.FlowJSON); s != "" {
 		g, err := flow.ParseGraph([]byte(s))
 		if err != nil {
 			return flow.Graph{}, "", fmt.Errorf("library flow: %w", err)
 		}
-		return g, storedFlowSource(lib), nil
+		return g, lib.FlowSource, nil
 	}
 	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
 	if err != nil {
@@ -59,14 +83,6 @@ func LibraryFlow(lib *store.Library) (flow.Graph, string, error) {
 	return g, source, nil
 }
 
-// storedFlowSource is the library's own flow source, advanced when unset.
-func storedFlowSource(lib *store.Library) string {
-	if lib.FlowSource == "" {
-		return flow.FlowSourceAdvanced
-	}
-	return lib.FlowSource
-}
-
 // LibraryPlan compiles the library's flow into the executable plan. It is
 // the entry point for the scanner, re-evaluation and the job spec builder.
 func LibraryPlan(lib *store.Library) (flow.Plan, string, error) {
@@ -81,15 +97,22 @@ func LibraryPlan(lib *store.Library) (flow.Plan, string, error) {
 	return plan, source, nil
 }
 
+// EffectiveResultPolicy is the result policy the library's profile sets
+// (task 74). replace_if_smaller when no profile is attached, which only a
+// library that failed the boot backfill can be in.
+func EffectiveResultPolicy(lib *store.Library) string {
+	if lib.ProfileResultPolicy == "" {
+		return store.ResultPolicyReplaceIfSmaller
+	}
+	return lib.ProfileResultPolicy
+}
+
 // EffectivePolicy returns the result policy and rename template the
 // library's flow assigns to its jobs: a skip_if_smaller step wins over the
-// library's result_policy column with replace_if_smaller, and a rename
-// step carries its template (empty when none).
+// profile's result policy with replace_if_smaller, and a rename step carries
+// its template (empty when none).
 func EffectivePolicy(lib *store.Library) (policy, rename string, err error) {
-	policy = lib.ResultPolicy
-	if policy == "" {
-		policy = store.ResultPolicyReplaceIfSmaller
-	}
+	policy = EffectiveResultPolicy(lib)
 	plan, _, err := LibraryPlan(lib)
 	if err != nil {
 		return policy, "", fmt.Errorf("library flow: %w", err)
@@ -123,33 +146,6 @@ func EffectiveContainer(lib *store.Library) (string, error) {
 		return "", fmt.Errorf("library flow: no container step")
 	}
 	return container, nil
-}
-
-// logFlowTargetMismatch warns when a stored flow disagrees with the stored
-// Target: the flow wins, and the warning makes the disagreement visible
-// instead of silently ignoring the Target column.
-func logFlowTargetMismatch(log *slog.Logger, lib *store.Library, plan flow.Plan) {
-	if trimJSON(lib.FlowJSON) == "" {
-		return // generated flow; no disagreement possible
-	}
-	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
-	if err != nil {
-		return // unparseable targets are reported elsewhere
-	}
-	stored, err := json.Marshal(target)
-	if err != nil {
-		return
-	}
-	compiled, err := json.Marshal(plan.Target())
-	if err != nil {
-		return
-	}
-	if string(stored) != string(compiled) {
-		log.Warn("library flow and target disagree; the flow wins",
-			"library", lib.ID,
-			"target", string(stored),
-			"flow_target", string(compiled))
-	}
 }
 
 func trimJSON(s string) string {
@@ -213,7 +209,7 @@ func (m *LibraryManager) backfillFlows(ctx context.Context) {
 		if trimJSON(lib.FlowJSON) != "" {
 			continue
 		}
-		g, source, err := LibraryFlow(lib)
+		g, source, err := legacyLibraryFlow(lib)
 		if err != nil {
 			m.log.Error("library: flow backfill", "library", lib.ID, "err", err)
 			continue
@@ -267,28 +263,69 @@ func (m *LibraryManager) backfillProfiles(ctx context.Context) {
 	}
 }
 
-// seedDefaultProfile gives a fresh install one encode profile (task 71, spec
-// 5.2) so the library form always has something to select. It runs after
-// backfillProfiles and does nothing once any profile exists. The profile is
-// named for the default rule tier and carries the default Target's graph.
-func (m *LibraryManager) seedDefaultProfile(ctx context.Context) {
+// logLegacyColumns warns once per boot while any library row still holds a non
+// empty legacy rule column (task 74). The encode profile is the rule now; the
+// columns are a snapshot kept for rollback and dropped in v1.12 (ROADMAP). The
+// migration fills flow_json for every row, so the warning stays until the drop.
+func (m *LibraryManager) logLegacyColumns(ctx context.Context) {
+	libs, err := m.st.ListLibraries(ctx)
+	if err != nil {
+		m.log.Error("library: legacy column check", "err", err)
+		return
+	}
+	rows := 0
+	counts := map[string]int{}
+	for _, lib := range libs {
+		hit := false
+		for name, v := range map[string]string{
+			"flow_json":     lib.FlowJSON,
+			"flow_source":   lib.FlowSource,
+			"target":        lib.TargetJSON,
+			"easy":          lib.EasyJSON,
+			"rule_tier":     lib.RuleTier,
+			"result_policy": lib.ResultPolicy,
+		} {
+			if trimJSON(v) != "" {
+				counts[name]++
+				hit = true
+			}
+		}
+		if hit {
+			rows++
+		}
+	}
+	if rows > 0 {
+		m.log.Warn("library rule columns are legacy: the encode profile is the rule; these columns are dropped in v1.12",
+			"libraries", rows, "columns", counts)
+	}
+}
+
+// defaultProfile returns the profile a library follows when its save names
+// none (task 74): the first profile in list order, the one the library form
+// pre-selects. A fresh install has none, so the default seed is created first.
+func (m *LibraryManager) defaultProfile(ctx context.Context) (*store.Profile, error) {
 	list, err := m.st.ListProfiles(ctx)
 	if err != nil {
-		m.log.Error("library: profile seed", "err", err)
-		return
+		return nil, err
 	}
 	if len(list) > 0 {
-		return
+		return list[0], nil
 	}
+	return m.seedDefaultProfile(ctx)
+}
+
+// seedDefaultProfile creates the default encode profile of a fresh install
+// (task 71, spec 5.2), named for the default rule tier and carrying the
+// default Target's graph. Boot calls defaultProfile, which reaches here only
+// when no profile exists.
+func (m *LibraryManager) seedDefaultProfile(ctx context.Context) (*store.Profile, error) {
 	tier, err := m.defaultRuleTier(ctx)
 	if err != nil {
-		m.log.Error("library: profile seed", "err", err)
-		return
+		return nil, err
 	}
 	graph, err := defaultProfileGraph()
 	if err != nil {
-		m.log.Error("library: profile seed: default graph", "err", err)
-		return
+		return nil, fmt.Errorf("default graph: %w", err)
 	}
 	p := &store.Profile{
 		Name:         fmt.Sprintf("Default (%s)", tier),
@@ -297,10 +334,10 @@ func (m *LibraryManager) seedDefaultProfile(ctx context.Context) {
 		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
 	}
 	if err := m.st.CreateProfile(ctx, p); err != nil {
-		m.log.Error("library: profile seed", "err", err)
-		return
+		return nil, err
 	}
 	m.log.Info("default encode profile created", "profile", p.Name)
+	return p, nil
 }
 
 // defaultProfileGraph is the canonical graph of the default Target, the seed
@@ -317,11 +354,9 @@ func defaultProfileGraph() (string, error) {
 	return string(raw), nil
 }
 
-// UpdateFlow validates and stores a flow graph from the API (PUT
-// /libraries/{id}/flow): the graph becomes the library's rule, the source
-// records the tier that produced it, and every file is re-evaluated against
-// the new rule. The stored Target is re-synced from the compiled flow so
-// the compat column never disagrees with the rule a flow author just saved.
+// UpdateFlow answers PUT /libraries/{id}/flow. The graph is validated first,
+// so a bad graph is still 400 invalid_flow, and a valid one is refused with
+// ErrFollowsProfile (409): the rule of a library is its profile's (task 74).
 func (m *LibraryManager) UpdateFlow(ctx context.Context, id, source string, g flow.Graph) (*store.Library, error) {
 	if err := validateFlowSource(source); err != nil {
 		return nil, err
@@ -339,50 +374,12 @@ func (m *LibraryManager) UpdateFlow(ctx context.Context, id, source string, g fl
 			return nil, &ErrInvalidFlow{Errors: refused}
 		}
 	}
-	lib, err := m.st.GetLibrary(ctx, id)
-	if err != nil {
+	if _, err := m.st.GetLibrary(ctx, id); err != nil {
 		return nil, err
 	}
-	// A library that follows a profile runs the profile's graph (task 73).
-	// A flow saved here would be stored and never run, so it is refused.
-	if lib.ProfileID != "" {
-		return nil, ErrFollowsProfile
-	}
-	// The plugin steps are checked against the installed plugins (task
-	// 32): the named plugin must be installed, enabled and of type step,
-	// or the save is refused (the API answers 422). A flow that names a
-	// plugin somebody later disabled fails at dispatch instead of
-	// silently skipping the step.
-	if m.pluginCheck != nil {
-		if err := m.pluginCheck(ctx, g); err != nil {
-			return nil, err
-		}
-	}
-	// The move destinations are checked against the library they will run
-	// on (task 24): files must land outside it, or the next scan would pick
-	// them up again.
-	if errs := validateMoveDestinations(lib, g); len(errs) > 0 {
-		return nil, &ErrInvalidFlow{Errors: errs}
-	}
-	raw, err := json.Marshal(g)
-	if err != nil {
-		return nil, fmt.Errorf("library: marshal flow: %w", err)
-	}
-	lib.FlowJSON = string(raw)
-	lib.FlowSource = source
-	if plan, _, perr := LibraryPlan(lib); perr == nil {
-		if rawTarget, merr := json.Marshal(plan.Target()); merr == nil {
-			lib.TargetJSON = string(rawTarget)
-		}
-	}
-	if err := m.st.UpdateLibrary(ctx, lib); err != nil {
-		return nil, fmt.Errorf("library: update flow: %w", err)
-	}
-	m.log.Info("library flow updated", "library", lib.ID, "source", source)
-	m.publish(EventLibraryUpdated, NewLibraryDTO(lib))
-
-	m.reevaluate(ctx, lib)
-	return lib, nil
+	// Every library follows an encode profile (task 74), and a flow saved to
+	// the library would be stored and never run. The edit goes to the profile.
+	return nil, ErrFollowsProfile
 }
 
 func validateFlowSource(source string) error {

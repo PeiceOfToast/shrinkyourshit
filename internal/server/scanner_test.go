@@ -166,24 +166,14 @@ func TestScannerNewTargetQueuesFromCacheOnScan(t *testing.T) {
 	fs := h.files(lib.ID)
 	require.Equal(t, store.FileStatusSatisfied, fs["movie.mkv"].Status)
 
-	// Swap the rule to h264 directly in the store (the manager path is
-	// tested separately): since task 14 the flow is the rule, so the test
-	// stores the matching flow graph beside the target. The scan must
-	// notice via status==new... it does not — satisfied files with
-	// unchanged fingerprints stay put. The update-triggered re-evaluation
-	// is the mechanism (library_test).
+	// Switch the library to a profile whose rule is h264 (task 74). The store
+	// write attaches it without a re-evaluation, so the scan below is what
+	// judges the file, from its cached probe.
 	target := flow.Default()
 	target.Video.Codec = flow.CodecH264
-	graph, err := flow.TargetToFlow(target)
-	require.NoError(t, err)
-	raw, err := json.Marshal(graph)
-	require.NoError(t, err)
 	rawTarget, err := json.Marshal(target)
 	require.NoError(t, err)
-	lib.TargetJSON = string(rawTarget)
-	lib.FlowJSON = string(raw)
-	lib.FlowSource = flow.FlowSourceAdvanced
-	require.NoError(t, h.st.UpdateLibrary(context.Background(), lib))
+	require.NoError(t, h.st.SetLibraryProfile(context.Background(), lib.ID, targetProfile(t, h.st, rawTarget, "")))
 
 	// Force the file back to new to simulate a fresh classification need.
 	f := fs["movie.mkv"]
@@ -217,7 +207,7 @@ func TestScannerImageLibrarySkipsOtherKinds(t *testing.T) {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
-		Name: "Photos", Path: h.root, TargetJSON: target, FileKinds: []string{"image"},
+		Name: "Photos", Path: h.root, ProfileID: targetProfile(t, h.st, target, ""), FileKinds: []string{"image"},
 	})
 	require.NoError(t, err)
 
@@ -255,8 +245,8 @@ func TestScannerKindSkippedRowRecorded(t *testing.T) {
 
 	// The library stops looking for video files.
 	updated, err := h.svc.Libraries().Update(context.Background(), lib.ID, LibraryParams{
-		Name: lib.Name, Path: lib.Path, TargetJSON: []byte(lib.TargetJSON),
-		ResultPolicy: lib.ResultPolicy, FileKinds: []string{"image"},
+		Name: lib.Name, Path: lib.Path, ProfileID: lib.ProfileID,
+		FileKinds: []string{"image"},
 	})
 	require.NoError(t, err)
 	h.scan(updated.ID)
@@ -269,13 +259,13 @@ func TestScannerKindSkippedRowRecorded(t *testing.T) {
 
 // TestScannerNonMediaKindQueuesKindAgnosticWork (task 34): a rename+move
 // flow queues images; a media-only flow does not. The flow change arrives
-// through UpdateFlow, the path that re-evaluates every file.
+// through a profile switch, the path that re-evaluates every file.
 func TestScannerNonMediaKindQueuesKindAgnosticWork(t *testing.T) {
 	h := newHarness(t)
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
-		Name: "Photos", Path: h.root, TargetJSON: target, FileKinds: []string{"image"},
+		Name: "Photos", Path: h.root, ProfileID: targetProfile(t, h.st, target, ""), FileKinds: []string{"image"},
 	})
 	require.NoError(t, err)
 	writeFixture(t, h.root, "photo.jpg", 512)
@@ -283,7 +273,7 @@ func TestScannerNonMediaKindQueuesKindAgnosticWork(t *testing.T) {
 	res := h.scan(lib.ID)
 	assert.Equal(t, 0, res.Queued, "a media-only flow queues nothing on images")
 
-	// Attach rename + move; the image now has kind-agnostic work to do.
+	// The profile adds rename + move; the image now has kind-agnostic work to do.
 	dest := filepath.Join(t.TempDir(), "out")
 	g := flow.Graph{Schema: flow.FlowSchema, Nodes: []flow.Step{
 		{ID: "probe", Type: flow.StepProbe},
@@ -293,11 +283,12 @@ func TestScannerNonMediaKindQueuesKindAgnosticWork(t *testing.T) {
 	}, Edges: []flow.Edge{
 		{From: "probe", To: "remux"}, {From: "remux", To: "rename"}, {From: "rename", To: "move"},
 	}}
-	raw, err := json.Marshal(g)
-	require.NoError(t, err)
-	graph, err := flow.ParseGraph(raw)
-	require.NoError(t, err)
-	_, err = h.svc.Libraries().UpdateFlow(context.Background(), lib.ID, flow.FlowSourceAdvanced, graph)
+	// The rule changes by switching the library to a profile that carries
+	// it (task 74); the update re-evaluates every file.
+	_, err = h.svc.Libraries().Update(context.Background(), lib.ID, LibraryParams{
+		Name: lib.Name, Path: lib.Path, FileKinds: []string{"image"},
+		ProfileID: graphProfile(t, h.st, g, ""),
+	})
 	require.NoError(t, err)
 
 	fs := h.files(lib.ID)

@@ -190,3 +190,17 @@ Specification: `docs/design/encode-profiles-and-storage-2026-11-06.md`. Tasks 64
 - Encode rules move off libraries into named profiles on the Encode settings page. A profile owns
   the graph, the tier and the result policy; a library owns storage, path, watch, schedule and
   which profile it follows. The per-library encode builder is removed.
+
+## v1.12 drop the library rule columns (follow up to v1.11 task 74, scheduled)
+
+- Drop the library columns that v1.11 deprecated, in one forward-only migration: `libraries.flow_json`,
+  `libraries.flow_source`, `libraries.target`, `libraries.easy`, `libraries.rule_tier` and
+  `libraries.result_policy`. Nothing reads them since task 74; they are a rollback snapshot. `target`
+  is on the list because the library API's `target` field is deprecated too. The owner confirms it
+  when this task is scheduled. After the drop, a rollback to v1.10 cannot run a library: say so in
+  the release notes.
+- Remove the deprecated library body fields `target`, `easy` and `result_policy` (ignored since
+  task 74, see `API.md` task 74), the `deprecated` list on the save replies, and the
+  `PUT /api/v1/libraries/{id}/tier` route (`409 follows_profile` since task 74).
+- Remove `legacyLibraryFlow` and the boot migration that reads the columns (`backfillFlows`), once
+  every library row has a profile. The boot warning from task 74 (`logLegacyColumns`) goes with them.

@@ -148,8 +148,7 @@ func TestWatcherPollFallbackWhenPathUnwatchable(t *testing.T) {
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	lib, err := h.svc.Libraries().Create(context.Background(), LibraryParams{
-		Name: "Proc", Path: unwatchable, TargetJSON: target, Watch: true,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Proc", Path: unwatchable, ProfileID: targetProfile(t, h.st, target, ""), Watch: true,
 	})
 	require.NoError(t, err)
 

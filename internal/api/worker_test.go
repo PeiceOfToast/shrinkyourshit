@@ -58,8 +58,7 @@ func (h *apiHarness) queueOne(t *testing.T) (*store.Library, *store.File, *store
 	target, err := json.Marshal(flow.Default())
 	require.NoError(t, err)
 	lib, err := h.svc.Libraries().Create(ctx, server.LibraryParams{
-		Name: "Movies", Path: h.root, TargetJSON: target,
-		ResultPolicy: store.ResultPolicyReplaceIfSmaller,
+		Name: "Movies", Path: h.root, ProfileID: targetProfile(t, h.st, target, ""),
 	})
 	require.NoError(t, err)
 	f := &store.File{
@@ -170,14 +169,8 @@ func TestWorkerSpecCarriesMove(t *testing.T) {
 	h := newAPIHarness(t)
 	key, _ := h.addNode(t, "w1", store.NodeStatusApproved, true)
 
-	// A library with a move flow; the destination must sit outside the
-	// library root (the save-time check).
-	targetRaw, err := json.Marshal(flow.Default())
-	require.NoError(t, err)
-	lib, err := h.svc.Libraries().Create(context.Background(), server.LibraryParams{
-		Name: "Movies", Path: h.root, TargetJSON: targetRaw,
-	})
-	require.NoError(t, err)
+	// A library whose profile has a move step; the destination must sit
+	// outside the library root (the save-time check).
 	dest := filepath.Join(filepath.Dir(h.root), "shrunk")
 	g := flow.Graph{
 		Schema: flow.FlowSchema,
@@ -188,7 +181,9 @@ func TestWorkerSpecCarriesMove(t *testing.T) {
 		},
 		Edges: []flow.Edge{{From: "probe", To: "remux"}, {From: "remux", To: "mv"}},
 	}
-	_, err = h.svc.Libraries().UpdateFlow(context.Background(), lib.ID, "steps", g)
+	lib, err := h.svc.Libraries().Create(context.Background(), server.LibraryParams{
+		Name: "Movies", Path: h.root, ProfileID: graphProfile(t, h.st, g, ""),
+	})
 	require.NoError(t, err)
 
 	// The file sits in a subfolder, so keep_tree has a layout to rebuild.

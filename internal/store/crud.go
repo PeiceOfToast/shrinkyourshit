@@ -11,7 +11,7 @@ import (
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, ''), COALESCE((SELECT graph FROM profiles WHERE profiles.id = libraries.profile_id), '')`
+const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, ''), COALESCE((SELECT graph FROM profiles WHERE profiles.id = libraries.profile_id), ''), COALESCE((SELECT tier FROM profiles WHERE profiles.id = libraries.profile_id), ''), COALESCE((SELECT result_policy FROM profiles WHERE profiles.id = libraries.profile_id), '')`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
@@ -24,7 +24,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 		lastScanS string
 		fileKinds string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID, &l.ProfileGraph); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID, &l.ProfileGraph, &l.ProfileTier, &l.ProfileResultPolicy); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
@@ -43,7 +43,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 // lastScanSummary receives the raw last_scan summary text.
 // fileKinds receives the raw file_kinds text; the caller parses it.
 func libraryDest(l *Library, watch *string, created, updated, lastScan, lastScanSummary, fileKinds *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID, &l.ProfileGraph}
+	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID, &l.ProfileGraph, &l.ProfileTier, &l.ProfileResultPolicy}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled
@@ -119,21 +119,6 @@ func (s *SQLite) DeleteLibrary(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete library: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetLibraryRuleTier stores the library's rule tier and nothing else. It is
-// the only write path for a tier change: it never touches flow_json, so a
-// downgrade cannot rewrite or truncate the stored graph (spec section 2,
-// decision 4). The tier value is validated by the caller (internal/flow).
-func (s *SQLite) SetLibraryRuleTier(ctx context.Context, id, tier string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET rule_tier = ? WHERE id = ?`, tier, id)
-	if err != nil {
-		return fmt.Errorf("store: set library rule tier: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound

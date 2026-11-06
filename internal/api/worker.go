@@ -121,11 +121,6 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		a.internal(w, err)
 		return
 	}
-	target, err := flow.ParseTarget([]byte(lib.TargetJSON))
-	if err != nil {
-		a.internal(w, err) // stored targets are validated on write
-		return
-	}
 	graph, source, err := server.LibraryFlow(lib)
 	if err != nil {
 		a.internal(w, err) // stored flows are validated on write
@@ -141,6 +136,8 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 	// plugin that meanwhile disappeared, was disabled or is not a step
 	// plugin fails the job here instead of silently skipping the step;
 	// the node answers the worker with the same 422, which drops the job.
+	// The compat target is the compiled view of the same graph (task 74).
+	target := plan.Target()
 	plugins, err := a.svc.Plugins().ResolveSteps(r.Context(), plan)
 	if err != nil {
 		msg := err.Error()
@@ -172,7 +169,7 @@ func (a *API) workerJobSpec(w http.ResponseWriter, r *http.Request, node *store.
 		SourceMtime:        f.Mtime,
 		Fingerprint:        f.Fingerprint,
 		AccessMode:         effectiveAccessMode(node),
-		ResultPolicy:       lib.ResultPolicy,
+		ResultPolicy:       server.EffectiveResultPolicy(lib),
 		BytesBefore:        job.BytesBefore,
 		ThroughputLimitMBs: node.ThroughputLimit,
 		MoveTo:             moveTo,

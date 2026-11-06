@@ -76,7 +76,6 @@ func (h *apiHarness) createNamedLibrary(name string) server.LibraryDTO {
 	require.NoError(h.t, os.MkdirAll(dir, 0o755))
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"name": name, "path": dir, "watch": false,
-		"target": flow.Default(), "result_policy": store.ResultPolicyReplaceIfSmaller,
 	})
 	require.Equal(h.t, http.StatusCreated, rec.Code, rec.Body.String())
 	var dto server.LibraryDTO

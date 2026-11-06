@@ -45,10 +45,10 @@ func flowReply(lib *store.Library, graph flow.Graph, source string, tier flow.Ti
 	}
 }
 
-// libraryTier parses the library's stored rule tier. A stored value that is
-// not a tier is a corrupt row and is reported, not guessed at.
+// libraryTier parses the tier of the library's profile (task 74: the tier
+// belongs to the profile). A profile-less library has none and is an error.
 func libraryTier(lib *store.Library) (flow.Tier, error) {
-	return flow.ParseTier(lib.RuleTier)
+	return flow.ParseTier(server.LibraryTier(lib))
 }
 
 // getLibraryFlow answers GET /api/v1/libraries/{id}/flow: the stored graph
@@ -62,6 +62,10 @@ func (a *API) getLibraryFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	graph, source, err := server.LibraryFlow(lib)
+	if errors.Is(err, server.ErrNoProfile) {
+		writeError(w, http.StatusConflict, "no_profile", err.Error())
+		return
+	}
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -86,42 +90,24 @@ type putTierBody struct {
 	Tier string `json:"tier"`
 }
 
-// tierResponse is the PUT /libraries/{id}/tier reply: the tier now stored and
-// the steps of the library's graph that tier cannot express. A non empty list
-// is still 200: the downgrade is allowed and the graph stays as it is
-// (decision 4).
-type tierResponse struct {
-	Tier            string            `json:"tier"`
-	Unrepresentable []flow.FieldError `json:"unrepresentable"`
-}
-
-// putLibraryTier answers PUT /api/v1/libraries/{id}/tier. It changes the
-// library's editor and nothing else: the stored graph is never rewritten.
+// putLibraryTier answers PUT /api/v1/libraries/{id}/tier with 409
+// follows_profile. The tier is the profile's (task 74): changing it on the
+// library would change nothing that runs, so the request is refused rather
+// than silently ignored. The body is still validated first.
 func (a *API) putLibraryTier(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
 	body, err := decode[putTierBody](r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	tier, err := flow.ParseTier(body.Tier)
-	if err != nil {
+	if _, err := flow.ParseTier(body.Tier); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	_, unrepresentable, err := a.svc.Libraries().SetRuleTier(r.Context(), id, tier)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		writeError(w, http.StatusNotFound, "not_found", "no such library")
-		return
-	case err != nil:
-		a.internal(w, err)
+	if _, ok := a.library(w, r); !ok {
 		return
 	}
-	if unrepresentable == nil {
-		unrepresentable = []flow.FieldError{}
-	}
-	writeJSON(w, http.StatusOK, tierResponse{Tier: string(tier), Unrepresentable: unrepresentable})
+	writeError(w, http.StatusConflict, "follows_profile", "the tier belongs to the encode profile this library follows; change it with PUT /api/v1/profiles/{id}")
 }
 
 // putFlowBody is the PUT /api/v1/libraries/{id}/flow request body: the

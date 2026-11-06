@@ -173,11 +173,15 @@ type JobDTO struct {
 // Target (impossible through the manager, defensive for rows written by
 // other means) yields a zero Target instead of failing the whole list.
 func NewLibraryDTO(l *store.Library) LibraryDTO {
-	target, err := flow.ParseTarget([]byte(l.TargetJSON))
-	if err != nil {
-		target = flow.Target{}
-	}
 	graph, source := libraryFlowOrNull(l)
+	// The target is the compat view of the profile's graph (task 74): the
+	// compiled target of what runs, empty when there is no profile.
+	target := flow.Target{}
+	if graph != nil {
+		if plan, err := flow.Compile(*graph); err == nil {
+			target = plan.Target()
+		}
+	}
 	var lastScan *ScanResult
 	if s := strings.TrimSpace(l.LastScanJSON); s != "" {
 		var sr ScanResult
@@ -190,14 +194,14 @@ func NewLibraryDTO(l *store.Library) LibraryDTO {
 		Name:         l.Name,
 		Path:         l.Path,
 		Target:       target,
-		Easy:         easyFromLibrary(l, target),
+		Easy:         easyFromTarget(target),
 		Flow:         graph,
 		FlowSource:   source,
-		RuleTier:     l.RuleTier,
+		RuleTier:     l.ProfileTier,
 		ProfileID:    l.ProfileID,
 		Watch:        l.Watch,
 		Schedule:     l.Schedule,
-		ResultPolicy: l.ResultPolicy,
+		ResultPolicy: EffectiveResultPolicy(l),
 		FileKinds:    l.FileKinds,
 		CreatedAt:    rfc3339(l.CreatedAt),
 		UpdatedAt:    rfc3339(l.UpdatedAt),
@@ -217,21 +221,11 @@ func libraryFlowOrNull(l *store.Library) (*flow.Graph, string) {
 	return &g, source
 }
 
-// easyFromLibrary picks the easy-screen state of a library (task 07): the
-// stored easy input when the library was saved from the easy screen, the
-// described state when the Target itself is easy-shaped (libraries created
-// with a full target can still reopen in easy mode), else null.
-func easyFromLibrary(l *store.Library, target flow.Target) json.RawMessage {
-	if s := strings.TrimSpace(l.EasyJSON); s != "" {
-		var in flow.EasyModeInput
-		if err := json.Unmarshal([]byte(s), &in); err == nil {
-			if raw, err := json.Marshal(in); err == nil {
-				return raw
-			}
-		}
-		// A corrupt stored value falls through to the describe; it must
-		// not poison the whole response.
-	}
+// easyFromTarget describes the easy-screen state of a target (task 07): the
+// easy input the target would have come from, or null when the target is not
+// easy-shaped. Task 74 dropped the stored easy input from the reply: the
+// profile's graph is the rule, and its easy description is derived from it.
+func easyFromTarget(target flow.Target) json.RawMessage {
 	if in, ok := flow.DescribeTarget(target); ok {
 		if raw, err := json.Marshal(in); err == nil {
 			return raw

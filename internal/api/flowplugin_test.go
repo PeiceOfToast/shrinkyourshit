@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,7 +126,7 @@ func TestFlowPluginStepRoundTrip(t *testing.T) {
 	enablePluginFlow(t, h, inst.ID, true)
 	lib := h.createLibrary(false)
 
-	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec := h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "steps", "graph": pluginFlow(),
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -155,16 +156,21 @@ func TestFlowPluginStepRoundTrip(t *testing.T) {
 func TestFlowPluginStepSaveRefusals(t *testing.T) {
 	h, _ := pluginFlowHarness(t)
 	inst := installStepPlugin(t, h, "remove-chapters", store.PluginTypeStep, "echo ran")
-	lib := h.createLibrary(false)
 
-	body := func(name string) map[string]any {
+	// The plugin check runs when a library attaches the profile (task 74). A
+	// profile save does not run it, so each case attaches a fresh library.
+	attach := func(name, plugin string) *httptest.ResponseRecorder {
 		g := pluginFlow()
-		g.Nodes[1].Params = json.RawMessage(`{"plugin":"` + name + `"}`)
-		return map[string]any{"source": "steps", "graph": g}
+		g.Nodes[1].Params = json.RawMessage(`{"plugin":"` + plugin + `"}`)
+		dir := filepath.Join(t.TempDir(), name)
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		return h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
+			"name": name, "path": dir, "profile_id": graphProfile(t, h.st, g, ""),
+		})
 	}
 
 	// Not installed (the graph names a plugin that has no row).
-	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", body("never-installed"))
+	rec := attach("missing", "never-installed")
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "never-installed")
 	require.Contains(t, rec.Body.String(), "plugin_unavailable")
@@ -172,10 +178,10 @@ func TestFlowPluginStepSaveRefusals(t *testing.T) {
 
 	// Installed but disabled.
 	enablePluginFlow(t, h, inst.ID, true)
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", body("remove-chapters"))
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	rec = attach("enabled", "remove-chapters")
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	enablePluginFlow(t, h, inst.ID, false)
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", body("remove-chapters"))
+	rec = attach("disabled", "remove-chapters")
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "remove-chapters")
 	require.Contains(t, rec.Body.String(), "disabled")
@@ -183,7 +189,7 @@ func TestFlowPluginStepSaveRefusals(t *testing.T) {
 	// Installed and enabled but the wrong type (a preflight plugin).
 	hook := installStepPlugin(t, h, "gate-guard", store.PluginTypePreflight, "echo gate")
 	enablePluginFlow(t, h, hook.ID, true)
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", body("gate-guard"))
+	rec = attach("wrongtype", "gate-guard")
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "gate-guard")
 	require.Contains(t, rec.Body.String(), "preflight")
@@ -200,7 +206,11 @@ func TestFlowPluginStepDispatch(t *testing.T) {
 	enablePluginFlow(t, h, inst.ID, true)
 
 	lib, _, _ := h.queueOne(t)
-	_, err := h.svc.Libraries().UpdateFlow(context.Background(), lib.ID, "steps", pluginFlow())
+	// The flow reaches the library through its profile (task 74); the attach
+	// checks the plugin is enabled now, and the plugin is disabled below.
+	_, err := h.svc.Libraries().Update(context.Background(), lib.ID, server.LibraryParams{
+		Name: lib.Name, Path: lib.Path, ProfileID: graphProfile(t, h.st, pluginFlow(), ""),
+	})
 	require.NoError(t, err)
 
 	// Disable the plugin after the flow saved.

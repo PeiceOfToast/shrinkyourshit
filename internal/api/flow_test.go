@@ -39,7 +39,7 @@ func TestFlowRoundTrip(t *testing.T) {
 	lib := h.createLibrary(false)
 
 	sent := validFlow()
-	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec := h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "steps", "graph": sent,
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -65,15 +65,15 @@ func TestFlowRoundTrip(t *testing.T) {
 	require.NotNil(t, dto.Flow)
 	require.Equal(t, "steps", dto.FlowSource)
 
-	// PUT with an invalid source is a 400.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	// PUT with an invalid source is a 400 (the library route checks it).
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "wat", "graph": sent,
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "invalid_request")
 
 	// PUT with an invalid graph never saves: 400 invalid_flow with errors.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "steps", "graph": flow.Graph{Schema: flow.FlowSchema},
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
@@ -110,7 +110,7 @@ func TestFlowCanvasSave(t *testing.T) {
 		},
 	}
 
-	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec := h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "advanced", "graph": canvas,
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -137,7 +137,7 @@ func TestFlowCanvasSave(t *testing.T) {
 	// An invalid canvas graph (an orphan step) never saves.
 	orphan := canvas
 	orphan.Nodes = append(orphan.Nodes, flow.Step{ID: "orphan", Type: flow.StepSkipIfSmaller})
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "advanced", "graph": orphan,
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
@@ -287,7 +287,7 @@ func TestFlowHealthCheckAndMoveRoundTrip(t *testing.T) {
 			{From: "hc", To: "mv"},
 		},
 	}
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "steps", "graph": graph,
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -311,11 +311,14 @@ func TestFlowHealthCheckAndMoveRoundTrip(t *testing.T) {
 	require.Contains(t, preview.Steps[2].Plain, "Play 3 minute(s)")
 	require.Contains(t, preview.Steps[3].Plain, dest)
 
-	// A destination inside the library never saves.
+	// A destination inside the library is refused when a library attaches the
+	// profile (task 74): a profile is not bound to one folder, so the move
+	// check runs per library, not on the profile save.
 	inside := graph
 	inside.Nodes[3].Params = rawParams(`{"destination":"` + filepath.Join(h.root, "shrunk") + `"}`)
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
-		"source": "steps", "graph": inside,
+	insideProfile := graphProfile(t, h.st, inside, "")
+	rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
+		"name": "Inside", "path": h.root, "profile_id": insideProfile,
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "invalid_flow")
@@ -324,7 +327,7 @@ func TestFlowHealthCheckAndMoveRoundTrip(t *testing.T) {
 	// Nor does a relative destination.
 	relative := graph
 	relative.Nodes[3].Params = rawParams(`{"destination":"shrunk"}`)
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "steps", "graph": relative,
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
@@ -337,27 +340,17 @@ func TestFlowHealthCheckAndMoveRoundTrip(t *testing.T) {
 	require.Len(t, got.Graph.Nodes, 4)
 }
 
-// TestLegacyLibraryFlow: a library row written before the flow columns
-// (target only, empty flow) still answers GET /flow with the compiled
-// graph and the inferred source.
-func TestLegacyLibraryFlow(t *testing.T) {
+// TestLibraryWithoutProfileHasNoFlow (task 74, replaces TestLegacyLibraryFlow):
+// a library that follows no profile has no rule to run, so its flow is refused
+// with 409 no_profile instead of being compiled from its legacy target.
+func TestLibraryWithoutProfileHasNoFlow(t *testing.T) {
 	h := newAPIHarness(t)
 	lib := h.createLibrary(false)
-
-	// Strip the flow: a legacy row.
-	got, err := h.st.GetLibrary(context.Background(), lib.ID)
-	require.NoError(t, err)
-	got.FlowJSON = ""
-	got.FlowSource = ""
-	require.NoError(t, h.st.UpdateLibrary(context.Background(), got))
+	require.NoError(t, h.st.SetLibraryProfile(context.Background(), lib.ID, ""))
 
 	rec := h.do(http.MethodGet, "/api/v1/libraries/"+lib.ID+"/flow", nil)
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	var fr flowResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &fr))
-	require.Equal(t, flow.FlowSchema, fr.Graph.Schema)
-	require.NotEmpty(t, fr.Graph.Nodes)
-	require.Equal(t, flow.FlowSourceAdvanced, fr.Source)
+	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "no_profile")
 }
 
 // flowWithRawArgs is validFlow with one raw_args step between the encode and
@@ -391,7 +384,7 @@ func TestRawArgsSwitchRefusesFlows(t *testing.T) {
 	raw := flowWithRawArgs(t, "-preset fast")
 
 	// Default on: the step saves and round trips with its unsafe palette entry.
-	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": raw})
+	rec := h.putFlowViaProfile(lib.ID, map[string]any{"source": "steps", "graph": raw})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	// Switch off.
@@ -401,7 +394,7 @@ func TestRawArgsSwitchRefusesFlows(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `"allow_raw_args":false`)
 
 	// Save: 400 invalid_flow naming the step, and the stored graph is unchanged.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": raw})
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{"source": "steps", "graph": raw})
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), "invalid_flow")
 	require.Contains(t, rec.Body.String(), `"path":"nodes[2].type"`)
@@ -421,14 +414,14 @@ func TestRawArgsSwitchRefusesFlows(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "invalid_flow")
 
 	// A graph without the step is not affected by the switch.
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": validFlow()})
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{"source": "steps", "graph": validFlow()})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	// Switch back on: the step saves again.
 	on := true
 	rec = h.do(http.MethodPut, "/api/v1/settings", map[string]any{"allow_raw_args": on})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	rec = h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{"source": "steps", "graph": raw})
+	rec = h.putFlowViaProfile(lib.ID, map[string]any{"source": "steps", "graph": raw})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
@@ -439,7 +432,7 @@ func TestRawArgsRejectedWordsAreFieldErrors(t *testing.T) {
 	h := newAPIHarness(t)
 	lib := h.createLibrary(false)
 
-	rec := h.do(http.MethodPut, "/api/v1/libraries/"+lib.ID+"/flow", map[string]any{
+	rec := h.putFlowViaProfile(lib.ID, map[string]any{
 		"source": "steps", "graph": flowWithRawArgs(t, "-i /etc/passwd"),
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())

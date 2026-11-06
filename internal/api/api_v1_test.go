@@ -123,10 +123,8 @@ func (h *apiHarness) do(method, path string, body any) *httptest.ResponseRecorde
 // createLibrary POSTs a library and returns its DTO.
 func (h *apiHarness) createLibrary(watch bool) server.LibraryDTO {
 	h.t.Helper()
-	target := flow.Default()
 	rec := h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"name": "Movies", "path": h.root, "watch": watch,
-		"target": target, "result_policy": store.ResultPolicyReplaceIfSmaller,
 	})
 	require.Equal(h.t, http.StatusCreated, rec.Code, rec.Body.String())
 	var dto server.LibraryDTO
@@ -189,10 +187,15 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 	require.Len(t, list.Items, 1)
 	require.Equal(t, 1, list.Total)
 
-	// Update with a changed target.
-	target.Video.Codec = flow.CodecH264
+	// Update to a profile whose rule is h264 (task 74: the rule is the
+	// profile's; the target field is ignored).
+	h264 := target
+	h264.Video.Codec = flow.CodecH264
+	h264Graph, err := flow.TargetToFlow(h264)
+	require.NoError(t, err)
 	rec = h.do(http.MethodPut, "/api/v1/libraries/"+created.ID, map[string]any{
-		"name": "Movies", "path": h.root, "watch": true, "target": target,
+		"name": "Movies", "path": h.root, "watch": true,
+		"profile_id": graphProfile(t, h.st, h264Graph, ""),
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	var updated server.LibraryDTO
@@ -207,7 +210,8 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 
 	// Error shapes follow API.md conventions. An empty name is no longer
 	// an error (it defaults to the folder's base name for the easy
-	// screen); an invalid target is still a 400.
+	// screen). Task 74: a legacy target is ignored, so an invalid one no longer
+	// fails the save; the reply names the field instead.
 	rec = h.do(http.MethodPost, "/api/v1/libraries", map[string]any{
 		"name": "", "path": h.root,
 		"target": flow.Target{
@@ -217,14 +221,13 @@ func TestLibraryEndpointsCRUD(t *testing.T) {
 			Container: flow.ContainerMKV,
 		},
 	})
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-	var errBody struct {
-		Error string `json:"error"`
-		Code  string `json:"code"`
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var reply struct {
+		Deprecated []deprecatedField `json:"deprecated"`
 	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
-	require.Equal(t, "invalid_request", errBody.Code)
-	require.NotEmpty(t, errBody.Error)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &reply))
+	require.NotEmpty(t, reply.Deprecated)
+	require.Equal(t, "target", reply.Deprecated[0].Field)
 }
 
 // TestLibraryLastScanAtExposed covers the DTO field (task 19): a library

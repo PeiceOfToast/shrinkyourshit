@@ -24,9 +24,10 @@ import (
 	"github.com/PeiceOfToast/shrinkyourshit/internal/store"
 )
 
-// libraryBody is the create/update request body (API.md). Exactly one of
-// Target and Easy may be present: Easy is the easy-screen input the server
-// compiles into a Target (and stores verbatim for round-tripping).
+// libraryBody is the create/update request body (API.md). Target, Easy and
+// ResultPolicy are the pre-profile rule fields (task 74): they are accepted
+// for one release and ignored, and the reply names each one that was sent.
+// The rule a library runs is its encode profile's, chosen with ProfileID.
 type libraryBody struct {
 	Name         string              `json:"name"`
 	Path         string              `json:"path"`
@@ -39,10 +40,44 @@ type libraryBody struct {
 	// empty": a missing field defaults to ["video"], an explicit empty
 	// list is rejected (task 34).
 	FileKinds *[]string `json:"file_kinds"`
-	// ProfileID is the encode profile the library follows (task 73). On
-	// update a profile-only save (no target, no easy) is allowed; empty
-	// detaches the library from its profile.
+	// ProfileID is the encode profile the library follows (task 73). Empty
+	// keeps the library's current profile on update and takes the default
+	// profile on create; a library never detaches (task 74).
 	ProfileID string `json:"profile_id"`
+}
+
+// deprecatedField is one entry of the deprecated list a library save answers:
+// a field the request sent that the server ignored, or a default it applied.
+type deprecatedField struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// libraryReply is the library create and update reply: the library, plus the
+// deprecated list (task 74). The list is always present, empty when the
+// request used only current fields.
+type libraryReply struct {
+	server.LibraryDTO
+	Deprecated []deprecatedField `json:"deprecated"`
+}
+
+// newLibraryReply builds the save reply for lib from the request body.
+func newLibraryReply(lib *store.Library, body libraryBody) libraryReply {
+	notes := []deprecatedField{}
+	const ignored = "ignored: a library runs its encode profile's rule; set it on the profile (PUT /api/v1/profiles/{id})"
+	if body.Target != nil {
+		notes = append(notes, deprecatedField{Field: "target", Message: ignored})
+	}
+	if body.Easy != nil {
+		notes = append(notes, deprecatedField{Field: "easy", Message: ignored})
+	}
+	if body.ResultPolicy != "" {
+		notes = append(notes, deprecatedField{Field: "result_policy", Message: "ignored: the result policy is the profile's; set it on the profile"})
+	}
+	if body.ProfileID == "" {
+		notes = append(notes, deprecatedField{Field: "profile_id", Message: "not sent: the library follows encode profile " + lib.ProfileID + "; send profile_id to choose another"})
+	}
+	return libraryReply{LibraryDTO: server.NewLibraryDTO(lib), Deprecated: notes}
 }
 
 // listLibraries returns every library.
@@ -70,21 +105,12 @@ func (a *API) createLibrary(w http.ResponseWriter, r *http.Request) {
 	if body.Name == "" && body.Path != "" {
 		body.Name = filepath.Base(filepath.Clean(body.Path))
 	}
-	params, err := a.libraryParams(r.Context(), body, false)
-	if err != nil {
-		if errors.Is(err, errSettingsRead) {
-			a.internal(w, err)
-			return
-		}
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	lib, err := a.svc.Libraries().Create(r.Context(), params)
+	lib, err := a.svc.Libraries().Create(r.Context(), libraryParams(body))
 	if err != nil {
 		writeLibraryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, server.NewLibraryDTO(lib))
+	writeJSON(w, http.StatusCreated, newLibraryReply(lib, body))
 }
 
 // getLibrary returns one library.
@@ -104,16 +130,7 @@ func (a *API) updateLibrary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	params, err := a.libraryParams(r.Context(), body, true)
-	if err != nil {
-		if errors.Is(err, errSettingsRead) {
-			a.internal(w, err)
-			return
-		}
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-	lib, err := a.svc.Libraries().Update(r.Context(), id, params)
+	lib, err := a.svc.Libraries().Update(r.Context(), id, libraryParams(body))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "no such library")
 		return
@@ -122,7 +139,7 @@ func (a *API) updateLibrary(w http.ResponseWriter, r *http.Request) {
 		writeLibraryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, server.NewLibraryDTO(lib))
+	writeJSON(w, http.StatusOK, newLibraryReply(lib, body))
 }
 
 // deleteLibrary removes the library's DB records only.
@@ -690,72 +707,24 @@ func (a *API) library(w http.ResponseWriter, r *http.Request) (*store.Library, b
 	return lib, true
 }
 
-// errSettingsRead marks a settings read failure inside libraryParams; the
-// handlers answer it with 500 instead of the request-shaped 400.
-var errSettingsRead = errors.New("api: read settings for easy compile")
-
-// libraryParams converts the request body to manager params. Exactly one
-// of target and easy may be sent (API.md, task 07): easy is compiled with
-// the current settings into a Target and stored beside its raw input; a
-// target-only save clears the stored easy input. On create a missing
-// target falls back to the default; on update one of the two is required
-// (PUT semantics).
-func (a *API) libraryParams(ctx context.Context, body libraryBody, update bool) (server.LibraryParams, error) {
+// libraryParams converts the request body to manager params. The rule fields
+// (target, easy, result_policy) are not params any more (task 74): the library
+// follows the profile named by profile_id.
+func libraryParams(body libraryBody) server.LibraryParams {
 	// File kinds (task 34): a missing field defaults to ["video"], an
 	// explicitly empty list is rejected by the manager's validation.
 	kinds := []string{string(probe.KindVideo)}
 	if body.FileKinds != nil {
 		kinds = *body.FileKinds
 	}
-	params := server.LibraryParams{
-		Name:         body.Name,
-		Path:         body.Path,
-		Watch:        body.Watch,
-		Schedule:     body.Schedule,
-		ResultPolicy: body.ResultPolicy,
-		FileKinds:    kinds,
+	return server.LibraryParams{
+		Name:      body.Name,
+		Path:      body.Path,
+		Watch:     body.Watch,
+		Schedule:  body.Schedule,
+		FileKinds: kinds,
+		ProfileID: body.ProfileID,
 	}
-	if body.Target != nil && body.Easy != nil {
-		return params, errors.New("provide either target or easy, not both")
-	}
-	switch {
-	case body.Easy != nil:
-		settings, err := a.svc.Settings().Get(ctx)
-		if err != nil {
-			return params, errors.Join(errSettingsRead, err)
-		}
-		target, err := flow.CompileEasyMode(*body.Easy, flow.EasySettings{
-			Codec:              settings.DefaultVideoCodec,
-			PreferredLanguages: settings.PreferredLanguages,
-		})
-		if err != nil {
-			return params, err
-		}
-		raw, err := json.Marshal(target)
-		if err != nil {
-			return params, err
-		}
-		params.TargetJSON = raw
-		rawEasy, err := json.Marshal(*body.Easy)
-		if err != nil {
-			return params, err
-		}
-		params.EasyJSON = rawEasy
-	case body.Target != nil:
-		raw, err := json.Marshal(*body.Target)
-		if err != nil {
-			return params, err
-		}
-		params.TargetJSON = raw
-	default:
-		// A profile-only save is an update without a rule: the profile is
-		// the rule (task 73).
-		if update && body.ProfileID == "" {
-			return params, errors.New("target is required on update")
-		}
-	}
-	params.ProfileID = body.ProfileID
-	return params, nil
 }
 
 // writeLibraryError maps a failed library save: a flow the profile or the

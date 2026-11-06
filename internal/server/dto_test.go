@@ -12,34 +12,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLibraryDTOEasy covers the three easy states of the DTO (task 07):
-// stored easy wins, an easy-shaped target describes back, and a
-// hand-edited target yields null.
-func TestLibraryDTOEasy(t *testing.T) {
-	target, err := json.Marshal(flow.Default())
+// profiledLibrary is a library that follows a profile carrying graph g, the
+// shape LibraryFlow reads (task 74). The legacy columns are left empty, as a
+// library written by the new code keeps them only as a snapshot.
+func profiledLibrary(t *testing.T, name string, g flow.Graph) *store.Library {
+	t.Helper()
+	raw, err := json.Marshal(g)
 	require.NoError(t, err)
-	easyInput := `{"quality":3,"remove_subtitles":true,"audio":2}`
+	return &store.Library{
+		Name: name, Path: "/media/" + name, ProfileID: "prof-" + name,
+		ProfileGraph: string(raw), ProfileTier: store.RuleTierBasic,
+		ProfileResultPolicy: store.ResultPolicyReplaceIfSmaller,
+	}
+}
 
-	// Stored easy column wins, verbatim after canonical re-marshal.
-	lib := &store.Library{Name: "A", Path: "/media/a", TargetJSON: string(target), EasyJSON: easyInput}
+// TestLibraryDTOEasy covers the easy state of the DTO (task 07, derived from
+// the profile's graph since task 74): an easy-shaped graph describes back, a
+// hand-edited graph yields null, and a stored easy input is not read.
+func TestLibraryDTOEasy(t *testing.T) {
+	g, err := flow.TargetToFlow(flow.Default())
+	require.NoError(t, err)
+	lib := profiledLibrary(t, "B", g)
 	dto := NewLibraryDTO(lib)
-	require.JSONEq(t, easyInput, string(dto.Easy))
+	require.JSONEq(t, `{"quality":3,"remove_subtitles":false,"audio":1}`, string(dto.Easy))
 
-	// No stored easy but an easy-shaped target: describe fills it in.
-	lib = &store.Library{Name: "B", Path: "/media/b", TargetJSON: string(target)}
+	// A stored easy input on the row is not the rule: the profile decides.
+	lib.EasyJSON = `{"quality":5,"remove_subtitles":true,"audio":4}`
 	dto = NewLibraryDTO(lib)
 	require.JSONEq(t, `{"quality":3,"remove_subtitles":false,"audio":1}`, string(dto.Easy))
 
-	// A hand-edited target (copy codec) has no easy representation.
-	handEdited, err := json.Marshal(flow.Target{
+	// A hand-edited graph (copy codec) has no easy representation.
+	handEdited, err := flow.TargetToFlow(flow.Target{
 		Video:     flow.VideoTarget{Codec: flow.CodecCopy, Quality: 3},
 		Audio:     flow.AudioTarget{Mode: flow.AudioKeepAll},
 		Subtitles: flow.SubtitleTarget{Mode: flow.SubsKeepAll},
 		Container: flow.ContainerMKV,
 	})
 	require.NoError(t, err)
-	lib = &store.Library{Name: "C", Path: "/media/c", TargetJSON: string(handEdited)}
-	dto = NewLibraryDTO(lib)
+	dto = NewLibraryDTO(profiledLibrary(t, "C", handEdited))
 	require.JSONEq(t, "null", string(dto.Easy))
 }
 
