@@ -428,3 +428,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 2026-11-06T04:32:35Z pm: tick: claude run 20261106-040120-30293352 (role=build, haiku) finished task 66 on branch task/66-mount-executor (commit c77bd15); verified checklist 5/5 ticked, DECISIONS.md unchanged vs main, make test exit 0 (go all packages ok incl. internal/mount, web 65 files / 474 tests), make lint exit 0
 2026-11-06T04:32:35Z pm: opened PR #70 for task 66, CI green on all 9 checks (go 4m26s, docker 1m41s, docker-arm64 9m30s, e2e 3m35s, cross, web, installer, installer-powershell, report), merged squash as 193d80d, branch deleted
 2026-11-06T04:32:35Z pm: STATUS 66 set to done with the PR link; next task is 67 (container capabilities), to be started on a later tick
+2026-11-06T04:46:15Z pm: start task 67 (container packages, capabilities, installer notes) run 20261106-044615-d442e639 role=build haiku; deps: 66 done, PRs open: none
