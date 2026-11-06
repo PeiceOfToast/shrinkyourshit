@@ -83,6 +83,8 @@ security_opt:
 
 - **Login comes first.** Adding, changing, testing, mounting and deleting a share are refused until login is turned on in App settings. Mounting a share reaches your network, so it is a different risk class from the rest of the app.
 - **Without the two lines the app still starts.** The startup log says `network storage is unavailable` and names what is missing. A share you add then fails with `mount: /storage/<name>: permission denied.` That is the error an older compose file produces. Add the two lines and run `docker compose up -d` to recreate the container.
+- **SMB version: leave it out.** Leave `vers` out of the options of an SMB share and the server and client agree on the newest version both speak (3.1.1 against Samba in the v1.11 lab test). In v1.11 the option check refuses `vers=3.1.1`, and a Samba server set to SMB3 only also refuses `vers=3.0`.
+- **An unreachable NFS host takes about two minutes to fail.** `mount.nfs` keeps retrying for its default two minutes before the share shows its error. The rest of the app keeps working while it waits.
 
 Or with compose:
 
