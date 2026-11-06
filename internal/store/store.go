@@ -233,6 +233,9 @@ const (
 	// Task 58: the raw ffmpeg arguments switch (spec 5.3). Default on; off
 	// refuses any flow holding a raw_args step.
 	SettingAllowRawArgs = "allow_raw_args"
+	// Task 65: comma separated hosts and CIDRs a storage may mount from (spec
+	// 4.6). Empty means unrestricted; the storage API reports which.
+	SettingStorageAllowedHosts = "storage_allowed_hosts"
 )
 
 // Rule tiers as stored in libraries.rule_tier (ARCHITECTURE.md; the typed
