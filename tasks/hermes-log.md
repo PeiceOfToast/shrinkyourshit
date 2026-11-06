@@ -450,3 +450,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 2026-11-06T08:47:05Z pm: messaged owner on result_policy enum conflict (spec 5.1 vs validateResultPolicy); default A = keep code set
 2026-11-06T09:47:37Z pm: task 71 verified on the VM: make test exit 0 (go all 15 packages ok, internal/api 506s, internal/server 478s, web 68 files / 522 tests), make lint exit 0 (golangci 0 issues, spdx, eslint, prettier), DECISIONS.md diff vs origin/main empty, checklist 4/4 ticked; opened PR #75, CI run 42196015556 green on all 8 checks (go 4m14s, web 1m6s, docker 1m43s, docker-arm64 ~12m, e2e 3m19s, cross 2m23s, installer 44s, installer-powershell 31s); merged squash as 654333b, branch deleted, main pulled on the VM, STATUS 71 done with PR #75
 2026-11-06T09:47:37Z pm: next task is 72 (encode page profiles); start it on the next tick
+2026-11-06T10:01:20Z pm: started task 72 (encode page profiles), role=build, run 20261106-100120-606c6c85
