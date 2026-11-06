@@ -43,6 +43,9 @@ func (f *fakeStore) StorageSecret(_ context.Context, id string) (string, error) 
 }
 
 // call is one kernel call the fake Mounter saw.
+// testNASHost is what the harness resolver answers for every NFS host name.
+const testNASHost = "10.0.0.9"
+
 type call struct {
 	op     string    // "mount" or "umount"
 	spec   MountSpec // set for mount
@@ -241,6 +244,10 @@ func newHarness(t *testing.T, opt func(*Options), rows ...*store.Storage) *harne
 		BackoffBase:  10 * time.Second,
 		BackoffMax:   10 * time.Minute,
 		BusyWait:     time.Millisecond,
+		// The lab fixtures use host name sources. The kernel cannot resolve
+		// those itself, so the executor does it in userspace; tests answer
+		// without touching DNS.
+		Resolve: func(context.Context, string) ([]string, error) { return []string{testNASHost}, nil },
 	}
 	if opt != nil {
 		opt(&o)
@@ -367,7 +374,8 @@ func TestMountRunsExactSpecNFS(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("calls = %d, want 1: %+v", len(calls), calls)
 	}
-	want := MountSpec{Fstype: "nfs", Source: "nas:/export", Target: h.mountpoint("media"), Data: "vers=4.2,soft,timeo=50,retrans=2"}
+	want := MountSpec{Fstype: "nfs", Source: "nas:/export", Target: h.mountpoint("media"),
+		Data: "vers=4.2,soft,timeo=50,retrans=2,addr=" + testNASHost}
 	if calls[0].op != "mount" || calls[0].spec != want {
 		t.Fatalf("mount call:\n got %+v\nwant %+v", calls[0].spec, want)
 	}
