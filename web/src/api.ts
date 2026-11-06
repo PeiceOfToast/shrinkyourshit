@@ -1158,3 +1158,105 @@ export function deletePlugin(id: string): Promise<void> {
 export function getPlugins(): Promise<ListResponse<Plugin>> {
   return api<ListResponse<Plugin>>('/api/v1/plugins')
 }
+
+/* ------------------------------------------------------------------ */
+/* Storage (task 68, API.md task 65, spec 4.4 to 4.6)                  */
+/* ------------------------------------------------------------------ */
+
+export type StorageProtocol = 'nfs' | 'smb'
+
+/**
+ * One network share the server mounts at /storage/<name>. The password is
+ * never returned: `password_set` says whether one is stored.
+ */
+export interface Storage {
+  id: string
+  name: string
+  protocol: StorageProtocol
+  source: string
+  options: string
+  username: string
+  domain: string
+  password_set: boolean
+  read_only: boolean
+  enabled: boolean
+  mountpoint: string
+  mounted: boolean
+  /** The mounter's last failure, the mount(8) stderr as written. */
+  error: string
+  created_at: string
+  updated_at: string
+}
+
+export interface StorageHostPolicy {
+  restricted: boolean
+  allowed: string[]
+  message: string
+  /** Set when storage_allowed_hosts has an invalid entry: nothing mounts. */
+  error?: string
+}
+
+export interface StorageList extends ListResponse<Storage> {
+  host_policy: StorageHostPolicy
+}
+
+/** Create and update body. `password` is write only. */
+export interface StorageBody {
+  name: string
+  protocol: StorageProtocol
+  source: string
+  options: string
+  username: string
+  domain: string
+  password: string
+  read_only: boolean
+  enabled: boolean
+}
+
+export interface StorageTestResult {
+  ok: boolean
+  error?: string
+}
+
+/** GET /storages — every storage plus the host policy. */
+export function getStorages(): Promise<StorageList> {
+  return api<StorageList>('/api/v1/storages')
+}
+
+/** POST /storages — 201 with the storage. */
+export function createStorage(body: StorageBody): Promise<Storage> {
+  return api<Storage>('/api/v1/storages', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/** PUT /storages/{id} — a full replacement; an empty password keeps the stored one. */
+export function updateStorage(id: string, body: StorageBody): Promise<Storage> {
+  return api<Storage>(`/api/v1/storages/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** DELETE /storages/{id} — 409 while mounted. */
+export function deleteStorage(id: string): Promise<void> {
+  return api<void>(`/api/v1/storages/${id}`, { method: 'DELETE' })
+}
+
+/** POST /storages/{id}/test — mount, check, unmount. */
+export function testStorage(id: string): Promise<StorageTestResult> {
+  return api<StorageTestResult>(`/api/v1/storages/${id}/test`, {
+    method: 'POST',
+  })
+}
+
+/** POST /storages/{id}/mount — 200 with the storage. */
+export function mountStorage(id: string): Promise<Storage> {
+  return api<Storage>(`/api/v1/storages/${id}/mount`, { method: 'POST' })
+}
+
+/** POST /storages/{id}/unmount — 200 with the storage. */
+export function unmountStorage(id: string): Promise<Storage> {
+  return api<Storage>(`/api/v1/storages/${id}/unmount`, { method: 'POST' })
+}
