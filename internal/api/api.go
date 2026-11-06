@@ -157,6 +157,14 @@ func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.
 		mux.HandleFunc("GET /api/v1/flows/step-types", a.requireAdmin(a.stepTypes))
 		mux.HandleFunc("POST /api/v1/flows/preview", a.requireAdmin(a.previewFlow))
 
+		// Encode profiles (task 71, spec 5.3): reusable graphs libraries share.
+		mux.HandleFunc("GET /api/v1/profiles", a.requireAdmin(a.listProfiles))
+		mux.HandleFunc("POST /api/v1/profiles", a.requireAdmin(a.createProfile))
+		mux.HandleFunc("GET /api/v1/profiles/{id}", a.requireAdmin(a.getProfile))
+		mux.HandleFunc("PUT /api/v1/profiles/{id}", a.requireAdmin(a.updateProfile))
+		mux.HandleFunc("DELETE /api/v1/profiles/{id}", a.requireAdmin(a.deleteProfile))
+		mux.HandleFunc("POST /api/v1/profiles/{id}/duplicate", a.requireAdmin(a.duplicateProfile))
+
 		// Update check and in-app apply (task 17). The version endpoint
 		// carries the update settings; the status endpoint answers from
 		// the last check without touching the network.

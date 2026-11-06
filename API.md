@@ -788,3 +788,21 @@ Storage browse (spec 4.6). The folder picker lists directories only. It never li
   - `404 not_found` when the folder does not exist. `409 not_mounted` when the storage is not mounted.
   - `403 login_required` while login is off, like every other storage route.
 
+
+### Task 71
+
+Encode profiles (spec 5.3). A profile is a named, reusable graph with a tier and a result policy. Libraries reference one (task 73 wires that). Editing a profile changes every library using it; `used_by_names` says which. A duplicate is the way to diverge.
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/profiles` | admin | list: `{items, total}`, oldest first |
+| POST | `/api/v1/profiles` | admin | create; `201` with the profile |
+| GET | `/api/v1/profiles/{id}` | admin | one profile |
+| PUT | `/api/v1/profiles/{id}` | admin | replace every field; `200` with the profile |
+| DELETE | `/api/v1/profiles/{id}` | admin | remove; `204`. `409 profile_in_use` while any library references it, and nothing changes |
+| POST | `/api/v1/profiles/{id}/duplicate` | admin | copy with a new id, the same graph, tier, policy and description, named `<name> (copy)` or `<name> (copy N)`; `201` |
+
+- **Body** (POST and PUT): `{name, description?, tier, result_policy, graph}`. `tier` is `basic`, `moderate` or `advanced`. `result_policy` is `replace_if_smaller`, `replace` or `keep_both` (the stored set; spec 5.1's `move` and `copy` were not adopted).
+- **Profile** response: `{id, name, description, tier, result_policy, graph, used_by, used_by_names, unrepresentable, created_at, updated_at}`. `unrepresentable` lists the steps of the graph that the profile's own tier cannot express, using the v1.10 rule (`flow.RepresentableAt`). It is informational: the profile is still saved.
+- **Errors:** `400 invalid_request` for a missing name, an unknown tier or policy. `400 invalid_flow` with field errors for a bad graph, the same shape as `PUT /libraries/{id}/flow`. `409 name_taken` when another profile has the name. `404 not_found` for an unknown id.
+- **Seed:** a fresh install gets one profile, `Default (<default_rule_tier>)`, carrying the default graph, at boot when no profile exists.
