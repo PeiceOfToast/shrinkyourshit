@@ -748,7 +748,7 @@ No new endpoints. The raw ffmpeg arguments escape hatch (spec 5.3):
 ### Task 65
 
 Storage API (spec 4.4 to 4.6). Each storage is a network share the server mounts in the container at `/storage/<name>`. The
-mount executor is task 66; until it is wired, mount, unmount and test answer `501 not_implemented`.
+mount executor (task 66, `internal/mount`) is wired at startup. `501 not_implemented` is the answer only when no executor is attached.
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
@@ -773,6 +773,6 @@ mount executor is task 66; until it is wired, mount, unmount and test answer `50
 - **PUT** is a full replacement. An empty `password` keeps the stored one. `name` and `protocol` cannot change; a change is a `400` field error on that field.
 - **Login gate (spec 4.6).** Every write endpoint, and browse, answers `403 {"code":"login_required"}` while `login_enabled` is false. The body is not read first. Reads are open to any admin session, and to everyone while login is off.
 - **Host allowlist.** The `storage_allowed_hosts` setting is a comma separated list of host names, IP addresses and CIDRs. Empty means any host may be mounted. `GET /storages` says which in `host_policy`: `{restricted, allowed[], message, error?}`. An invalid entry refuses every host and `error` names it. Host names match exactly. CIDR and IP entries match only literal addresses, because the check does not resolve names. A source outside the list is a `400` field error on `source` at create and update. Mount and test check it again and answer `403 {"code":"host_not_allowed"}`.
-- **Errors.** A field problem is `400 {"error","code":"invalid_request","errors":[{"path","message"}]}`. A duplicate name is `409 conflict`. A missing id is `404 not_found`. A mount-side call that fails is `409` with the executor's message (`mount_failed`, `unmount_failed`). An unknown id is `404` on every per-storage route.
+- **Errors.** A field problem is `400 {"error","code":"invalid_request","errors":[{"path","message"}]}`. A duplicate name is `409 conflict`. A missing id is `404 not_found`. A mount-side call that fails is `409` with the executor's message (`mount_failed`, `unmount_failed`). The message is `mount(8)`'s stderr as written. The SMB password never reaches it, because it travels only in a 0600 credentials file that is removed when mount returns. An unknown id is `404` on every per-storage route.
 - **Locking.** Mount, unmount, test, edit and delete of one storage run one at a time. Two concurrent calls on the same storage serialise. Other storages are not blocked.
 - `GET /api/v1/openapi.json` and `GET /openapi.yaml` document every route above.
