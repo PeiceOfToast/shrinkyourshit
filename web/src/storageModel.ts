@@ -12,6 +12,7 @@ import {
   type StorageBody,
   type StorageProtocol,
 } from './api'
+import { formatBytes } from './format'
 
 /** The spec 4.4 default for NFS, shown and editable on the form (task 65). */
 export const NFS_DEFAULT_OPTIONS = 'vers=3,soft,timeo=50,retrans=2'
@@ -175,4 +176,108 @@ export function storageState(row: Storage): {
   if (row.mounted) return { label: 'Mounted', tone: 'success' }
   if (row.enabled) return { label: 'Not mounted', tone: 'warning' }
   return { label: 'Off', tone: 'neutral' }
+}
+
+/* ------------------------------------------------------------------ */
+/* Browse and the library path picker (task 69, spec 4.6)              */
+/* ------------------------------------------------------------------ */
+
+/** True when `path` is the mountpoint or lies below it. */
+export function isInsideStorage(path: string, mountpoint: string): boolean {
+  return path === mountpoint || path.startsWith(`${mountpoint}/`)
+}
+
+/** The share whose mountpoint holds this path (the longest match wins). */
+export function storageContaining(
+  path: string,
+  shares: Storage[],
+): Storage | undefined {
+  let best: Storage | undefined
+  for (const share of shares) {
+    if (!isInsideStorage(path, share.mountpoint)) continue
+    if (!best || share.mountpoint.length > best.mountpoint.length) best = share
+  }
+  return best
+}
+
+/**
+ * Breadcrumbs for a folder inside a share: the share's name first, then each
+ * folder below its mountpoint. Breadcrumbs never climb above the mountpoint.
+ */
+export function storageCrumbs(
+  path: string,
+  share: Pick<Storage, 'name' | 'mountpoint'>,
+): Array<{ name: string; path: string }> {
+  const out = [{ name: share.name, path: share.mountpoint }]
+  if (!isInsideStorage(path, share.mountpoint)) return out
+  const rest = path.slice(share.mountpoint.length).split('/').filter(Boolean)
+  let acc = share.mountpoint
+  for (const part of rest) {
+    acc += `/${part}`
+    out.push({ name: part, path: acc })
+  }
+  return out
+}
+
+export type TypedPathCheck =
+  { ok: true; path: string; storage: Storage } | { ok: false; message: string }
+
+/**
+ * A hand typed library path. It must be absolute, must not climb with `..`,
+ * and must sit inside a share that is mounted. Anything else is refused with
+ * the reason, because a library folder outside a mounted share reads as empty
+ * when the share is gone.
+ */
+export function checkTypedPath(
+  input: string,
+  shares: Storage[],
+): TypedPathCheck {
+  const raw = input.trim()
+  if (raw === '') {
+    return { ok: false, message: 'Type the full folder path first.' }
+  }
+  if (!raw.startsWith('/')) {
+    return {
+      ok: false,
+      message: 'A folder path starts with /, for example /storage/nas/Movies.',
+    }
+  }
+  const segments = raw.split('/').filter(Boolean)
+  if (segments.some((s) => s === '..' || s === '.')) {
+    return {
+      ok: false,
+      message:
+        'Remove the . and .. parts. Type the folder path as it is named.',
+    }
+  }
+  const path = `/${segments.join('/')}`
+  const share = storageContaining(path, shares)
+  if (!share) {
+    return {
+      ok: false,
+      message:
+        'That path is not inside a mounted storage, so it is refused. Type a folder inside a storage, for example /storage/nas/Movies, or pick one with Choose.',
+    }
+  }
+  if (!share.mounted) {
+    return {
+      ok: false,
+      message: `${share.name} is not mounted, so this folder cannot be used yet. Mount it on the Storage page first.`,
+    }
+  }
+  return { ok: true, path, storage: share }
+}
+
+/** The query key of one storage listing (the browser and the form share it). */
+export function storageBrowseKey(id: string, path: string) {
+  return ['storage-browse', id, path] as const
+}
+
+/** Free space in plain words, or '' when the probe gave no figure. */
+export function freeSpaceText(
+  free: number | null,
+  total: number | null,
+): string {
+  if (free === null || total === null) return ''
+  return `${formatBytes(free)} free of ${formatBytes(total)}`
 }

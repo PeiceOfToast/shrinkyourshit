@@ -703,14 +703,24 @@ paths:
   /api/v1/storages/{id}/browse:
     parameters:
       - $ref: '#/components/parameters/Id'
+      - name: path
+        in: query
+        required: false
+        description: An absolute folder inside the storage's mountpoint. Defaults to the mountpoint.
+        schema: { type: string }
     get:
       tags: [storages]
-      summary: Browse a mounted storage. The listing arrives with the storage browser; until then a mounted storage answers 501. Needs login on.
+      summary: List the folders (directories only, never files) of a mounted storage. Needs login on.
       responses:
+        '200':
+          description: The folder listing, with free space when the probe works.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorageBrowse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/LoginRequired' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
-        '501': { $ref: '#/components/responses/NotImplemented' }
   /api/v1/webhooks:
     get:
       tags: [webhooks]
@@ -1718,6 +1728,27 @@ components:
       properties:
         ok: { type: boolean }
         error: { type: string }
+    StorageBrowse:
+      type: object
+      required: [id, name, mounted, mountpoint, path, entries]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        mounted: { type: boolean }
+        mountpoint: { type: string }
+        path: { type: string }
+        parent: { type: string, description: "Empty at the mountpoint." }
+        free_bytes: { type: integer, nullable: true }
+        total_bytes: { type: integer, nullable: true }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [name, path, is_dir]
+            properties:
+              name: { type: string }
+              path: { type: string }
+              is_dir: { type: boolean }
     Integration:
       type: object
       required: [id, kind, name, base_url]

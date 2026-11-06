@@ -1218,6 +1218,36 @@ export interface StorageTestResult {
   error?: string
 }
 
+/** One folder in a storage listing. Directories only, never files. */
+export interface StorageBrowseEntry {
+  name: string
+  path: string
+  is_dir: boolean
+}
+
+/** GET /storages/{id}/browse (task 69). Free space is null when unknown. */
+export interface StorageBrowse {
+  id: string
+  name: string
+  mounted: boolean
+  mountpoint: string
+  path: string
+  /** Empty at the mountpoint. */
+  parent: string
+  free_bytes: number | null
+  total_bytes: number | null
+  entries: StorageBrowseEntry[]
+}
+
+/** GET /storages/{id}/browse — login on; the path defaults to the mountpoint. */
+export function browseStorage(
+  id: string,
+  path?: string,
+): Promise<StorageBrowse> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : ''
+  return api<StorageBrowse>(`/api/v1/storages/${id}/browse${query}`)
+}
+
 /** GET /storages — every storage plus the host policy. */
 export function getStorages(): Promise<StorageList> {
   return api<StorageList>('/api/v1/storages')

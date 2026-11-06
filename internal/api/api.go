@@ -48,6 +48,9 @@ type API struct {
 	// storageLocks serialises mount, unmount, test, edit and delete per
 	// storage (spec 4.4).
 	storageLocks *keyedLocks
+	// storageRoot is the directory the storage mountpoints live under
+	// (Root/<name>, spec 4.1). Browse reads only below it. Default /storage.
+	storageRoot string
 }
 
 // Option customizes New.
@@ -86,7 +89,7 @@ func WithRuntime(fn func() string) Option {
 // is disabled).
 func New(version string, static fs.FS, svc *server.Server, opts ...Option) http.Handler {
 	a := &API{svc: svc, log: slog.Default(), logins: newLoginLimiter(), version: version,
-		mounter: unavailableMounter{}, storageLocks: newKeyedLocks()}
+		mounter: unavailableMounter{}, storageLocks: newKeyedLocks(), storageRoot: defaultStorageRoot}
 	for _, o := range opts {
 		o(a)
 	}

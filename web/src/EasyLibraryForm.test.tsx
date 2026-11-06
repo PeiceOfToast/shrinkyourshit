@@ -260,3 +260,173 @@ function require1(posts: unknown[]): asserts posts is [{ body: unknown }] {
     throw new Error(`expected exactly one POST, saw ${posts.length}`)
   }
 }
+
+/** One mounted share and one unmounted share, as GET /storages answers. */
+function shareList() {
+  const share = (id: string, name: string, mounted: boolean) => ({
+    id,
+    name,
+    protocol: 'nfs',
+    source: 'nas.lan:/export/media',
+    options: 'vers=3,soft,timeo=50,retrans=2',
+    username: '',
+    domain: '',
+    password_set: false,
+    read_only: false,
+    enabled: true,
+    mountpoint: `/storage/${name}`,
+    mounted,
+    error: '',
+    created_at: '',
+    updated_at: '',
+  })
+  return {
+    items: [share('st-nas', 'nas', true), share('st-off', 'off', false)],
+    total: 2,
+    host_policy: { restricted: false, allowed: [], message: '' },
+  }
+}
+
+/** A storage listing: folders for the browser, the space for the form. */
+function storageListing(path: string) {
+  return {
+    id: 'st-nas',
+    name: 'nas',
+    mounted: true,
+    mountpoint: '/storage/nas',
+    path,
+    parent: path === '/storage/nas' ? '' : '/storage/nas',
+    free_bytes: 2_000_000_000,
+    total_bytes: 4_000_000_000,
+    entries: [{ name: 'Movies', path: '/storage/nas/Movies', is_dir: true }],
+  }
+}
+
+describe('EasyLibraryForm storage picker (task 69)', () => {
+  it('picks a folder inside a storage and posts that path', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/storages\/st-nas\/browse$/,
+        bodyFn: (ctx) =>
+          storageListing(ctx.url.searchParams.get('path') ?? '/storage/nas'),
+      },
+      {
+        method: 'POST',
+        match: /\/api\/v1\/libraries$/,
+        status: 201,
+        body: { id: 'lib-s', name: 'Movies', path: '/storage/nas/Movies' },
+      },
+    ])
+    renderForm()
+
+    fireEvent.change(await screen.findByTestId('easy-storage-select'), {
+      target: { value: 'st-nas' },
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('easy-storage-space')).toHaveTextContent(
+        '2.0 GB free of 4.0 GB',
+      ),
+    )
+    expect(screen.getByTestId('easy-storage-badge')).toHaveTextContent(
+      'Mounted',
+    )
+
+    fireEvent.click(screen.getByTestId('easy-choose-folder'))
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('storage-browser-dir-Movies'),
+      ).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('storage-browser-dir-Movies'))
+    await waitFor(() =>
+      expect(screen.getByTestId('storage-browser-current')).toHaveTextContent(
+        '/storage/nas/Movies',
+      ),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('storage-browser-use')).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByTestId('storage-browser-use'))
+    await waitFor(() =>
+      expect(screen.getByTestId('easy-folder')).toHaveTextContent(
+        '/storage/nas/Movies',
+      ),
+    )
+
+    fireEvent.click(screen.getByTestId('easy-start'))
+    await waitFor(() =>
+      expect(mock.calls('POST', /\/api\/v1\/libraries$/)).toHaveLength(1),
+    )
+    expect(mock.calls('POST', /\/api\/v1\/libraries$/)[0].body).toMatchObject({
+      path: '/storage/nas/Movies',
+    })
+  })
+
+  it('refuses a typed path outside every mounted storage, with the reason', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/storages\/st-nas\/browse$/,
+        bodyFn: (ctx) =>
+          storageListing(ctx.url.searchParams.get('path') ?? '/storage/nas'),
+      },
+    ])
+    renderForm()
+    await screen.findByTestId('easy-storage-select')
+
+    fireEvent.change(screen.getByTestId('easy-typed-path-input'), {
+      target: { value: '/media/movies' },
+    })
+    fireEvent.click(screen.getByTestId('easy-use-typed-path'))
+
+    expect(screen.getByTestId('easy-typed-path-error')).toHaveTextContent(
+      'not inside a mounted storage',
+    )
+    expect(screen.getByTestId('easy-folder-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('easy-start')).toBeDisabled()
+  })
+
+  it('accepts a typed path inside a mounted storage', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
+      {
+        method: 'GET',
+        match: /\/api\/v1\/storages\/st-nas\/browse$/,
+        bodyFn: (ctx) =>
+          storageListing(ctx.url.searchParams.get('path') ?? '/storage/nas'),
+      },
+    ])
+    renderForm()
+    await screen.findByTestId('easy-storage-select')
+
+    fireEvent.change(screen.getByTestId('easy-typed-path-input'), {
+      target: { value: '/storage/nas/TV' },
+    })
+    fireEvent.click(screen.getByTestId('easy-use-typed-path'))
+
+    expect(
+      screen.queryByTestId('easy-typed-path-error'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId('easy-folder')).toHaveTextContent(
+      '/storage/nas/TV',
+    )
+  })
+
+  it('refuses to browse a share that is not mounted', async () => {
+    mock = installFetchMock([
+      { method: 'GET', match: /\/api\/v1\/storages$/, body: shareList() },
+    ])
+    renderForm()
+
+    fireEvent.change(await screen.findByTestId('easy-storage-select'), {
+      target: { value: 'st-off' },
+    })
+    expect(screen.getByTestId('easy-choose-folder')).toBeDisabled()
+    expect(screen.getByTestId('easy-storage-badge')).toHaveTextContent(
+      'Not mounted',
+    )
+  })
+})
