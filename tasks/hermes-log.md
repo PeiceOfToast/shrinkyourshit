@@ -429,3 +429,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 2026-11-06T04:32:35Z pm: opened PR #70 for task 66, CI green on all 9 checks (go 4m26s, docker 1m41s, docker-arm64 9m30s, e2e 3m35s, cross, web, installer, installer-powershell, report), merged squash as 193d80d, branch deleted
 2026-11-06T04:32:35Z pm: STATUS 66 set to done with the PR link; next task is 67 (container capabilities), to be started on a later tick
 2026-11-06T04:46:15Z pm: start task 67 (container packages, capabilities, installer notes) run 20261106-044615-d442e639 role=build haiku; deps: 66 done, PRs open: none
+2026-11-06T05:23:17Z hermes: task 67 closed out on task/67-container-capabilities: CI run 42165909121 proof recorded, checklist 4/4 ticked (item 1 amd64 only, arm64 helpers unchecked), local go test, make test-web and golangci-lint exit 0, STATUS 67 done with PR #71; PR not opened, merged or closed

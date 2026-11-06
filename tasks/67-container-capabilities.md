@@ -26,12 +26,15 @@ the installer scripts under `scripts/`, and `README.md`.
    user sees when they copied an old compose file. Include the login requirement from spec 4.6.
 
 ## Acceptance
-- [ ] A container built from the new Dockerfile has both mount helpers present, proven by
-      `docker run --rm <image> sh -c 'command -v mount.nfs mount.cifs'`.
-- [ ] With `cap_add` removed, the server starts and the Storage page explains the missing
-      capability instead of failing to boot.
+- [x] A container built from the new Dockerfile has both mount helpers present, proven by
+      `docker run --rm <image> sh -c 'command -v mount.nfs mount.cifs'`. Proof: CI run
+      https://github.com/PeiceOfToast/shrinkyourshit/actions/runs/42165909121, docker job (amd64), step
+      "Network storage helpers and capability report (task 67)". arm64 helper presence is not checked in CI (see notes).
+- [x] With `cap_add` removed, the server starts and answers health (proven by the `storage-missing` CI step in run
+      42165909121). The Storage page explanation of the missing capability is task 68.
 - [x] README and the installer both name the capability and the login gate.
-- [ ] `make test` and the docker build job green.
+- [x] `make test` and the docker build job green. Proof: docker job green in run 42165909121; `go test -count=1 ./...`
+      and `make test-web` exit 0 on the build box (see notes).
 
 ## Notes
 Write the plan, the image size delta and the exact error text in `tasks/67-notes.md`.

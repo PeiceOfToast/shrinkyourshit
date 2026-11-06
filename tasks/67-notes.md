@@ -69,12 +69,49 @@ Disabled line (`SHRINK_MANAGE_MOUNTS` false, 0 or off):
 
 | Item | Status | Proof |
 |---|---|---|
-| Image has `mount.nfs` and `mount.cifs` (`docker run --rm <image> sh -c 'command -v mount.nfs mount.cifs'`) | **not ticked** | No docker on this box. CI docker job runs that exact command plus `test -u $(command -v mount)`. Passes only when the CI run is green. |
-| `cap_add` removed: server starts, Storage page explains the missing capability | **not ticked** | Server start without the capability: CI step `storage-missing` checks the log line and `/api/v1/health`. The Storage page text is task 68, so the page half cannot be ticked here. |
+| Image has `mount.nfs` and `mount.cifs` (`docker run --rm <image> sh -c 'command -v mount.nfs mount.cifs'`) | **ticked** (amd64) | CI run 42165909121, docker job, step "Network storage helpers and capability report (task 67)". Helpers and setuid `mount` checked on amd64 only. |
+| `cap_add` removed: server starts and answers health (Storage page text is task 68) | **ticked** (narrowed) | CI run 42165909121, step `storage-missing`: container with no `cap_add` logs `network storage is unavailable: SYS_ADMIN not granted` and `/api/v1/health` returns `"status":"ok"`. |
 | README and installer name the capability and the login gate | ticked | `deploy/deploy_test.go` `TestInstallDocsNameTheCapabilityAndLoginGate` on `README.md` and `docs/installing.md`. "Installer" read as the container install path (see scope decisions). |
-| `make test` and the docker build job green | **not ticked** | `go test -count=1 ./...` exit 0 locally (make is not installed here; the same command ran). Web is untouched. Docker job pending on CI. |
+| `make test` and the docker build job green | **ticked** | Docker job green in CI run 42165909121. Local: `go test -count=1 ./...` exit 0, `make test-web` exit 0 (see close-out). |
 
-The task stays `in_progress` with the branch name. The two unticked items need a docker host or CI, and the Storage page half of item 2 is task 68's.
+Item 2 was narrowed at close-out, on the owner's instruction, to the boot behaviour. The Storage page explanation is task 68.
+
+## Close-out (2026-11-06): CI proof and local gate
+
+**CI run:** https://github.com/PeiceOfToast/shrinkyourshit/actions/runs/42165909121 (PR #71, head `ce67cf8`), conclusion success.
+All 9 jobs succeeded: docker, docker-arm64, go, web, cross, e2e, installer, installer-powershell, report.
+
+**Corrections to the close-out brief:** the owner's brief said the helper step passed on both amd64 and arm64. That is not
+what the run shows, and this note records what it does show:
+- The step "Network storage helpers and capability report (task 67)" exists only in the `docker` (amd64) job. The
+  `docker-arm64` job has no such step. Its steps are QEMU, buildx, registry, "Build the arm64 image", "Smoke test the
+  arm64 image (boot under emulation)", push and manifest verification.
+- The arm64 smoke test boots the image without `cap_add`, answers `/api/v1/health`, and its log shows
+  `network storage is unavailable: SYS_ADMIN not granted; AppArmor confines this container; ...`. So arm64 proves the
+  boot and the unavailable line. It does not run `command -v mount.nfs mount.cifs`.
+- Item 1 is therefore ticked on amd64 proof. An arm64 helper check is not in CI. Adding one is a CI change, which is
+  out of this close-out's scope, so it is recorded as a gap.
+
+**What the amd64 docker job printed (run 42165909121):**
+- Step "Network storage helpers and capability report (task 67)": success. It runs
+  `command -v mount.nfs mount.cifs && test -u "$(command -v mount)"`, then starts `storage-ready` (with cap_add) and
+  `storage-missing` (without it), checks both log lines and `/api/v1/health` on the missing one.
+- `image size: 516MB` for `shrinkyourshit:ci`.
+
+**Image size delta: not measured.** The pre-change baseline size was never recorded, so the delta cannot be computed
+from CI. The estimate of about 1.5 to 2 MiB in the Image size section stands until a baseline is measured.
+The 516MB figure is the post-change size only.
+
+**Local gate (build box, close-out run):** the build box has `make`, `gh` and `golangci-lint` under `~/.local/bin` and
+`~/go/bin`. `go` is under `~/.local/go/bin` and `npm` under `~/.local/node22/bin`. None is on the default PATH, so the
+earlier note "make is not installed" was wrong. The commands ran with those directories on PATH.
+- `go test -count=1 ./...`: exit 0. Every package ok (`internal/api` 484.9 s, `internal/server` 485.3 s, `internal/store` 194.9 s).
+- `make test-web` (web vitest): exit 0. 65 files, 474 tests passed.
+- `golangci-lint run ./...`: exit 0, "0 issues.".
+- Not run here: the full `make test` and `make lint` targets (their go part repeats the `go test` above and their lint
+  part includes `spdx` and `lint-web`). The CI "go" and "web" jobs ran on this head and were green.
+
+Item 4 is ticked because the docker job is green and the commands make test wraps exit 0 on the build box.
 
 ## Gate results (2026-11-06, branch task/67-container-capabilities)
 
