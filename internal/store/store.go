@@ -64,6 +64,10 @@ type Library struct {
 	// probe.Kinds with no duplicates. The scanner skips files whose kind
 	// is not listed before probing them.
 	FileKinds []string
+	// ProfileID is the encode profile the library follows (encode profiles
+	// wave, spec 5). Empty means no profile: NULL in the database. Set by
+	// SetLibraryProfile or BackfillProfiles, never by the flow columns.
+	ProfileID string
 }
 
 // File is one media file inside a library. Probe is opaque JSON produced by

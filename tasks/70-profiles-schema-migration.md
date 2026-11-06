@@ -29,11 +29,11 @@ Modify `internal/store/migrations.go`, `internal/store/interface.go`, `internal/
    and every library's `profile_id`.
 
 ## Acceptance
-- [ ] Two libraries with identical graphs end up sharing one profile, proven by a test.
-- [ ] Two libraries with different graphs get two profiles.
-- [ ] Every library ends with a non null `profile_id`.
-- [ ] Migration is idempotent and does not lose data on a second run.
-- [ ] `make test` green.
+- [x] Two libraries with identical graphs end up sharing one profile, proven by a test.
+- [x] Two libraries with different graphs get two profiles.
+- [x] Every library ends with a non null `profile_id`.
+- [x] Migration is idempotent and does not lose data on a second run.
+- [x] `make test` green.
 
 ## Notes
 Write the plan and the resulting row counts in `tasks/70-notes.md`.

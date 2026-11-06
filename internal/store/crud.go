@@ -11,7 +11,7 @@ import (
 )
 
 // libraryColumns is the column list shared by every library query.
-const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds`
+const libraryColumns = `id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, COALESCE(profile_id, '')`
 
 // scanLibrary reads one library row.
 func scanLibrary(rows *sql.Rows) (*Library, error) {
@@ -24,7 +24,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 		lastScanS string
 		fileKinds string
 	)
-	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds); err != nil {
+	if err := rows.Scan(&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, &watch, &l.Schedule, &l.ResultPolicy, &created, &updated, &lastScan, &lastScanS, &fileKinds, &l.ProfileID); err != nil {
 		return nil, err
 	}
 	l.Watch = parseBool(watch)
@@ -43,7 +43,7 @@ func scanLibrary(rows *sql.Rows) (*Library, error) {
 // lastScanSummary receives the raw last_scan summary text.
 // fileKinds receives the raw file_kinds text; the caller parses it.
 func libraryDest(l *Library, watch *string, created, updated, lastScan, lastScanSummary, fileKinds *string) []any {
-	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds}
+	return []any{&l.ID, &l.Name, &l.Path, &l.TargetJSON, &l.EasyJSON, &l.FlowJSON, &l.FlowSource, &l.RuleTier, watch, &l.Schedule, &l.ResultPolicy, created, updated, lastScan, lastScanSummary, fileKinds, &l.ProfileID}
 }
 
 // CreateLibrary inserts a library. ID, CreatedAt and UpdatedAt are filled
@@ -63,8 +63,8 @@ func (s *SQLite) CreateLibrary(ctx context.Context, l *Library) error {
 	if l.RuleTier == "" {
 		l.RuleTier = RuleTierBasic // a library with no tier edits the easy shape
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (`+libraryColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, l.RuleTier, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, target, easy, flow_json, flow_source, rule_tier, watch, schedule, result_policy, created_at, updated_at, last_scan_at, last_scan, file_kinds, profile_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.ID, l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, l.RuleTier, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.CreatedAt), fmtTime(l.UpdatedAt), fmtTime(l.LastScanAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID))
 	if err != nil {
 		return fmt.Errorf("store: create library: %w", err)
 	}
@@ -102,8 +102,8 @@ func (s *SQLite) UpdateLibrary(ctx context.Context, l *Library) error {
 		return err
 	}
 	l.UpdatedAt = nowUTC()
-	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, easy = ?, flow_json = ?, flow_source = ?, rule_tier = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ?, last_scan = ?, file_kinds = ? WHERE id = ?`,
-		l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, l.RuleTier, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), l.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE libraries SET name = ?, path = ?, target = ?, easy = ?, flow_json = ?, flow_source = ?, rule_tier = ?, watch = ?, schedule = ?, result_policy = ?, updated_at = ?, last_scan = ?, file_kinds = ?, profile_id = ? WHERE id = ?`,
+		l.Name, l.Path, l.TargetJSON, l.EasyJSON, l.FlowJSON, l.FlowSource, l.RuleTier, fmtBool(l.Watch), l.Schedule, l.ResultPolicy, fmtTime(l.UpdatedAt), l.LastScanJSON, mustMarshalKinds(l.FileKinds), nullIfEmpty(l.ProfileID), l.ID)
 	if err != nil {
 		return fmt.Errorf("store: update library: %w", err)
 	}

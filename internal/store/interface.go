@@ -41,6 +41,14 @@ type Store interface {
 	// SetLibraryRuleTier writes only the library's rule tier (task 59). It
 	// is the sole tier write path: flow_json is never touched.
 	SetLibraryRuleTier(ctx context.Context, id, tier string) error
+	// Profiles (encode profiles wave, spec 5). SetLibraryProfile is the only
+	// write path for a library's profile_id. BackfillProfiles is the boot
+	// step that gives every library without one a profile; see profiles.go.
+	CreateProfile(ctx context.Context, p *Profile) error
+	GetProfile(ctx context.Context, id string) (*Profile, error)
+	ListProfiles(ctx context.Context) ([]*Profile, error)
+	SetLibraryProfile(ctx context.Context, libraryID, profileID string) error
+	BackfillProfiles(ctx context.Context, fallbackGraph string) ([]ProfileBackfill, error)
 
 	// Files. UpsertFile keys on (LibraryID, Path): the scanner calls it
 	// for new and changed files alike.
