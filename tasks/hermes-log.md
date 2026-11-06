@@ -420,3 +420,4 @@ One line per action. Newest at the bottom. Written by the Hermes PM loop, not by
 - 2026-11-06T02:57:00Z pm: opened PR #68 for task 64, CI green on all 9 checks (go 4m8s, docker, docker-arm64, e2e, cross, web, installer, installer-powershell, report), merged squash as 437c8c4, branch deleted
 - 2026-11-06T02:57:00Z pm: STATUS 64 set to done with the PR link; next task is 65 (storage API), started on a later tick
 - 2026-11-06T02:57:00Z pm: note: the /home/mb/.pm-log worktree had a stale staged index that deleted the v1.11 task files and truncated ROADMAP/STATUS/hermes-log; unstaged and restored it to main before committing this log, forensic copy of the staged diff kept at /home/mb/.pm-log-staged-forensics-20261106T025610Z.diff
+2026-11-06T03:01:38Z pm: started task 65 (storage API) run 20261106-030109-828104b1 role=build
