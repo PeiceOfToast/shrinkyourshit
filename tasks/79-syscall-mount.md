@@ -103,15 +103,15 @@ The failure is entirely in how the mount is issued.
 
 ## Acceptance
 
-- [ ] `internal/mount` no longer executes `mount` or `umount` through `os/exec` on the production path.
-- [ ] Tests use a fake `Mounter`; no test needs real privileges, and CI is unchanged.
-- [ ] A table test proves the option translation: `ro`, `noatime`, `nodev`, `noexec`, `nosuid` become flags, `_netdev` and `defaults` are dropped, and `vers=4.2,soft,timeo=50,retrans=2` reaches `data` in that exact order.
-- [ ] Exactly one argument vector or flag set is asserted for an NFS storage and one for a CIFS storage, including the credentials path.
-- [ ] Errno mapping covered by tests for `EPERM`, `ENODEV` and a default case, asserting the operator message text.
-- [ ] Capability check covered by a test using a fake `CapEff` value, and it never panics.
-- [ ] Non-Linux build compiles and returns the unsupported error; `go build` for a non-Linux `GOOS` is checked in the notes.
-- [ ] The credentials file still does not exist after a mount returns, success or failure.
-- [ ] `make test` green, `make lint` green, `DECISIONS.md` unchanged.
+- [x] `internal/mount` no longer executes `mount` or `umount` through `os/exec` on the production path.
+- [x] Tests use a fake `Mounter`; no test needs real privileges, and CI is unchanged.
+- [x] A table test proves the option translation: `ro`, `noatime`, `nodev`, `noexec`, `nosuid` become flags, `_netdev` and `defaults` are dropped, and `vers=4.2,soft,timeo=50,retrans=2` reaches `data` in that exact order.
+- [x] Exactly one argument vector or flag set is asserted for an NFS storage and one for a CIFS storage, including the credentials path.
+- [x] Errno mapping covered by tests for `EPERM`, `ENODEV` and a default case, asserting the operator message text.
+- [x] Capability check covered by a test using a fake `CapEff` value, and it never panics.
+- [x] Non-Linux build compiles and returns the unsupported error; `go build` for a non-Linux `GOOS` is checked in the notes.
+- [x] The credentials file still does not exist after a mount returns, success or failure.
+- [x] `make test` green, `make lint` green, `DECISIONS.md` unchanged.
 
 ## Notes
 
