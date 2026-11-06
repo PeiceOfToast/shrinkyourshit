@@ -26,11 +26,11 @@ Modify `web/src/App.tsx` (route `/storage`), the nav, `web/src/api.ts`.
 6. Mobile first at 390 px, 44 px targets, toast on every mutation, per the design system.
 
 ## Acceptance
-- [ ] Playwright covers add, test, mount and the read only state when login is off.
-- [ ] No secret is ever rendered or returned to the browser, proven by a test that fails if the
+- [x] Playwright covers add, test, mount and the read only state when login is off.
+- [x] No secret is ever rendered or returned to the browser, proven by a test that fails if the
       API response carries it.
-- [ ] The dashboard warning appears when mounts exist and login is disabled.
-- [ ] `npm run build`, `npx playwright test` and `make lint` green.
+- [x] The dashboard warning appears when mounts exist and login is disabled.
+- [x] `npm run build`, `npx playwright test` and `make lint` green.
 
 ## Notes
 Write the plan and any changed assertion in `tasks/68-notes.md`.

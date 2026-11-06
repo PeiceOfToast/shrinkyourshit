@@ -54,9 +54,29 @@ export function computeWarnings(input: {
   stats: Pick<Stats, 'queued'>
   now: number
   update?: UpdateHint | null
+  /**
+   * Network storage (task 68, spec 4.6): `mounts` counts enabled shares,
+   * which the server mounts at startup. Login off with mounts is standing.
+   */
+  storage?: { mounts: number; loginEnabled: boolean }
 }): DashboardWarning[] {
   const { nodes, jobs, stats, now } = input
   const warnings: DashboardWarning[] = []
+
+  // Shares are mounted with login off: anyone who can reach this server
+  // can use them. The warning stays until login is on or the shares go.
+  if (
+    input.storage &&
+    input.storage.mounts > 0 &&
+    !input.storage.loginEnabled
+  ) {
+    warnings.push({
+      id: 'storage-login-off',
+      message: `${input.storage.mounts === 1 ? 'A network share is' : `${input.storage.mounts} network shares are`} mounted while login is off. Turn on login before anyone else can reach them through this server.`,
+      linkTo: '/app',
+      linkLabel: 'Go to App settings',
+    })
+  }
 
   // A newer release is out (task 17): one quiet entry pointing at the
   // About card, where the action matches the install type. The warning

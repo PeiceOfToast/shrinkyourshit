@@ -52,6 +52,7 @@ const NAV_ITEMS: Array<{
   { to: '/', label: 'Dashboard', end: true, icon: 'dash' },
   { to: '/libraries', label: 'Libraries', icon: 'library' },
   { to: '/nodes', label: 'Nodes', icon: 'nodes' },
+  { to: '/storage', label: 'Storage', icon: 'folder' },
   { to: '/encode', label: 'Encode settings', icon: 'encode' },
   { to: '/integrations', label: 'Integrations', icon: 'integrations' },
   { to: '/app', label: 'App settings', icon: 'app' },

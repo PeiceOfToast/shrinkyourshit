@@ -68,6 +68,12 @@ const PAGES: Array<{ path: string; ready: string; settled: string }> = [
     ready: 'nodes-page',
     settled: '[data-testid="nodes-list"] li, [data-testid="nodes-empty"]',
   },
+  // Task 68: Storage. The page is settled once its list or empty state shows.
+  {
+    path: '/storage',
+    ready: 'storage-page',
+    settled: '[data-testid="storage-list"], [data-testid="storage-empty"]',
+  },
   {
     path: '/encode',
     ready: 'encode-settings-page',

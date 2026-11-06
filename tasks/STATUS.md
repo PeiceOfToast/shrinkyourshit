@@ -103,7 +103,7 @@ Storage first because libraries need somewhere to point before profiles make sen
 | 65 | 65-storage-api.md | done | PR #69 https://github.com/PeiceOfToast/shrinkyourshit/pull/69, v1.11, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (go 14 packages ok, web 65 files / 474 tests), make lint exit 0, DECISIONS.md unchanged, checklist 5/5 ticked; 3 open owner questions in tasks/65-notes.md |
 | 66 | 66-mount-executor.md | done | PR #70 https://github.com/PeiceOfToast/shrinkyourshit/pull/70, v1.11, CI green (9 checks incl. e2e and docker-arm64), make test exit 0 (go all packages ok, web 65 files / 474 tests), make lint exit 0, DECISIONS.md unchanged, checklist 5/5 ticked; supervisor opened PR and merged |
 | 67 | 67-container-capabilities.md | done | PR #71 https://github.com/PeiceOfToast/shrinkyourshit/pull/71, v1.11, CI run 42165909121 green (9 checks incl. docker and docker-arm64), go test and make test-web exit 0 locally, golangci-lint 0 issues, checklist 4/4 ticked; image size 516MB printed by CI, baseline never recorded so the delta is still an estimate; arm64 helper presence not checked in CI, see tasks/67-notes.md |
-| 68 | 68-storage-page.md | todo | |
+| 68 | 68-storage-page.md | in_progress | branch task/68-storage-page |
 | 69 | 69-storage-browser-and-path-picker.md | todo | |
 | 70 | 70-profiles-schema-migration.md | todo | |
 | 71 | 71-profiles-api.md | todo | |
