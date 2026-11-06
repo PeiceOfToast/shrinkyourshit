@@ -121,7 +121,7 @@ Tasks run in order, one at a time. `DECISIONS.md` stays read only.
 
 | Task | File | Status | PR / note |
 |------|------|--------|-----------|
-| 79 | 79-syscall-mount.md | in_progress | branch task/79-syscall-mount, pushed; PR not opened (supervisor opens it). Checklist 9/9 ticked. `go test ./...` green (api 606s and server 561s run alone with -timeout 40m), golangci-lint 0 issues, GOOS darwin/windows builds OK; not run: real NFS/SMB mount (task 81), test-web (no web change); hostname-source risk in tasks/79-notes.md |
+| 79 | 79-syscall-mount.md | done | PR #81 https://github.com/PeiceOfToast/shrinkyourshit/pull/81, squash 1804f3e, v1.11 fix queue, CI run 42265097035 green (9 checks incl. e2e and docker-arm64; attempt 1 e2e hung 25 min in its ffmpeg apt step, run cancelled and rerun, attempt 2 e2e green in 3m35s), make test exit 0 (go all packages ok, web vitest green), make lint exit 0 (go vet, golangci-lint 0 issues, spdx, eslint, prettier), DECISIONS.md unchanged, checklist 9/9 ticked; no real NFS or SMB mount yet (task 81), hostname source resolution risk recorded in tasks/79-notes.md |
 | 80 | 80-nfs-version-default.md | todo | NFS default becomes `vers=4.2`; fixes `rpc.statd is not running but is required for remote locking` |
 | 81 | 81-verify-mount-fixes.md | todo | real-hardware verification of both fixes plus SMB, restart remount and the watchdog |
 
