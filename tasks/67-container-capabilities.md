@@ -30,7 +30,7 @@ the installer scripts under `scripts/`, and `README.md`.
       `docker run --rm <image> sh -c 'command -v mount.nfs mount.cifs'`.
 - [ ] With `cap_add` removed, the server starts and the Storage page explains the missing
       capability instead of failing to boot.
-- [ ] README and the installer both name the capability and the login gate.
+- [x] README and the installer both name the capability and the login gate.
 - [ ] `make test` and the docker build job green.
 
 ## Notes

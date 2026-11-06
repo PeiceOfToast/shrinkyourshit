@@ -67,7 +67,25 @@ Disabled line (`SHRINK_MANAGE_MOUNTS` false, 0 or off):
 
 ## Acceptance status
 
-To be filled in at the end of the run.
+| Item | Status | Proof |
+|---|---|---|
+| Image has `mount.nfs` and `mount.cifs` (`docker run --rm <image> sh -c 'command -v mount.nfs mount.cifs'`) | **not ticked** | No docker on this box. CI docker job runs that exact command plus `test -u $(command -v mount)`. Passes only when the CI run is green. |
+| `cap_add` removed: server starts, Storage page explains the missing capability | **not ticked** | Server start without the capability: CI step `storage-missing` checks the log line and `/api/v1/health`. The Storage page text is task 68, so the page half cannot be ticked here. |
+| README and installer name the capability and the login gate | ticked | `deploy/deploy_test.go` `TestInstallDocsNameTheCapabilityAndLoginGate` on `README.md` and `docs/installing.md`. "Installer" read as the container install path (see scope decisions). |
+| `make test` and the docker build job green | **not ticked** | `go test -count=1 ./...` exit 0 locally (make is not installed here; the same command ran). Web is untouched. Docker job pending on CI. |
+
+The task stays `in_progress` with the branch name. The two unticked items need a docker host or CI, and the Storage page half of item 2 is task 68's.
+
+## Gate results (2026-11-06, branch task/67-container-capabilities)
+
+- `go test -count=1 ./...` exit 0 (every package ok, `internal/api` 454 s, `internal/server` 455 s).
+- `go test -count=1 -v ./deploy/` all 8 top-level tests pass, including the new ones.
+- `gofmt -l deploy/` clean. `go vet ./deploy/ ./cmd/...` clean. `golangci-lint run ./deploy/...` 0 issues.
+- `./scripts/check-spdx.sh` exit 0. No new Go or TypeScript source file was created.
+- `sh -n docker/entrypoint.sh` clean. shellcheck is not installed here, so not run.
+- `make` is not installed on this box, so `make test` and `make lint` were not run through make. The commands they wrap were.
+- `npm run build` and Playwright: not run, no web change.
+- Not run: `docker build`, `docker run`, `docker compose config`. The CI docker job covers these on the PR.
 
 ## Open questions for the owner
 
@@ -78,3 +96,31 @@ To be filled in at the end of the run.
 3. `mount.cifs` and `mount.nfs` running from a setuid `mount` as PUID is the working assumption. It is proven by the
    CI step only for the helpers and the setuid bit, not by a real mount. A real NFS or SMB mount in the container is
    task 75's job.
+
+## Build notes
+
+- The entrypoint's `storage_report` got three fixes during testing. `tr` was replaced with `case` patterns because
+  a missing `tr` made `set -e` abort the entrypoint. The `sed` substitution gets `|| bnd=""` for the same reason.
+  The check for `(enforce)` and `(complain)` in `/proc/self/attr/current` covers an AppArmor profile that is not
+  unconfined.
+- `mount` denial was reproduced locally without SYS_ADMIN: `mount: /tmp/mtest/t: permission denied.`, exit 32. That
+  is the storage `error` text the user sees with an old compose file. Task 66 stores `mount(8)` stderr as written.
+- Non-root `mount` without setuid prints `must be superuser to use mount` (checked as user mb). So the setuid bit
+  on `/usr/bin/mount` is what lets the PUID user mount. CI asserts it with `test -u`.
+
+## Summary
+
+1. Built: Dockerfile installs `nfs-common` and `cifs-utils`, creates `/storage` and adds it to `VOLUME`. Entrypoint
+   `storage_report` (one line, never exits, `SHRINK_ENTRYPOINT_LIB` seam for tests). Compose example, the three NAS
+   templates and the Unraid ExtraParams carry `cap_add: SYS_ADMIN` and `security_opt: apparmor=unconfined`.
+   README and `docs/installing.md` have a network storage section with the login gate and the old-compose error.
+   STACK.md lists the runtime packages. CI docker job proves the helpers, the setuid mount, and both startup reports.
+2. Skipped: the Go side of `SHRINK_MANAGE_MOUNTS` (the executor still starts whatever the value; out of this task's
+   scope). The Storage page text (task 68). The worker `scripts/installer.sh` and `installer.ps1` were not changed
+   because they never install the container. The real image size delta and the docker build were not run here.
+3. Next task should know: the `mount` helpers only work if the image's `mount` stays setuid root and compose keeps
+   both lines. Confirm on the real image with one NFS or SMB mount (task 75). The `SHRINK_MANAGE_MOUNTS` Go wiring
+   is still open (see open questions 1).
+4. Owner decisions taken in this task: templates and Unraid XML updated, not only `docker/`. CI step added. The
+   "installer" in the acceptance means the container install docs. Image size is an estimate until CI prints it.
+5. Open for the owner: the open questions above. Nothing in DECISIONS.md changed.
