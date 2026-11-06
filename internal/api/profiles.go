@@ -167,13 +167,39 @@ func (a *API) listProfiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, profileList{Items: items, Total: len(items)})
 }
 
-// getProfile answers GET /api/v1/profiles/{id}.
+// getProfile answers GET /api/v1/profiles/{id}. With ?tier= the graph is judged
+// at that tier (task 72, the same as GET /libraries/{id}/flow?tier=) so each
+// editor can show its own lock; without it the profile's own tier is used.
 func (a *API) getProfile(w http.ResponseWriter, r *http.Request) {
 	p, ok := a.profile(w, r)
 	if !ok {
 		return
 	}
-	a.profileReply(w, r, http.StatusOK, p)
+	q := r.URL.Query().Get("tier")
+	if q == "" {
+		a.profileReply(w, r, http.StatusOK, p)
+		return
+	}
+	tier, err := flow.ParseTier(q)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	users, err := a.profileUsers(r.Context())
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	dto, err := server.NewProfileDTO(p, users[p.ID])
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	dto.Unrepresentable = flow.RepresentableAt(dto.Graph, tier)
+	if dto.Unrepresentable == nil {
+		dto.Unrepresentable = []flow.FieldError{}
+	}
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // createProfile answers POST /api/v1/profiles: 201 with the new profile.
