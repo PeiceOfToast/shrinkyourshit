@@ -162,6 +162,19 @@ type Store interface {
 	UpdatePlugin(ctx context.Context, p *Plugin) error
 	DeletePlugin(ctx context.Context, id string) error
 
+	// Storages (task 64, spec 4.3): network shares the server mounts. Name is
+	// a validated slug and the mountpoint. CreateStorage and UpdateStorage
+	// seal a non-empty Password and clear it; no read method returns it.
+	// StorageSecret is the only read that decrypts, and only the mount
+	// executor (task 66) may call it.
+	CreateStorage(ctx context.Context, st *Storage) error
+	GetStorage(ctx context.Context, id string) (*Storage, error)
+	GetStorageByName(ctx context.Context, name string) (*Storage, error)
+	ListStorages(ctx context.Context) ([]*Storage, error)
+	UpdateStorage(ctx context.Context, st *Storage) error
+	DeleteStorage(ctx context.Context, id string) error
+	StorageSecret(ctx context.Context, id string) (string, error)
+
 	// Settings is an open key/value table; the Setting* constants name
 	// the keys ARCHITECTURE.md defines.
 	GetSetting(ctx context.Context, key string) (string, bool, error)

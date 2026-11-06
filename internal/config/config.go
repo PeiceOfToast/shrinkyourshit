@@ -54,6 +54,18 @@ type Config struct {
 	DiscoveryMDNS bool
 	// DiscoveryBroadcast toggles the UDP broadcast transport.
 	DiscoveryBroadcast bool
+	// ManageMounts (SHRINK_MANAGE_MOUNTS, default true) lets the server mount
+	// and manage network storages from the WebUI. false disables the feature.
+	ManageMounts bool
+	// StorageKey is the raw SHRINK_STORAGE_KEY value (base64, 32 bytes). Empty
+	// means the key file at StorageKeyPath is used, created on first use.
+	StorageKey string
+}
+
+// StorageKeyPath is the key file used to seal storage passwords when
+// SHRINK_STORAGE_KEY is not set: <data dir>/storage.key (0600).
+func (c Config) StorageKeyPath() string {
+	return filepath.Join(c.DataDir, "storage.key")
 }
 
 // Options controls where Load reads its inputs from. The zero value uses the
@@ -112,6 +124,9 @@ const (
 	envDiscoverMDNS  = "SHRINK_DISCOVERY_MDNS"
 	flagDiscoverBC   = "discovery-broadcast"
 	envDiscoverBC    = "SHRINK_DISCOVERY_BROADCAST"
+
+	envManageMounts = "SHRINK_MANAGE_MOUNTS"
+	envStorageKey   = "SHRINK_STORAGE_KEY"
 )
 
 // NewFlags builds the pflag set shared by the serve and worker subcommands.
@@ -200,6 +215,10 @@ func FromFlags(flags *pflag.FlagSet, environ []string, fileOverride string) (Con
 	}
 	cfg.DiscoveryMDNS = src.bool(flagDiscoverMDNS, envDiscoverMDNS, src.file.DiscoverMDNS, true)
 	cfg.DiscoveryBroadcast = src.bool(flagDiscoverBC, envDiscoverBC, src.file.DiscoverBC, true)
+
+	// Storage settings are environment only (spec 4.5, 4.3).
+	cfg.ManageMounts = envBool(env, envManageMounts, true)
+	cfg.StorageKey = env[envStorageKey]
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -310,6 +329,21 @@ func (s sources) bool(flagName, envKey string, fileVal *bool, def bool) bool {
 		return *fileVal
 	}
 	return def
+}
+
+// envBool reads a boolean environment variable: unset or empty is def, 0,
+// false and off are false, any other value is true.
+func envBool(env map[string]string, key string, def bool) bool {
+	v, ok := env[key]
+	if !ok || v == "" {
+		return def
+	}
+	switch strings.ToLower(v) {
+	case "0", "false", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 func defaultPort() int { return 8765 }

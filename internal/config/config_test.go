@@ -280,3 +280,39 @@ func TestJoinExistingWritesWorkerConfig(t *testing.T) {
 	assert.Equal(t, "http://10.0.0.2:8765", cfg.Server)
 	assert.Equal(t, "second-box", cfg.NodeName)
 }
+
+// Storage settings default to managed mounts on, no key in the environment
+// and the key file in the data dir.
+func TestStorageSettingsDefaults(t *testing.T) {
+	testHome(t)
+	dataDir := t.TempDir()
+	cfg, err := Load(Options{Environ: []string{"SHRINK_DATA_DIR=" + dataDir, "SHRINK_MANAGE_MOUNTS=", "SHRINK_STORAGE_KEY="}})
+	require.NoError(t, err)
+
+	assert.True(t, cfg.ManageMounts)
+	assert.Equal(t, "", cfg.StorageKey)
+	assert.Equal(t, filepath.Join(dataDir, "storage.key"), cfg.StorageKeyPath())
+}
+
+// SHRINK_MANAGE_MOUNTS turns the feature off with 0, false or off, and any
+// other value turns it on. SHRINK_STORAGE_KEY is read verbatim.
+func TestStorageSettingsFromEnv(t *testing.T) {
+	testHome(t)
+	cases := map[string]bool{
+		"false": false,
+		"0":     false,
+		"OFF":   false,
+		"true":  true,
+		"1":     true,
+	}
+	for value, want := range cases {
+		cfg, err := Load(Options{Environ: []string{
+			"SHRINK_DATA_DIR=" + t.TempDir(),
+			"SHRINK_MANAGE_MOUNTS=" + value,
+			"SHRINK_STORAGE_KEY=c2VjcmV0",
+		}})
+		require.NoError(t, err, value)
+		assert.Equal(t, want, cfg.ManageMounts, "SHRINK_MANAGE_MOUNTS=%s", value)
+		assert.Equal(t, "c2VjcmV0", cfg.StorageKey)
+	}
+}

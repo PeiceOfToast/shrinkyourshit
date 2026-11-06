@@ -110,6 +110,13 @@ Status enums are fixed strings; do not add values without updating this file.
 ```
 `job` and `file` are set on the job events, `scan` only on `library.scanned`, `library` whenever it is known. Deliveries sign the exact bytes sent with `X-SYS-Signature: sha256=<hex HMAC-SHA256 under the hook's secret>`; Discord and Slack hosts receive the wrapped one-line summary instead of the raw JSON.
 
+**Storage (task 64, spec 4.3, migration 0017):** `id, name (slug, unique), protocol, source, options, username, domain, secret_enc, read_only, enabled, created_at, updated_at`. A network share the server mounts inside the container at `/storage/<name>`.
+- `name`: lowercase letters, digits and dashes, 1 to 64 characters, no leading or trailing dash. It is the mountpoint, so the store rejects anything else (`ValidStorageName`).
+- `protocol`: `nfs | smb`
+- `secret_enc`: the SMB password sealed with AES-256-GCM under the storage key, base64 of `nonce || ciphertext`, with the storage id as additional data so a value cannot be moved to another row. The key is `SHRINK_STORAGE_KEY` (base64, 32 bytes) if set, otherwise `<data dir>/storage.key` (0600), created on first use. The plaintext is never returned by any read, never logged and never sent through the API. `Storage.String()` redacts it.
+- The store returns `HasSecret` in place of the value (the API field name is set by task 65). `StorageSecret` is the only method that decrypts; only the mount executor (task 66) may call it. A wrong key, a tampered value or a missing key source fails closed with an error and no plaintext.
+- Writes without a storage key source fail. Passwordless storages do not need the key.
+
 **Integration:** `id, kind, name, base_url, api_key, enabled, refresh_on_done, created_at, updated_at` (task 23)
 - `kind`: `jellyfin | emby | plex | sonarr | radarr`
 - `api_key` is stored verbatim for the outbound call and never leaves the server through the API: responses carry `api_key_set: true|false` instead.

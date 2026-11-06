@@ -16,12 +16,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PeiceOfToast/shrinkyourshit/internal/secret"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 
 // SQLite implements Store on top of a single SQLite file.
 type SQLite struct {
 	db *sql.DB
+	// secrets seals storage passwords (task 64). Nil until WithSecrets.
+	secrets *secret.Source
 }
 
 // Compile-time check that SQLite satisfies the Store interface.
@@ -31,7 +34,8 @@ var _ Store = (*SQLite)(nil)
 // pending migrations and returns a ready Store. The parent directory is
 // created. A single connection serializes writes, which avoids SQLITE_BUSY
 // at home-lab scale; Postgres behind this interface can parallelize later.
-func New(path string) (*SQLite, error) {
+// Options (WithSecrets) are applied before migrations run.
+func New(path string, opts ...Option) (*SQLite, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
 	}
@@ -53,6 +57,9 @@ func New(path string) (*SQLite, error) {
 		return nil, fmt.Errorf("store: set auto vacuum: %w", err)
 	}
 	s := &SQLite{db: db}
+	for _, opt := range opts {
+		opt(s)
+	}
 	if err := s.applyAutoVacuum(context.Background()); err != nil {
 		_ = s.Close()
 		return nil, err
