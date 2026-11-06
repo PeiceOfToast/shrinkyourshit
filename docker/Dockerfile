@@ -58,8 +58,12 @@ ARG FF_DEB_AMD64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/am
 ARG FF_DEB_AMD64_SHA256=0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c
 ARG FF_DEB_ARM64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/latest-7.x/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb
 ARG FF_DEB_ARM64_SHA256=9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb
+# nfs-common and cifs-utils (task 67) provide mount.nfs and mount.cifs for
+# managed network storage. mount(8) is setuid root in Debian, so the
+# server user (PUID) can run it; the mount itself needs SYS_ADMIN in the
+# container's bounding set, which compose grants with cap_add.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gosu git \
+ && apt-get install -y --no-install-recommends ca-certificates curl gosu git nfs-common cifs-utils \
  && case "$TARGETARCH" in \
       amd64) FF_DEB_URL="$FF_DEB_AMD64_URL"; FF_DEB_SHA256="$FF_DEB_AMD64_SHA256";; \
       arm64) FF_DEB_URL="$FF_DEB_ARM64_URL"; FF_DEB_SHA256="$FF_DEB_ARM64_SHA256";; \
@@ -87,10 +91,11 @@ ENV PUID=1000 \
 COPY --from=build /out/shrinkyourshit /usr/local/bin/shrinkyourshit
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh \
- && mkdir -p /config/plugins \
+ && mkdir -p /config/plugins /storage \
  && chown -R "${PUID}:${PGID}" /config/plugins
 
-VOLUME ["/config", "/media", "/scratch"]
+# /storage is where managed network shares mount (/storage/<name>, task 66).
+VOLUME ["/config", "/media", "/scratch", "/storage"]
 EXPOSE 8765
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

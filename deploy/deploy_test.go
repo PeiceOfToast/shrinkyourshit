@@ -11,6 +11,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,6 +34,8 @@ type composeService struct {
 	Volumes     []string `yaml:"volumes"`
 	Privileged  *bool    `yaml:"privileged"`
 	NetworkMode string   `yaml:"network_mode"`
+	CapAdd      []string `yaml:"cap_add"`
+	SecurityOpt []string `yaml:"security_opt"`
 	Environment envList  `yaml:"environment"`
 }
 
@@ -171,13 +174,14 @@ func TestComposeTemplatesFollowTheContract(t *testing.T) {
 }
 
 type unraidTemplate struct {
-	XMLName    xml.Name       `xml:"Container"`
-	Repository string         `xml:"Repository"`
-	Network    string         `xml:"Network"`
-	Privileged bool           `xml:"Privileged"`
-	Icon       string         `xml:"Icon"`
-	Overview   string         `xml:"Overview"`
-	Configs    []unraidConfig `xml:"Config"`
+	XMLName     xml.Name       `xml:"Container"`
+	Repository  string         `xml:"Repository"`
+	Network     string         `xml:"Network"`
+	Privileged  bool           `xml:"Privileged"`
+	Icon        string         `xml:"Icon"`
+	Overview    string         `xml:"Overview"`
+	ExtraParams string         `xml:"ExtraParams"`
+	Configs     []unraidConfig `xml:"Config"`
 }
 
 type unraidConfig struct {
@@ -227,4 +231,127 @@ func TestUnraidTemplateFollowsTheContract(t *testing.T) {
 
 	require.NotEmpty(t, byTarget["PUID"].Target, "%s: a Config with Target=PUID is missing", file)
 	require.NotEmpty(t, byTarget["PGID"].Target, "%s: a Config with Target=PGID is missing", file)
+}
+
+// mountCapabilityArgs are the two settings that let the server mount network
+// shares (task 67). Anything narrower than privileged; both are required.
+const (
+	mountCapability = "SYS_ADMIN"
+	mountSecurity   = "apparmor=unconfined"
+)
+
+// TestComposeTemplatesGrantTheMountCapability keeps the NAS templates in step
+// with docker/compose.example.yml: an old copy without these two lines gets
+// "permission denied" on every storage mount, so the templates must carry them.
+func TestComposeTemplatesGrantTheMountCapability(t *testing.T) {
+	for _, file := range composeTemplateFiles(t) {
+		t.Run(file, func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			require.NoError(t, err)
+			var cf composeFile
+			require.NoError(t, yaml.Unmarshal(data, &cf))
+			svc := cf.Services["shrinkyourshit"]
+			require.Contains(t, svc.CapAdd, mountCapability,
+				"%s: services.shrinkyourshit.cap_add must include %s so the container can mount network storage", file, mountCapability)
+			require.Contains(t, svc.SecurityOpt, mountSecurity,
+				"%s: services.shrinkyourshit.security_opt must include %s (Docker's default AppArmor profile blocks mount(2))", file, mountSecurity)
+		})
+	}
+}
+
+func TestUnraidTemplateGrantsTheMountCapability(t *testing.T) {
+	const file = "unraid/shrinkyourshit.xml"
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	var tpl unraidTemplate
+	require.NoError(t, xml.Unmarshal(data, &tpl))
+	require.Contains(t, tpl.ExtraParams, "--cap-add="+mountCapability,
+		"%s: ExtraParams must carry --cap-add=%s", file, mountCapability)
+	require.Contains(t, tpl.ExtraParams, "--security-opt "+mountSecurity,
+		"%s: ExtraParams must carry --security-opt %s", file, mountSecurity)
+}
+
+// TestInstallDocsNameTheCapabilityAndLoginGate checks the README and the
+// container install page (docs/installing.md) state the requirement, the
+// login gate from spec 4.6, and the error a user sees after copying an old
+// compose file.
+func TestInstallDocsNameTheCapabilityAndLoginGate(t *testing.T) {
+	for _, file := range []string{"../README.md", "../docs/installing.md"} {
+		t.Run(file, func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			require.NoError(t, err)
+			doc := string(data)
+			require.Contains(t, doc, mountCapability, "%s must name the %s capability", file, mountCapability)
+			require.Contains(t, doc, mountSecurity, "%s must show the %s security option", file, mountSecurity)
+			require.Contains(t, doc, "cap_add", "%s must show the cap_add compose lines", file)
+			require.Contains(t, doc, "permission denied",
+				"%s must show the error an old compose file produces", file)
+			require.Contains(t, strings.ToLower(doc), "login",
+				"%s must state that storage needs login enabled (spec 4.6)", file)
+			require.Contains(t, doc, "App settings",
+				"%s must say where login is turned on (App settings)", file)
+		})
+	}
+}
+
+// storageScript runs docker/entrypoint.sh with the functions loaded and the
+// given shell snippet. SHRINK_ENTRYPOINT_LIB=1 stops the script from starting
+// the server.
+func storageScript(t *testing.T, env []string, snippet string) (string, error) {
+	t.Helper()
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh on PATH")
+	}
+	script, err := filepath.Abs("../docker/entrypoint.sh")
+	require.NoError(t, err)
+	cmd := exec.Command(sh, "-c", ". \"$0\"; "+snippet, script)
+	cmd.Env = append([]string{"SHRINK_ENTRYPOINT_LIB=1"}, env...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestEntrypointCapBitSet(t *testing.T) {
+	cases := []struct {
+		mask string
+		bit  int
+		want bool
+	}{
+		{"0000000000200000", 21, true},  // only SYS_ADMIN
+		{"0000000000100000", 21, false}, // bit 20 set, SYS_ADMIN not
+		{"000001ffffffffff", 21, true},  // full set, as in privileged
+		{"0000000000000000", 21, false}, // nothing granted
+	}
+	for _, c := range cases {
+		out, err := storageScript(t, nil, fmt.Sprintf("if cap_bit_set %s %d; then echo yes; else echo no; fi", c.mask, c.bit))
+		require.NoError(t, err, out)
+		want := "no"
+		if c.want {
+			want = "yes"
+		}
+		require.Equal(t, want, strings.TrimSpace(out), "cap_bit_set %s %d", c.mask, c.bit)
+	}
+}
+
+func TestEntrypointStorageReportIsOffWhenDisabled(t *testing.T) {
+	for _, value := range []string{"false", "0", "off", "OFF"} {
+		out, err := storageScript(t, []string{"SHRINK_MANAGE_MOUNTS=" + value}, "storage_report")
+		require.NoError(t, err, "the report must never fail the entrypoint: %s", out)
+		require.Contains(t, out, "network storage is off (SHRINK_MANAGE_MOUNTS=false)", "SHRINK_MANAGE_MOUNTS=%s", value)
+	}
+}
+
+// With no PATH the helpers and sed cannot be found. The report must name the
+// problems in one line and still exit 0: the entrypoint never stops the app.
+func TestEntrypointStorageReportNamesMissingPiecesAndNeverFails(t *testing.T) {
+	out, err := storageScript(t, []string{"PATH=" + t.TempDir()}, "storage_report")
+	require.NoError(t, err, "the report must exit 0: %s", out)
+	line := strings.TrimSpace(out)
+	require.Equal(t, 1, strings.Count(line, "\n")+1, "the report is one line: %q", out)
+	require.Contains(t, line, "network storage is unavailable:")
+	require.Contains(t, line, "mount.nfs not installed")
+	require.Contains(t, line, "mount.cifs not installed")
+	require.Contains(t, line, "SYS_ADMIN not granted")
+	require.Contains(t, line, "cap_add SYS_ADMIN and security_opt apparmor=unconfined")
+	require.Contains(t, line, "The app still starts.")
 }

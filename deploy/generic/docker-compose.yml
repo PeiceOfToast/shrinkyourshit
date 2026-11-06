@@ -26,6 +26,14 @@ services:
       - ./config:/config # settings and database
       - ./media:/media # EDIT: your media folder (must be writable)
       - ./scratch:/scratch # temp space for encodes
+    # Network storage (NFS and SMB shares, added from the Storage page). SYS_ADMIN
+    # lets the container run mount(8); it is far narrower than `privileged: true`.
+    # apparmor=unconfined is needed because Docker's default AppArmor profile blocks
+    # mount(2). Leave both out if you do not want network storage; the app still starts.
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor=unconfined
     # Docker waits 10 seconds before killing a stopping container and this
     # app shuts down in 10. Raise it here if you want an in-flight encode to
     # get more time to wind down on `docker compose down`:
